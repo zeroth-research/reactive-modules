@@ -431,7 +431,7 @@ def _claim(settings: Settings) -> "tuple[Claim | None, Certificate]":
                               settings.ranking or None)
 
 
-def _route_precheck(settings: Settings, module, claim: "Claim | None"):
+def _route_precheck(settings: Settings, module, claim: "Claim | None", smt):
     """The route's own shape check, before a line of Lean is written; what
     it computed reaches the route as `InferInput.prechecked`.
 
@@ -446,7 +446,7 @@ def _route_precheck(settings: Settings, module, claim: "Claim | None"):
         return None
     try:
         return route.precheck(
-            module, settings.route_opts, settings.route_config, claim
+            module, settings.route_opts, settings.route_config, claim, smt
         )
     except (Refused, ImportError) as e:
         raise _refused(settings, e) from e
@@ -538,7 +538,7 @@ def main():
     # The run's one cvc5 encoding, built by whichever stage asks first.
     smt = lazy(module)
     claim, given = _claim(settings)
-    prechecked = _route_precheck(settings, module, claim)
+    prechecked = _route_precheck(settings, module, claim, smt)
     ctx = _lean_context(settings, module)
 
     # The workspace belongs to the project, not to the route: `--artifacts

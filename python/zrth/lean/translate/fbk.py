@@ -194,7 +194,9 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # translation and reports whatever it raises -- and hands the result back,
 # so that translation is the one the emission uses rather than one thrown
 # away and repeated.
-def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
+def check_na_supported(
+    ctx: LeanContext, simplify: bool = True, encoding=None
+) -> SlotBodies:
     """`ctx`'s slot bodies; :class:`NAUnsupported` if it has no NA encoding.
 
     Both emissions on this route want exactly those bodies --
@@ -211,6 +213,10 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     fold an unsupported subterm away (a `Linear` whose weights are all
     zero), so a check run with it on would pass a module the emission then
     could not print.
+
+    `encoding` is the run's `ModuleEncoding`, whose term manager the bodies
+    are built on; without one a caller gets an encoding of `ctx.module` of
+    its own.
     """
     if not ctx.ctrl_next:
         raise NAUnsupported("the module has no controlled state to encode")
@@ -251,7 +257,7 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     # SMT kind. Cheap -- the same work the emission does, on modules small
     # enough that `lake` dominates either way.
     try:
-        return _slot_bodies(ctx, simplify)
+        return _slot_bodies(ctx, simplify, encoding)
     except NAUnsupported:
         raise
     except Exception as e:
@@ -507,14 +513,16 @@ def _simplify(solver, term, enabled: bool = True):
     return solver.simplify(term)
 
 
-def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
+def _slot_bodies(
+    ctx: LeanContext, simplify: bool = True, encoding=None
+) -> SlotBodies:
     """`(update, init)` Lean text for every state slot, in slot order.
 
-    One cvc5 `TermManager` and `Solver` per call, both retained for the
-    process's lifetime (`smt_module.keep_alive`), so the callers go through
-    :func:`check_na_supported` and pass the result along rather than calling
-    this again. Retained per *model*, not per caller: one entry where it
-    used to be five (measured, one-wire counter).
+    Built on `encoding`'s `TermManager` and `ModuleSMT` -- the run's one
+    encoding of the module -- with a `Solver` of its own for the rewriter,
+    retained for the process's lifetime (`smt_module.keep_alive`). Callers
+    go through :func:`check_na_supported` and pass the result along rather
+    than calling this again.
 
     The transition comes from `smt_encode` -- the encoder `--pre-check` and
     `--infer ai-cegis` already run on, so the model `lean2vmt` reads and the
@@ -524,15 +532,18 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     """
     import cvc5
 
+    from ..smt.run import ModuleEncoding
     from ..smt_encode import wire_shape
-    from ..smt_module import ModuleSMT, keep_alive
+    from ..smt_module import keep_alive
     from ..smt_to_lean import smt_to_lean_bool
 
-    tm = cvc5.TermManager()
-    msmt = ModuleSMT(tm=tm, module=ctx.module)
+    if encoding is None:
+        encoding = ModuleEncoding(ctx.module)
+    tm = encoding.tm
+    msmt = encoding.msmt
     solver = cvc5.Solver(tm)
     solver.setLogic("ALL")
-    keep_alive(tm, msmt, solver)
+    keep_alive(solver)
 
     layout = flat_layout(ctx.ctrl_next)
     # An input reading is marked rather than translated: it has no Lean form

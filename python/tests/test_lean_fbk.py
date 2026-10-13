@@ -1157,3 +1157,29 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     assert r.returncode != 0
     assert "--fbk-proveit: not a directory" in r.stderr
     assert not out.exists()
+
+
+def test_a_check_and_a_property_share_one_encoding(monkeypatch):
+    """The slot bodies, the `--pre` and the `--safety` property are all read
+    on the run's one `ModuleEncoding`; none of them builds a term manager of
+    its own."""
+    from zrth.lean.fbk_proveit import check_module
+    from zrth.lean.smt.run import ModuleEncoding
+    from zrth.lean.smt_module import ModuleSMT
+
+    built = [0]
+    post_init = ModuleSMT.__post_init__
+
+    def counted(self):
+        built[0] += 1
+        post_init(self)
+
+    monkeypatch.setattr(ModuleSMT, "__post_init__", counted)
+
+    module = _input_start()
+    encoding = ModuleEncoding(module)
+    checked = check_module(module, True, "(>= e0 5)", encoding)
+    prop = property_to_bool_lean(module, "(>= s0 0)", encoding=encoding)
+
+    assert built[0] == 1
+    assert checked.pre_lean and prop

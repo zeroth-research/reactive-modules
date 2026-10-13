@@ -368,11 +368,13 @@ class InferRoute:
     # that are not a cell of this table.  `fbk-proveit` has one -- the
     # project name becomes a Lean module name.
     extra_check: Callable | None = None
-    # `precheck(module, opts, config, claim) -> object` once the module
+    # `precheck(module, opts, config, claim, smt) -> object` once the module
     # is loaded and before it is generated: a module shape the route cannot
     # express is met here rather than as a traceback out of an encoder it
     # never wanted.  What it computed reaches `run` as `prechecked`, so the
-    # module is not encoded twice to answer one question.
+    # module is not encoded twice to answer one question.  `smt` is the run's
+    # lazy `ModuleEncoding` (`InferInput.smt`), so a precheck that has to
+    # encode does it on the encoding the rest of the run uses.
     #
     # It is handed the claim because whether a route can take a `--pre` is
     # not always a question about the flag alone: `fbk-proveit` accepts one

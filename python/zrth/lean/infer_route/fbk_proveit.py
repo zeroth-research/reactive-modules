@@ -37,7 +37,7 @@ def _check_project_name(settings, opts) -> "str | None":
     )
 
 
-def _precheck(module, opts, config, claim):
+def _precheck(module, opts, config, claim, smt):
     from ..fbk_proveit import ProveItError, check_module
 
     try:
@@ -45,6 +45,7 @@ def _precheck(module, opts, config, claim):
             module,
             opts["fbk_simplify"] == "cvc5",
             claim.init_pre if claim else None,
+            smt(),
         )
     except ProveItError as e:
         # One exception type crosses the seam, so `main` catches what every
@@ -111,6 +112,7 @@ def _run(inp: InferInput) -> InferResult:
             simplify=inp.opts["fbk_simplify"] == "cvc5",
             equivalence=inp.opts["fbk_equiv"] == "lean",
             prechecked=inp.prechecked,
+            encoding=inp.smt(),
             log=inp.log,
         )
     except ProveItError as e:

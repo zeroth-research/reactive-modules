@@ -202,7 +202,10 @@ def resolve_ic3ia(spec: str | None) -> str | None:
 
 
 def check_module(
-    module, simplify: bool = True, pre_smt: str | None = None
+    module,
+    simplify: bool = True,
+    pre_smt: str | None = None,
+    encoding=None,
 ) -> NAEncoding:
     """The module's slot bodies and `--pre`; `ProveItError` if it has none.
 
@@ -221,15 +224,26 @@ def check_module(
     back and carried to the two files written from them
     (:func:`write_na_model`, :func:`equivalence_lean`).  `main.py`'s call,
     before the project is generated, is then the only encoding a whole run
-    makes: five of them on a one-wire counter before this was threaded
-    through, one now.
+    makes.
+
+    `encoding` is the run's `ModuleEncoding`: the slot bodies and the
+    `--pre` are read on its term manager.  A caller with none gets an
+    encoding of `module` of its own.
     """
+    from .smt.run import ModuleEncoding
+
+    if encoding is None:
+        encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
     try:
-        bodies = check_na_supported(ctx, simplify)
+        # The bodies first: the `--pre` is parsed on the same encoding.
+        bodies = check_na_supported(ctx, simplify, encoding)
         if not pre_smt:
             return NAEncoding(bodies)
-        return NAEncoding(bodies, pre_over_slots(ctx, _parse(module, pre_smt, "--pre"), bodies))
+        return NAEncoding(
+            bodies,
+            pre_over_slots(ctx, _parse(module, pre_smt, "--pre", encoding), bodies),
+        )
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
 
@@ -315,26 +329,26 @@ def try_omega_before_smt(cert: str) -> "tuple[str, int]":
     return _SMT_CLOSER.subn("first | omega | smt", cert)
 
 
-def _parse(module, src: str, flag: str):
+def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
-    One term manager and one `CegarPromptEnv` per call: the symbols are the
-    module's, so the two flags that come through here -- `--safety` and
-    `--pre` -- read `s0`, `e0`, `el0` as the same things the rest of the
-    package does.
+    Read through `encoding`'s `CegarPromptEnv` (an encoding of `module` of
+    the caller's own when it has none): the symbols are the module's, so the
+    two flags that come through here -- `--safety` and `--pre` -- read `s0`,
+    `e0`, `el0` as the same things the rest of the package does.
 
     cvc5's parser raises a bare `RuntimeError` naming the token it stopped
     at, with no hint of which flag the text came from; the flag is this
     function's whole reason for taking one.
     """
-    import cvc5  # lazy: keeps cvc5 off the critical path of a bare run
+    # lazy: keeps cvc5 off the critical path of a bare run
+    from .smt.run import ModuleEncoding
+    from .smt_prompt import parse_predicate
 
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
-
-    env = CegarPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=module))
+    if encoding is None:
+        encoding = ModuleEncoding(module)
     try:
-        term = parse_predicate(env, src)
+        term = parse_predicate(encoding.env, src)
     except RuntimeError as e:
         raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
     if not term.getSort().isBoolean():
@@ -342,7 +356,9 @@ def _parse(module, src: str, flag: str):
     return term
 
 
-def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
+def property_to_bool_lean(
+    module, property_smt: str, n_state: int = 0, encoding=None
+) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
@@ -353,12 +369,13 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
     the property and the transition talking about the same variables.
 
     `n_state` is ignored; the layout comes from the module's own wires.
+    `encoding` is the run's `ModuleEncoding`, which the property is read on.
     """
     from .common import LeanContext
     from .smt_to_lean import smt_to_lean_bool
     from .translate.fbk import _slot_accessors
 
-    term = _parse(module, property_smt, "--safety")
+    term = _parse(module, property_smt, "--safety", encoding)
     try:
         return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
@@ -464,6 +481,7 @@ def run(
     simplify: bool = True,
     equivalence: bool = True,
     prechecked: NAEncoding | None = None,
+    encoding=None,
     log: Callable = print,
 ) -> dict[str, str]:
     """Run the whole route and return the certificate it made, and the proof
@@ -478,6 +496,10 @@ def run(
     project.  The check is repeated here when it is left out, because `run`
     is also called on its own; `pre_smt` is what it is repeated over, so a
     direct caller gets the same refusals `main.py` gets early.
+
+    `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
+    and the `--safety` property are both read on it.  A direct caller that
+    passes none gets one `run` makes, so the two still share it.
     """
     python = python or sys.executable
     root = resolve_project(ltl_project)
@@ -486,12 +508,16 @@ def run(
     ic3ia = resolve_ic3ia(ic3ia)
     check_toolchain(python)
 
+    if encoding is None:
+        from .smt.run import ModuleEncoding
+
+        encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
     if prechecked is None:
-        prechecked = check_module(module, simplify, pre_smt)
+        prechecked = check_module(module, simplify, pre_smt, encoding)
     bodies, pre_lean = prechecked
 
-    property_lean = property_to_bool_lean(module, property_smt)
+    property_lean = property_to_bool_lean(module, property_smt, encoding=encoding)
     model = write_na_model(
         path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
