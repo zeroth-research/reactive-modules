@@ -1,10 +1,10 @@
 """Run the ranking-function pipeline over the sv_comp corpus.
 
-    python -m tests.benchmarks.svcomp                  # train + verify every benchmark
-    python -m tests.benchmarks.svcomp ndecr            # only names containing 'ndecr'
-    python -m tests.benchmarks.svcomp --lean           # also emit and kernel-check proofs
-    python -m tests.benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
-    python -m tests.benchmarks.svcomp --export out/     # write each proof as its own project
+    python -m nuterm.tests.benchmarks.svcomp                  # train + verify every benchmark
+    python -m nuterm.tests.benchmarks.svcomp ndecr            # only names containing 'ndecr'
+    python -m nuterm.tests.benchmarks.svcomp --lean           # also emit and kernel-check proofs
+    python -m nuterm.tests.benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
+    python -m nuterm.tests.benchmarks.svcomp --export out/     # write each proof as its own project
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
 function certified over the composed module, summarised as
@@ -24,7 +24,7 @@ imports, a lakefile and the toolchain file. Nothing is compiled.
 
 Faithfulness of the encodings against the C sources is a separate check::
 
-    python -m tests.benchmarks.svcomp._equiv
+    python -m nuterm.tests.benchmarks.svcomp._equiv
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def _spawn(name: str):
     result, so the benchmark sees an empty Z3 context."""
     from nuterm import _lean_check as lc
 
-    cmd = [sys.executable, "-m", "tests.benchmarks.svcomp", WORKER_FLAG, name]
+    cmd = [sys.executable, "-m", "nuterm.tests.benchmarks.svcomp", WORKER_FLAG, name]
     # the ranking nets have a handful of hidden units, so a worker gains nothing
     # from intra-op threads; left at the default each would claim several cores
     # and the pool would oversubscribe the machine several times over.

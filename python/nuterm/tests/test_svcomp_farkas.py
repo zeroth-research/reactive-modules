@@ -21,7 +21,7 @@ import z3
 from nuterm import _farkas
 from nuterm._bench import INT
 from nuterm._termination import _v_module, compose, system_of
-from tests._fixtures import candidate, loop_bench
+from nuterm.tests._fixtures import candidate, loop_bench
 from zrth import LIA, Int, Module, Var, X, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
@@ -48,7 +48,7 @@ x, y = z3.Ints("x y")
 
 def _obligation(state, update, layers, invariants=(), delta=1.0, init=None):
     """A real obligation for a compact loop spec: the module is built and walked
-    exactly as the pipeline does it (see :mod:`tests._fixtures`). ``invariants``
+    exactly as the pipeline does it (see :mod:`nuterm.tests._fixtures`). ``invariants``
     are certified as a Safety claim and assumed, so they must hold at ``init``."""
     named = [(f"inv{k}", (lambda st, p=p: p)) for k, p in enumerate(invariants)]
     return candidate(loop_bench(state, update, init=init), layers, delta, named)
