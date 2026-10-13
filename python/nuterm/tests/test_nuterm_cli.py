@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PKG_ROOT = Path(__file__).parent.parent
+PKG_ROOT = Path(__file__).resolve().parents[2]
 
 HEAD = '''
 from zrth import Module, Int, LIA, Var, X
@@ -77,5 +77,5 @@ def test_export_writes_a_project(tmp_path):
 
 
 def test_a_corpus_file_with_relative_imports_is_verified():
-    r = _nuterm(PKG_ROOT / "tests/benchmarks/svcomp/dsl/genady.py")
+    r = _nuterm(PKG_ROOT / "nuterm/tests/benchmarks/svcomp/dsl/genady.py")
     assert r.returncode == 0, r.stdout + r.stderr

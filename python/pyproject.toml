@@ -56,7 +56,7 @@ tutorials = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "../docs/examples"]
+testpaths = ["tests", "nuterm/tests", "../docs/examples"]
 addopts = "--import-mode=importlib"
 
 

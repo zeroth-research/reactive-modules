@@ -41,25 +41,25 @@ every file is verified.
 
 ## Run on the benchmarks
 
-The SV-COMP corpus is in `tests/benchmarks/svcomp/`. Run from `python/`:
+The SV-COMP corpus is in `nuterm/tests/benchmarks/svcomp/`. Run from `python/`:
 
 ```sh
-python -m tests.benchmarks.svcomp                  # train and verify all
-python -m tests.benchmarks.svcomp ndecr            # names containing 'ndecr'
-python -m tests.benchmarks.svcomp --lean           # also kernel-check proofs
-python -m tests.benchmarks.svcomp --lean --jobs 4  # four in flight
-python -m tests.benchmarks.svcomp --export out/    # each proof as its own project
+python -m nuterm.tests.benchmarks.svcomp                  # train and verify all
+python -m nuterm.tests.benchmarks.svcomp ndecr            # names containing 'ndecr'
+python -m nuterm.tests.benchmarks.svcomp --lean           # also kernel-check proofs
+python -m nuterm.tests.benchmarks.svcomp --lean --jobs 4  # four in flight
+python -m nuterm.tests.benchmarks.svcomp --export out/    # each proof as its own project
 ```
 
 Check that the encodings match the C sources:
 
 ```sh
-python -m tests.benchmarks.svcomp._equiv
+python -m nuterm.tests.benchmarks.svcomp._equiv
 ```
 
 ## Use from Python
 
-Build a `Bench`. Copy `tests/benchmarks/svcomp/dsl/_template.py` for the
+Build a `Bench`. Copy `nuterm/tests/benchmarks/svcomp/dsl/_template.py` for the
 conventions.
 
 ```python
@@ -85,5 +85,5 @@ proof = certify(composed, terminates(), witness)
 Running tests in this directory (without using `just`):
 
 ```sh
-python -m pytest tests -q
+python -m pytest nuterm/tests -q
 ```

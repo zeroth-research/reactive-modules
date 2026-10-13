@@ -14,10 +14,10 @@ import numpy as np
 import pytest
 import z3
 
-from tests._fixtures import candidate, loop_bench
+from nuterm.tests._fixtures import candidate, loop_bench
 from nuterm._lean import (_render_conjuncts, _term_str, _trivial,
                                      emit_program)
-from tests.benchmarks.svcomp import discover
+from nuterm.tests.benchmarks.svcomp import discover
 from nuterm._farkas import (Unsupported, certify, inductive, lex_decrease,
                                        read_system)
 from nuterm._termination import terminates
@@ -26,7 +26,7 @@ from zrth import Module, X
 from nuterm._property import Safety
 from zrth.sugar import ite
 
-LEAN_DIR = Path(__file__).resolve().parents[1] / "nuterm" / "lean"
+LEAN_DIR = Path(__file__).resolve().parents[1] / "lean"
 
 
 def _decrement_obligation(invariants=()):
