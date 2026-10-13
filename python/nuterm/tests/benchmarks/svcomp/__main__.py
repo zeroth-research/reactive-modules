@@ -24,7 +24,7 @@ imports, a lakefile and the toolchain file. Nothing is compiled.
 
 Faithfulness of the encodings against the C sources is a separate check::
 
-    python -m nuterm.tests.benchmarks.svcomp._equiv
+    python -m nuterm.tests.benchmarks.svcomp._equiv prog.c bench.py
 """
 
 from __future__ import annotations
