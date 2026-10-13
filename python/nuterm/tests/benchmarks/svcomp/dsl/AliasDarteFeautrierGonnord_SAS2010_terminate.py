@@ -1,0 +1,60 @@
+"""AliasDarteFeautrierGonnord-SAS2010-terminate.
+
+    int i, j, k, ell;
+    i = __VERIFIER_nondet_int();
+    j = __VERIFIER_nondet_int();
+    k = __VERIFIER_nondet_int();
+    while (i <= 100 && j <= k) {
+        ell = i;
+        i = j;
+        j = ell + 1;
+        k = k - 1;
+    }
+
+`ell` is a per-iteration temporary (plain local, not a ctrl var).
+
+Original header comment:
+
+    Program used in the experimental evaluation of the following paper.
+    2010SAS - Alias,Darte,Feautrier,Gonnord, Multi-dimensional Rankings, Program Termination, and Complexity Bounds of Flowchart Programs
+
+    Date: 2014
+    Author: Caterina Urban
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, X, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self, i0, j0, k0):
+        return X(i0), X(j0), X(k0)
+
+    def update(self, i, j, k, _i0, _j0, _k0):
+        guard = (i <= 100) & (j <= k)
+        wi, wj, wk = i, j, k
+        ell = wi          # ell = i    (old i)
+        wi = wj           # i = j
+        wj = ell + 1      # j = ell + 1
+        wk = wk - 1       # k = k - 1
+        return ite(guard, wi, i), ite(guard, wj, j), ite(guard, wk, k)
+
+
+def _build():
+    i, j, k = var(), var(), var()
+    i0, j0, k0 = var(), var(), var()
+    prog = Program(theory=LIA, ctrl=(i, j, k), extl=(i0, j0, k0))
+    return prog, {"i": i, "j": j, "k": k}, {"i0": i0, "j0": j0, "k0": k0}
+
+
+BENCH = Bench(
+    name="AliasDarteFeautrierGonnord-SAS2010-terminate",
+    source="AliasDarteFeautrierGonnord-SAS2010-terminate.c",
+    state=("i", "j", "k"),
+    inputs=("i0", "j0", "k0"),
+    build=_build,
+)

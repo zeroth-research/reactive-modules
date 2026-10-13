@@ -1,0 +1,55 @@
+"""GopanReps-CAV2006-Fig1a.
+
+    int x, y;
+    x = 0;
+    y = 0;
+    while (y >= 0) {
+        if (x <= 50) { y = y + 1; }
+        else         { y = y - 1; }
+        x = x + 1;
+    }
+
+No nondet inputs: both variables start from constants.
+
+Original header comment:
+
+    Program from Fig.1a of
+    2006CAV - Gopan,Reps - Lookahead Widening
+
+    Date: 2014-06-22
+    Author: Caterina Urban, Matthias Heizmann
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self):
+        return 0, 0                             # x = 0, y = 0
+
+    def update(self, x, y):
+        guard = y >= 0
+        wx, wy = x, y
+        wy = ite(wx <= 50, wy + 1, wy - 1)      # if (x<=50) y+1 else y-1
+        wx = wx + 1                             # x = x + 1
+        return ite(guard, wx, x), ite(guard, wy, y)
+
+
+def _build():
+    x, y = var(), var()
+    prog = Program(theory=LIA, ctrl=(x, y), extl=())
+    return prog, {"x": x, "y": y}, {}
+
+
+BENCH = Bench(
+    name="GopanReps-CAV2006-Fig1a",
+    source="GopanReps-CAV2006-Fig1a.c",
+    state=("x", "y"),
+    inputs=(),
+    build=_build,
+)

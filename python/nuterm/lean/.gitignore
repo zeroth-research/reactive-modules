@@ -1,0 +1,8 @@
+# The repo-root .gitignore ignores *.lean (generated scratch); the vendored
+# substrate here is source, so re-include it. Emitted proofs land under
+# proofs/ and stay ignored.
+!*.lean
+proofs/
+
+# Lake build artifacts
+.lake/

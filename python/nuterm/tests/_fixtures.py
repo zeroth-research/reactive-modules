@@ -1,0 +1,89 @@
+"""Small synthetic benchmarks, for tests that exercise the real pipeline.
+
+A test that hands the verifier hand-written z3 terms cannot exercise anything the
+verifier reads off the *module*: the guard's shape, the node view, the ranking
+wire. :func:`loop_bench` builds a real module from a compact spec, so a
+test goes through :func:`candidate`, the production path from a bench to a
+``certify`` call, rather than a parallel one.
+
+    bench = loop_bench(("x",), lambda x: ite(x > 0, x - 1, x))
+    c = candidate(bench, layers)
+    proof = certify(c.system, c.claim, c.witness)
+"""
+from __future__ import annotations
+
+import inspect
+from dataclasses import dataclass
+
+import z3
+
+from nuterm._bench import Bench, INT
+from nuterm._farkas import certify, inductive
+from nuterm._invariants import as_predicates
+from nuterm._property import Safety
+from nuterm._termination import compose, system_of, terminates
+from zrth import LIA, Var, sugar
+
+
+@dataclass
+class Cand:
+    """A composed system, the claim and the witness: what a test hands ``certify``."""
+    system: object
+    claim: object
+    witness: object
+
+
+def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
+    """``bench``'s program with ``layers`` composed in as a rank, under
+    ``terminates()`` and ``decrease``: the production path from a bench to a
+    ``certify`` call. ``invariants`` are ``(label, state_map -> BoolRef)`` pairs as
+    :func:`._invariants.infer_invariants` returns them; they are certified as one
+    Safety claim and assumed, as the client does."""
+    system = system_of(bench)
+    if invariants:
+        preds = as_predicates(invariants)
+        proof = certify(system, Safety(lambda W, S: z3.And(*[p(W, S) for p in preds])),
+                        inductive(preds))
+        assert proof.verified, proof.status
+        system = system.knowing(proof)
+    composed, witness = compose(system, layers, delta)
+    return Cand(composed, terminates(), witness)
+
+
+def _of_arity(spec, params):
+    """``spec`` as a block method of ``params`` variables.
+
+    :class:`zrth.sugar.Module` binds each variable to its own parameter and checks
+    the count, which a fixture whose width is the caller's choice cannot write out
+    — so the wrapper declares the signature it is being checked against, and the
+    spec still sees the state as one value or one tuple."""
+    def block(self, *args):
+        return spec(args[0] if len(args) == 1 else args)
+
+    block.__signature__ = inspect.Signature(
+        [inspect.Parameter(n, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+         for n in ("self",) + tuple(params)])
+    return block
+
+
+def loop_bench(state, update, *, init=None, precondition=None, name="test"):
+    """A :class:`Bench` for a closed loop over ``state``.
+
+    ``update`` takes the latched state variables, the single one if ``state`` has
+    one entry and otherwise a tuple, and returns their next values, exactly as a DSL
+    ``update`` block does. ``init`` does the same for tick 0 and defaults to zeros,
+    which is all a test needs unless it exercises ``initiation``."""
+    names = tuple(state)
+    zeros = tuple(0 for _ in names)
+
+    def build():
+        state_vars = {n: Var(INT) for n in names}
+        Program = type("Program", (sugar.Module,), {
+            "init": _of_arity(lambda _: (init or (lambda: zeros))(), ()),
+            "update": _of_arity(update, names),
+        })
+        prog = Program(ctrl=tuple(state_vars[n] for n in names), theory=LIA)
+        return prog, state_vars, {}
+
+    return Bench(name=name, source="", state=names, inputs=(), build=build,
+                 precondition=precondition)

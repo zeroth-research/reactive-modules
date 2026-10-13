@@ -1,0 +1,23 @@
+name = "termination"
+defaultTargets = ["Matrix", "Farkas", "Coverage", "Net", "Termination", "LTL", "ReactiveModule"]
+
+[[lean_lib]]
+name = "Matrix"
+
+[[lean_lib]]
+name = "Farkas"
+
+[[lean_lib]]
+name = "Coverage"
+
+[[lean_lib]]
+name = "Net"
+
+[[lean_lib]]
+name = "Termination"
+
+[[lean_lib]]
+name = "LTL"
+
+[[lean_lib]]
+name = "ReactiveModule"

@@ -1,0 +1,53 @@
+"""BrockschmidtCookFuhs-CAV2013-Introduction: constant init for y.
+
+    int x, y;
+    x = __VERIFIER_nondet_int();
+    y = 1;
+    while (x > 0) {
+        x = x - y;
+        y = y + 1;
+    }
+
+Original header comment:
+
+    Program from the introduction of
+    2013CAV - Brockschmidt,Cook,Fuhs - Better termination proving through cooperation -draft
+
+    Date: 12.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, X, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self, x0):
+        return X(x0), 1                        # x nondet, y = 1
+
+    def update(self, x, y, _x0):
+        guard = x > 0
+        wx, wy = x, y
+        wx = wx - wy       # x = x - y   (old y)
+        wy = wy + 1        # y = y + 1
+        return ite(guard, wx, x), ite(guard, wy, y)
+
+
+def _build():
+    x, y = var(), var()
+    x0 = var()
+    prog = Program(theory=LIA, ctrl=(x, y), extl=(x0,))
+    return prog, {"x": x, "y": y}, {"x0": x0}
+
+
+BENCH = Bench(
+    name="BrockschmidtCookFuhs-CAV2013-Introduction",
+    source="BrockschmidtCookFuhs-CAV2013-Introduction.c",
+    state=("x", "y"),
+    inputs=("x0",),
+    build=_build,
+)

@@ -1,0 +1,50 @@
+"""PodelskiRybalchenko-VMCAI2004-Ex2: single variable, affine (negative) update.
+
+    int x;
+    x = __VERIFIER_nondet_int();
+    while (x >= 0) {
+        x = -2*x + 10;
+    }
+
+Original header comment:
+
+    Program from Example 2 of
+    2004VMCAI - Podelski,Rybalchenko - A complete method for the synthesis of linear ranking functions
+
+    Date: 18.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, X, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self, x0):  # single input, unwrapped
+        return X(x0)                          # x nondet
+
+    def update(self, x, _x0):  # single ctrl, unwrapped
+        guard = x >= 0
+        wx = x
+        wx = -2 * wx + 10      # x = -2*x + 10
+        return ite(guard, wx, x)
+
+
+def _build():
+    x = var()
+    x0 = var()
+    prog = Program(theory=LIA, ctrl=(x,), extl=(x0,))
+    return prog, {"x": x}, {"x0": x0}
+
+
+BENCH = Bench(
+    name="PodelskiRybalchenko-VMCAI2004-Ex2",
+    source="PodelskiRybalchenko-VMCAI2004-Ex2.c",
+    state=("x",),
+    inputs=("x0",),
+    build=_build,
+)

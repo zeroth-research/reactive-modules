@@ -1,0 +1,73 @@
+"""ChenFlurMukhopadhyay-SAS2012-Ex2.06: per-iteration temp `oldx`.
+
+    int x, y, oldx;
+    x = __VERIFIER_nondet_int();
+    y = __VERIFIER_nondet_int();
+    while (4*x + y > 0) {
+        oldx = x;
+        x = -2*oldx + 4*y;
+        y = 4*oldx;
+    }
+
+Notes:
+  - `oldx` is a per-iteration temporary (assigned from x, used only that
+    iteration), a plain local, NOT ctrl.
+  - NONTERMINATING for some inputs (e.g. x=1, y=1), so expect many
+    inconclusive trials; decisive trials must agree.
+
+Original header comment:
+
+    Date: 2014-06-08
+    Author: leike@informatik.uni-freiburg.de
+
+
+    This is Example 2.6 from the test suit used in
+
+    Termination Proofs for Linear Simple Loops.
+    Hong Yi Chen, Shaked Flur, and Supratik Mukhopadhyay.
+    SAS 2012.
+
+    The authors of the paper claim that this program is terminating, however
+    the program is nonterminating (e.g., initial state x=1 and y=1).
+
+    The test suite is available at the following URL.
+    https://tigerbytes2.lsu.edu/users/hchen11/lsl/LSL_benchmark.txt
+
+    Comment: terminating, non-linear
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, X, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self, x0, y0):
+        return X(x0), X(y0)                  # x, y both nondet
+
+    def update(self, x, y, _x0, _y0):
+        guard = 4 * x + y > 0
+        wx, wy = x, y
+        oldx = wx              # oldx = x        (old x)
+        wx = -2 * oldx + 4 * wy   # x = -2*oldx + 4*y
+        wy = 4 * oldx          # y = 4*oldx
+        return ite(guard, wx, x), ite(guard, wy, y)
+
+
+def _build():
+    x, y = var(), var()
+    x0, y0 = var(), var()
+    prog = Program(theory=LIA, ctrl=(x, y), extl=(x0, y0))
+    return prog, {"x": x, "y": y}, {"x0": x0, "y0": y0}
+
+
+BENCH = Bench(
+    name="ChenFlurMukhopadhyay-SAS2012-Ex2.06",
+    source="ChenFlurMukhopadhyay-SAS2012-Ex2.06.c",
+    state=("x", "y"),
+    inputs=("x0", "y0"),
+    build=_build,
+)

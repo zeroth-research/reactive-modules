@@ -1,0 +1,56 @@
+"""ChenFlurMukhopadhyay-SAS2012-Fig1.
+
+    int x, y, z;
+    x = __VERIFIER_nondet_int();
+    y = __VERIFIER_nondet_int();
+    z = __VERIFIER_nondet_int();
+    while (x > 0) {
+        x = x + y;
+        y = z;
+        z = -z - 1;
+    }
+
+Original header comment:
+
+    Program from Fig.1 of
+    2012SAS - Chen,Flur,Mukhopadhyay - Termination Proofs for Linear Simple Loops
+
+    Date: 2013-12-18
+    Author: heizmann@informatik.uni-freiburg.de
+"""
+
+from __future__ import annotations
+
+from zrth import LIA
+from zrth.sugar import Module, X, ite
+
+from .._bench import Bench, var
+
+
+class Program(Module):
+    def init(self, x0, y0, z0):
+        return X(x0), X(y0), X(z0)        # x, y, z all nondet
+
+    def update(self, x, y, z, _x0, _y0, _z0):
+        guard = x > 0
+        wx, wy, wz = x, y, z
+        wx = wx + wy       # x = x + y   (old y)
+        wy = wz            # y = z       (old z)
+        wz = -1 * wz - 1   # z = -z - 1  (old z)
+        return ite(guard, wx, x), ite(guard, wy, y), ite(guard, wz, z)
+
+
+def _build():
+    x, y, z = var(), var(), var()
+    x0, y0, z0 = var(), var(), var()
+    prog = Program(theory=LIA, ctrl=(x, y, z), extl=(x0, y0, z0))
+    return prog, {"x": x, "y": y, "z": z}, {"x0": x0, "y0": y0, "z0": z0}
+
+
+BENCH = Bench(
+    name="ChenFlurMukhopadhyay-SAS2012-Fig1",
+    source="ChenFlurMukhopadhyay-SAS2012-Fig1.c",
+    state=("x", "y", "z"),
+    inputs=("x0", "y0", "z0"),
+    build=_build,
+)
