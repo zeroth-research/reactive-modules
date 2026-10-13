@@ -113,7 +113,7 @@ def test_sygus_without_congruences_cannot_state_it():
 
 def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: `proved` and SMT-LIB, which is what
-    `infer_route.FIXABLE` and `_resume_inv`'s filter ask for."""
+    `infer_route.FIXABLE` and `InferInput.resumable_inv`'s filter ask for."""
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
@@ -557,8 +557,8 @@ def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
         prompt_inv_ranking(env, chat, "source", "(= s0 0)", "", None)
 
 def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
-    """`_ruled_out` filters on `no_solution`, so a timed-out search stays out."""
-    from zrth.lean.infer_route import InferInput, ProjectHandle, _ruled_out
+    """`InferInput.ruled_out` filters on `no_solution`, so a timed-out search stays out."""
+    from zrth.lean.infer_route import InferInput, ProjectHandle
 
     store = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 0)")
     store.note("proved empty\n", status="no_solution", what="x")
@@ -573,23 +573,21 @@ def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
         resumes=frozenset({"note"}),
         artifacts=store,
     )
-    known = _ruled_out(
-        InferInput(
-            project=handle,
-            module=None,
-            claim=Claim(prp="(= s0 0)", kind="buchi"),
-            given=Certificate(),
-            opts={},
-            log=lambda *_: None,
-        )
-    )
+    known = InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 0)", kind="buchi"),
+        given=Certificate(),
+        opts={},
+        log=lambda *_: None,
+    ).ruled_out()
     assert known == ("proved empty\n",)
 
 
 def test_a_note_about_another_property_is_not_carried_over(tmp_path):
     """The store's staleness rule is what stops the handoff being a trap: a
     shape refuted for one property says nothing about another."""
-    from zrth.lean.infer_route import InferInput, ProjectHandle, _ruled_out
+    from zrth.lean.infer_route import InferInput, ProjectHandle
 
     store = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 0)")
     store.note("proved empty\n", status="no_solution", what="x")
@@ -604,16 +602,14 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
         resumes=frozenset({"note"}),
         artifacts=later,
     )
-    assert _ruled_out(
-        InferInput(
-            project=handle,
-            module=None,
-            claim=Claim(prp="(= s0 7)", kind="buchi"),
-            given=Certificate(),
-            opts={},
-            log=lambda *_: None,
-        )
-    ) == ()
+    assert InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 7)", kind="buchi"),
+        given=Certificate(),
+        opts={},
+        log=lambda *_: None,
+    ).ruled_out() == ()
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -719,14 +715,9 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
 
     `too_weak` is the case that matters -- inductive and not yet implying
     the property is exactly what "find the missing conjuncts" wants, and it
-    is what `_resume_inv` (which takes an invariant as *given*) refuses.
+    is what `resumable_inv()` (which takes an invariant as *given*) refuses.
     """
-    from zrth.lean.infer_route import (
-        InferInput,
-        ProjectHandle,
-        _resume_inv_to_strengthen,
-        _take_inv,
-    )
+    from zrth.lean.infer_route import InferInput, ProjectHandle
     from zrth.lean.magic.linear import TA2MagicLinear
 
     store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
@@ -750,7 +741,7 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
         opts={},
         log=lambda *_: None,
     )
-    inp = _take_inv(inp, _resume_inv_to_strengthen(inp), "adding to it")
+    inp = inp.taking_inv(inp.resumable_inv(strengthen=True), "adding to it")
     assert inp.given.inv == "(>= s0 0)"
 
     out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(
@@ -760,9 +751,9 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
 
 
 def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
-    """The rule `_resume_inv` already states, on the other resume path: what
+    """The rule `resumable_inv` already states, on the other resume path: what
     the user passed wins, or two identical command lines mean two things."""
-    from zrth.lean.infer_route import InferInput, ProjectHandle, _resume_inv_to_strengthen
+    from zrth.lean.infer_route import InferInput, ProjectHandle
 
     store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
     store.put("inv", "(>= s0 0)", status="proved", language="smt", what="x")
@@ -778,7 +769,7 @@ def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
         opts={},
         log=lambda *_: None,
     )
-    assert _resume_inv_to_strengthen(inp) is None
+    assert inp.resumable_inv(strengthen=True) is None
 
 
 # ══════════════════════════════════════════════════════════════════════════

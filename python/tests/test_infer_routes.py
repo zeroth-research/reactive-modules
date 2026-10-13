@@ -605,25 +605,23 @@ def test_artifacts_defaults_to_use():
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
-    """`_resume_inv`'s answer for a store that already holds artifacts.
+    """`InferInput.resumable_inv`'s answer for a store that already holds artifacts.
 
     The store does the role/language/status filtering (it is the half that
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
     from zrth.lean.certificate import Certificate, Claim
-    from zrth.lean.infer_route import InferInput, _resume_inv
+    from zrth.lean.infer_route import InferInput
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
-    return _resume_inv(
-        InferInput(
-            project=handle,
-            module=None,
-            claim=Claim(prp="(= s0 0)", kind=kind),
-            given=Certificate(inv=supplied_inv),
-            opts={},
-        )
-    )
+    return InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 0)", kind=kind),
+        given=Certificate(inv=supplied_inv),
+        opts={},
+    ).resumable_inv()
 
 
 def test_an_inductive_invariant_is_taken_as_given(tmp_path):
