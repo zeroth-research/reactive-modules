@@ -54,7 +54,7 @@ python -m nuterm.tests.benchmarks.svcomp --export out/    # each proof as its ow
 Check that the encodings match the C sources:
 
 ```sh
-python -m nuterm.tests.benchmarks.svcomp._equiv
+python -m nuterm.tests.benchmarks.svcomp._equiv prog.c bench.py
 ```
 
 ## Use from Python
