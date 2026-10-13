@@ -71,7 +71,7 @@ def _run_plain(benches) -> int:
 
 def certify_one(bench):
     """Train, verify, emit and kernel-check one benchmark in this process."""
-    from . import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     t0 = time.perf_counter()
     try:
@@ -92,7 +92,7 @@ def certify_one(bench):
 def _spawn(name: str):
     """Run ``certify_one`` for ``name`` in a fresh process and read back its
     result, so the benchmark sees an empty Z3 context."""
-    from . import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     cmd = [sys.executable, "-m", "benchmarks.svcomp", WORKER_FLAG, name]
     if RANKS != 1:
@@ -114,7 +114,7 @@ def _spawn(name: str):
 
 
 def _run_lean(benches, jobs: int) -> int:
-    from . import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     if not lc.toolchain_available():
         print("no `lake` on PATH: install the Lean toolchain to use --lean")
@@ -156,7 +156,7 @@ def _run_lean(benches, jobs: int) -> int:
 def _run_export(benches, out_dir: Path) -> int:
     """Train and verify each benchmark, then write its proof as a standalone
     project under ``out_dir``. Nothing is compiled here."""
-    from . import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     written = 0
     for bench in benches:

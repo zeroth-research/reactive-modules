@@ -27,9 +27,9 @@ import z3
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench, INT, var  # noqa: F401
-from ._farkas import System, certify, inductive, lex_decrease, read_system
-from ._invariants import as_predicates, infer_invariants
-from ._property import Liveness, Safety
+from nuterm._farkas import System, certify, inductive, lex_decrease, read_system
+from nuterm._invariants import as_predicates, infer_invariants
+from nuterm._property import Liveness, Safety
 from zrth import LIA, Module, Term, X
 from zrth.expr import collecting
 from zrth.sugar import expr, relu

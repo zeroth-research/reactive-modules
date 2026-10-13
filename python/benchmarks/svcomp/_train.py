@@ -22,7 +22,7 @@ from torch import nn
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
-from ._farkas import certify, resolve_domain
+from nuterm._farkas import certify, resolve_domain
 from ._equiv import run_block
 from ._termination import compose_lex, prove_invariants, system_of, terminates
 

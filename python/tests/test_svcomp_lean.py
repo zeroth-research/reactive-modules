@@ -1,4 +1,4 @@
-"""Regression tests for the Lean emitter (``benchmarks.svcomp._lean``).
+"""Regression tests for the Lean emitter (``nuterm._lean``).
 
 The structural tests run everywhere. The end-to-end test compiles an emitted
 proof with ``lake`` and is skipped when no toolchain is present, so it protects
@@ -15,18 +15,18 @@ import pytest
 import z3
 
 from tests._fixtures import candidate, loop_bench
-from benchmarks.svcomp._lean import (_render_conjuncts, _term_str, _trivial,
+from nuterm._lean import (_render_conjuncts, _term_str, _trivial,
                                      emit_program)
 from benchmarks.svcomp import discover
-from benchmarks.svcomp._farkas import (Unsupported, certify, inductive, lex_decrease,
+from nuterm._farkas import (Unsupported, certify, inductive, lex_decrease,
                                        read_system)
 from benchmarks.svcomp._termination import terminates
 from benchmarks.svcomp._termination import _v_module, compose, system_of
 from zrth import Module, X
-from benchmarks.svcomp._property import Safety
+from nuterm._property import Safety
 from zrth.sugar import ite
 
-LEAN_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "svcomp" / "lean"
+LEAN_DIR = Path(__file__).resolve().parents[1] / "nuterm" / "lean"
 
 
 def _decrement_obligation(invariants=()):
@@ -337,7 +337,7 @@ def test_an_exported_project_carries_everything_it_imports():
     of every substrate library the proof imports, a lakefile naming them, and the
     toolchain file."""
     import tempfile
-    from benchmarks.svcomp import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     system, res = _decrement_obligation()
     with tempfile.TemporaryDirectory() as tmp:
@@ -357,7 +357,7 @@ def test_an_exported_project_carries_everything_it_imports():
 def test_an_exported_project_builds_on_its_own(tmp_path):
     """End-to-end: the exported project compiles from scratch, outside this
     package, with nothing but the toolchain."""
-    from benchmarks.svcomp import _lean_check as lc
+    from nuterm import _lean_check as lc
 
     system, res = _decrement_obligation()
     out = lc.export_project("decrement", system, res, tmp_path)
@@ -561,9 +561,9 @@ def test_a_rule_per_witness_is_the_whole_seam():
     """What the proof layer knows about a witness is one rule, and the registry
     is where a witness is paired with it: each rule names the claim kind it
     concludes, and the witness for it refuses every other kind itself."""
-    from benchmarks.svcomp._lean import RULES
-    from benchmarks.svcomp._farkas import Inductive, LexDecrease
-    from benchmarks.svcomp._property import Liveness, Safety
+    from nuterm._lean import RULES
+    from nuterm._farkas import Inductive, LexDecrease
+    from nuterm._property import Liveness, Safety
 
     assert {Inductive, LexDecrease} <= set(RULES)
     assert RULES[Inductive].discharges is Safety
