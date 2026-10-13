@@ -76,22 +76,12 @@ def _name(path: Path) -> str:
     return str(path.relative_to(LEAN))
 
 
-# Open: review item RT-9.
-_OPEN = {MAGIC / "cegar.py": "cegar builds its LLM client with ai's private helpers"}
-
-
-def _cases(paths):
-    return [pytest.param(p, id=_name(p), marks=(
-        [pytest.mark.xfail(strict=True, reason=_OPEN[p])] if p in _OPEN else []))
-        for p in paths]
-
-
 def test_the_routes_are_found():
     assert {r.rsplit(".", 1)[1] for r in ROUTES} >= {
         "ai", "cegar", "houdini", "learn", "linear", "sygus", "vampire"}
 
 
-@pytest.mark.parametrize("path", _cases(sorted(MAGIC.glob("*.py"))))
+@pytest.mark.parametrize("path", sorted(MAGIC.glob("*.py")), ids=_name)
 def test_no_route_imports_another(path):
     me = f"zrth.lean.magic.{path.stem}"
     bad = []
@@ -102,7 +92,7 @@ def test_no_route_imports_another(path):
     assert not bad, "\n".join(bad)
 
 
-@pytest.mark.parametrize("path", _cases(SMT_LAYER))
+@pytest.mark.parametrize("path", SMT_LAYER, ids=_name)
 def test_no_private_name_crosses_a_module(path):
     bad = []
     imported = set()

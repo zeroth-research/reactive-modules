@@ -139,7 +139,7 @@ def _recording_ai(monkeypatch):
             return "INVARIANT: fun s => True\nRANKING: fun s => 0"
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", fake_client)
+    monkeypatch.setattr(ai, "make_client", fake_client)
     return ai.TA2MagicAI(COUNTER_SOURCE), seen
 
 
@@ -221,7 +221,7 @@ def test_a_candidate_lean_cannot_elaborate_is_asked_again(monkeypatch):
             return next(replies)
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", fake_client)
+    monkeypatch.setattr(ai, "make_client", fake_client)
     magic = ai.TA2MagicAI(COUNTER_SOURCE)
     out = magic.infer(Claim(prp="x == 0"))
 
@@ -245,7 +245,7 @@ def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
             return "INVARIANT: \nRANKING: "
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", fake_client)
+    monkeypatch.setattr(ai, "make_client", fake_client)
     assert ai.TA2MagicAI(COUNTER_SOURCE).infer(Claim(prp="x == 0")) is None
 
 

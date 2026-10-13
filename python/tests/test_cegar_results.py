@@ -152,7 +152,7 @@ def _infer(monkeypatch, claim, replies, given=Certificate()):
         prompts.append((system, user))
         return pending.pop(0)
 
-    monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
     magic = TA2MagicCEGAR("", _counter())
     return magic.infer(claim, given), prompts
 
@@ -204,7 +204,7 @@ def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
         prompts.append(user)
         return pending.pop(0)
 
-    monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
     cert = TA2MagicCEGAR("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
     assert len(prompts) == 1, "the candidate should have been accepted as proposed"
@@ -250,7 +250,7 @@ def _always_wrong(monkeypatch, clock, step):
         clock[0] += step
         return "INVARIANT: (>= s0 0)"
 
-    monkeypatch.setattr(cegar, "_make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
     monkeypatch.setattr(cegar.time, "monotonic", lambda: clock[0])
     return prompts
 

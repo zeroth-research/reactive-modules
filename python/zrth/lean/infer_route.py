@@ -677,7 +677,7 @@ ROUTES: tuple[InferRoute, ...] = (
         # assumption the candidate may lean on -- and both prompts already
         # carry it: `GENERATE_SYSTEM` states the two obligations with
         # `init_pre` and `update_pre` in them, `VERIFY_SYSTEM` tells the
-        # auditor to assume them, and `_describe_preconditions` writes the
+        # auditor to assume them, and `llm.describe_preconditions` writes the
         # predicates themselves into each user message. `Certificate/Data.lean`
         # carries them whatever the route, so `lake build` checks the reply
         # under the same assumption the reply was asked for under.

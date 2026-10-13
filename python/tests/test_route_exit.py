@@ -40,8 +40,8 @@ def client(base_url, model):
                 "RANKING: fun s => (if (s 0 0) = 0 then 0 else 10 - (s 0 0)).toNat")
     return chat
 
-ai._make_client = client
-cegar._make_client = client
+ai.make_client = client
+cegar.make_client = client
 
 for argv in json.loads(sys.argv[1]):
     sys.argv = ["verith", *argv]

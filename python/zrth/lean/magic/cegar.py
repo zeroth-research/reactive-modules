@@ -39,7 +39,7 @@ from zrth import Module
 from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
-from .ai import _make_client, _describe_preconditions
+from .llm import DEFAULT_MODEL, describe_preconditions, make_client
 from ..smt.obligations import (
     Frame,
     init_inv,
@@ -86,7 +86,7 @@ class TA2MagicCEGAR(TA2Magic):
         source: str,
         module: Module,
         *,
-        model: str = "gpt-4",
+        model: str = DEFAULT_MODEL,
         max_attempts: int = 5,
         base_url: str | None = None,
         known: tuple[str, ...] = (),
@@ -118,7 +118,7 @@ class TA2MagicCEGAR(TA2Magic):
         # already refute a bad candidate in milliseconds, and what this saves
         # is the attempt being spent on a shape a solver has ruled out.
         self.known = tuple(known)
-        self._chat = _make_client(base_url, model)
+        self._chat = make_client(base_url, model)
 
     # --- driver ---------------------------------------------------------
 
@@ -137,7 +137,7 @@ class TA2MagicCEGAR(TA2Magic):
         init_pre_term = parsed(claim.init_pre, "--pre")
         update_pre_term = parsed(claim.update_pre, "--pre")
 
-        preconds = _describe_preconditions(claim)
+        preconds = describe_preconditions(claim)
         feedback: str | None = None
 
         safety = claim.is_safety

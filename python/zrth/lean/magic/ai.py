@@ -1,26 +1,14 @@
 """AI-based inference of invariants and ranking functions.
 
-For Claude API: pip install zrth[ai]
-For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
-(OpenRouter, ...): pip install zrth[ai-local]
+The model is reached through :mod:`.llm`.
 """
 
-import os
 import re
 
 from ..certificate import Claim, LeanAnswer
 from ..common import Refused
 from . import TA2Magic
-
-try:
-    import anthropic
-except ImportError:
-    anthropic = None
-
-try:
-    import openai
-except ImportError:
-    openai = None
+from .llm import DEFAULT_MODEL, describe_preconditions, make_client
 
 GENERATE_SYSTEM = """\
 You are a formal verification expert. Given Lean4 source code of a reactive module \
@@ -97,14 +85,6 @@ Reply with EXACTLY one of:
 Put NO OTHER TEXT in the response.
 """
 
-
-# Room for the answer *after* the reasoning. The generate prompt asks for two
-# lines, but a model reasons in prose first and the lines come last, so a cap
-# sized for the answer cuts the reply before it: at 1024 tokens 56 of the
-# bench matrix's `--infer ai` cells ended mid-sentence, some inside
-# `INVARIANT: fun s => s`, and failed to parse. Kept below the size at which
-# the Anthropic SDK insists on streaming.
-MAX_TOKENS = 8192
 
 def _state_type_line(source: str) -> str:
     """The state type, named outright, as a line of the user message.
@@ -185,78 +165,6 @@ def _absent_names(*values: str) -> str:
     return " ".join(said)
 
 
-def _describe_preconditions(claim: Claim) -> str:
-    parts = []
-    if claim.init_pre is not None:
-        parts.append(f"Precondition on init inputs (init_pre): {claim.init_pre}")
-    if claim.update_pre is not None:
-        parts.append(f"Precondition on update inputs (update_pre): {claim.update_pre}")
-    if not parts:
-        return "No preconditions on inputs."
-    return "\n".join(parts)
-
-
-def _make_client(base_url: str | None, model: str):
-    """Return a chat callable: (system, user) -> str."""
-    if base_url is not None:
-        if openai is None:
-            raise ImportError(
-                "openai package is required for local LLM support. "
-                "Install with: pip install zrth[ai-local]"
-            )
-        # Hosted OpenAI-compatible providers (e.g. OpenRouter) need a real
-        # key; local servers (Ollama, vLLM) accept any placeholder.
-        api_key = (
-            os.environ.get("OPENROUTER_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or "unused"
-        )
-        client = openai.OpenAI(base_url=base_url, api_key=api_key)
-
-        def chat(system: str, user: str) -> str:
-            resp = client.chat.completions.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            )
-            return resp.choices[0].message.content
-
-        return chat
-    else:
-        if anthropic is None:
-            raise ImportError(
-                "anthropic package is required for TA2MagicAI. "
-                "Install with: pip install zrth[ai]"
-            )
-        client = anthropic.Anthropic()
-
-        def chat(system: str, user: str) -> str:
-            # Checked here rather than around the constructor: a CEGAR run
-            # with the invariant fixed builds a client and never calls it,
-            # and that run needs no key. Without a key the request itself
-            # fails with a TypeError about header resolution, which says
-            # nothing about the flag that needs one.
-            if not os.environ.get("ANTHROPIC_API_KEY"):
-                raise Refused(
-                    "ANTHROPIC_API_KEY is not set, and the default model is "
-                    "reached through the Anthropic API. Set it, or point "
-                    "--base-url at an OpenAI-compatible server (a local one "
-                    "needs no key)."
-                )
-            resp = client.messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            return resp.content[0].text
-
-        return chat
-
-
 class TA2MagicAI(TA2Magic):
     """Infers invariants and ranking functions using an LLM.
 
@@ -268,32 +176,34 @@ class TA2MagicAI(TA2Magic):
     def __init__(
         self,
         source: str,
-        model: str = "claude-sonnet-4-6",
+        model: str = DEFAULT_MODEL,
         max_attempts: int = 5,
         base_url: str | None = None,
+        log=print,
     ):
         super().__init__(source)
         self.max_attempts = max_attempts
-        self._chat = _make_client(base_url, model)
+        self.log = log
+        self._chat = make_client(base_url, model)
 
     def infer(self, claim: Claim) -> LeanAnswer | None:
         """The certificate of `claim`, as Lean the model wrote and the
         auditor accepted; `None` when that reply holds neither predicate."""
         feedback = None
         for attempt in range(self.max_attempts):
-            print(f"Generating invariant and ranking function (attempt {attempt})")
+            self.log(f"Generating invariant and ranking function (attempt {attempt})")
             inv, ranking = self._generate(claim, feedback)
-            print("Candidates:")
-            print(f"  inv: {inv}")
-            print(f"  ranking: {ranking}")
+            self.log("Candidates:")
+            self.log(f"  inv: {inv}")
+            self.log(f"  ranking: {ranking}")
             missing = _absent_names(inv, ranking)
             if missing:
                 # Lean would reject this before any obligation is stated, so
                 # there is nothing for `_verify` to be right or wrong about.
-                print(f"  not Lean: {missing}")
+                self.log(f"  not Lean: {missing}")
                 feedback = f"WRONG: that does not elaborate. {missing}"
                 continue
-            print("Cross-checking...")
+            self.log("Cross-checking...")
             ok, feedback = self._verify(claim, inv, ranking)
             if ok:
                 return LeanAnswer(inv, ranking) if inv or ranking else None
@@ -308,7 +218,7 @@ class TA2MagicAI(TA2Magic):
         )
 
     def _generate(self, claim: Claim, feedback: str | None) -> tuple[str, str]:
-        preconds = _describe_preconditions(claim)
+        preconds = describe_preconditions(claim)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"
@@ -327,7 +237,7 @@ class TA2MagicAI(TA2Magic):
     def _verify(
         self, claim: Claim, inv: str, ranking: str
     ) -> tuple[bool, str | None]:
-        preconds = _describe_preconditions(claim)
+        preconds = describe_preconditions(claim)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"

@@ -15,9 +15,14 @@ route's `_run_*` adapter in `infer_route.py` builds and calls
 * `vampire` -- Vampire derives the certificate itself, nothing proposes it
   (`--infer vampire`).
 
-Nothing is imported here: `ai` pulls in `anthropic` at module scope, and the
-route rows import their own module, which is what keeps `verith --help`
-cheap. Importing a route from this package's `__init__` would undo that.
+Two are not routes: `llm`, the model both LLM routes ask, and `modes`, the
+bounds `houdini` computes per mode. No route imports another
+(`tests/test_layering.py`); what two share is in `zrth.lean.smt` or
+`smt_synth`.
+
+Nothing is imported here: the route rows import their own module, which is
+what keeps `verith --help` cheap. Importing a route from this package's
+`__init__` would undo that.
 """
 
 from ..certificate import Certificate, Claim

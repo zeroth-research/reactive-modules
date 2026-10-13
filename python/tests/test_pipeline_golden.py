@@ -6,7 +6,7 @@ files, `artifacts/index.json`). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `ZRTH_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
-No run reaches an LLM: `_make_client` is replaced in both modules that build
+No run reaches an LLM: `make_client` is replaced in both modules that build
 one, and the `ai-cegis` run has every predicate fixed, so it never asks.
 """
 
@@ -301,8 +301,8 @@ def _offline(monkeypatch) -> None:
             raise AssertionError("ai-cegis with every predicate fixed asked")
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", client)
-    monkeypatch.setattr(cegar, "_make_client", no_client)
+    monkeypatch.setattr(ai, "make_client", client)
+    monkeypatch.setattr(cegar, "make_client", no_client)
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
