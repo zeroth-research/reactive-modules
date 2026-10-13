@@ -164,10 +164,10 @@ class ProjectHandle:
 class InferInput:
     """Everything a route is run with.
 
-    One object rather than a constructor signature per route: `TA2Magic`'s
-    `__init__(source)` named the Lean text as the input, which two of the
-    three routes do not want -- `TA2MagicLearn("", module)` is how it is
-    called -- and none of them could ask for anything else.
+    One object rather than a constructor signature per route: each row's
+    `run` takes from it what its engine needs -- the Lean text, the module,
+    the budget, the artifact store -- and no engine is asked for what it
+    does not use.
     """
 
     project: ProjectHandle

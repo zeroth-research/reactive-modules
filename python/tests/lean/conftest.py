@@ -384,7 +384,7 @@ def generate_lean_files(sync_core_templates) -> None:
     else:
         module = _make_countdown()
         claim = Claim(prp="(= s0 0)", kind="buchi")
-        learned = TA2MagicLearn("", module, log=lambda *a: None).infer(claim)
+        learned = TA2MagicLearn(module, log=lambda *a: None).infer(claim)
         # Generated from the SMT-LIB the route answered with, as `verith`
         # does it.
         (_CERTS_DIR / "LearnedCountdown.lean").write_text(

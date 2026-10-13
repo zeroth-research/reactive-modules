@@ -915,7 +915,6 @@ class TA2MagicVampire(TA2Magic):
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
                  artifacts=None, log=print, encoding=None):
-        super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
                 "--infer vampire needs the `cvc5` package to encode the "

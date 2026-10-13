@@ -8,7 +8,7 @@ from .api import InferInput, InferResult, InferRoute
 def _run(inp: InferInput) -> InferResult:
     from ..magic.learn import TA2MagicLearn
 
-    magic = TA2MagicLearn("", inp.module, log=inp.log)
+    magic = TA2MagicLearn(inp.module, log=inp.log)
     return InferResult(magic.infer(inp.claim, inp.given))
 
 

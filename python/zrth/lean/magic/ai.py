@@ -181,7 +181,7 @@ class TA2MagicAI(TA2Magic):
         base_url: str | None = None,
         log=print,
     ):
-        super().__init__(source)
+        self.source = source
         self.max_attempts = max_attempts
         self.log = log
         self._chat = make_client(base_url, model)

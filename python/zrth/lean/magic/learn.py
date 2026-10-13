@@ -271,7 +271,6 @@ class TA2MagicLearn(TA2Magic):
 
     def __init__(
         self,
-        source: str,
         module: Module,
         *,
         delta: int = 1,
@@ -279,7 +278,6 @@ class TA2MagicLearn(TA2Magic):
         seed: int = 0,
         log=print,
     ):
-        super().__init__(source)
         self.module = module
         self.delta = delta
         self.hidden_dim = hidden_dim

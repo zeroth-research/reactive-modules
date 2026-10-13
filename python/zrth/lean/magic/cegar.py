@@ -97,7 +97,7 @@ class TA2MagicCEGAR(TA2Magic):
         budget=None,
         log=print,
     ):
-        super().__init__(source)
+        self.source = source
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
                 "--infer ai-cegis needs the `cvc5` package, which is not "

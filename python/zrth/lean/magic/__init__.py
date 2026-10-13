@@ -1,7 +1,7 @@
 """Inference of invariants and ranking functions for reactive modules.
 
 One module here is one route's engine, a `TA2Magic` subclass that the
-route's `_run_*` adapter in `infer_route.py` builds and calls
+route's row in `infer_route/<name>.py` builds and calls
 (`fbk-proveit` has none here):
 
 * `ai` -- an LLM proposes the whole certificate (`--infer ai`).
@@ -41,10 +41,12 @@ class TA2Magic:
     only what its route's `seeds` names.
 
     `ai` is the exception: `infer(claim)` answers in Lean, a `LeanAnswer`.
-    """
 
-    def __init__(self, source: str):
-        self.source = source
+    The route's contract is its row's `run(InferInput) -> InferResult` in
+    `infer_route/<name>.py`, which builds the engine from what it needs and
+    calls it. This class names `infer(claim, given)` and holds nothing: no
+    two engines are constructed from the same arguments.
+    """
 
     def infer(self, claim: Claim,
               given: Certificate = Certificate()) -> Certificate:

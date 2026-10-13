@@ -136,7 +136,6 @@ class TA2MagicSygus(TA2Magic):
         log=print,
         encoding=None,
     ):
-        super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
                 "--infer sygus needs the `cvc5` package, which is not "
