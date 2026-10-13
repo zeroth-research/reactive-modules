@@ -565,6 +565,7 @@ def _run_vampire(inp: InferInput) -> InferResult:
         timeout=inp.opts["vampire_timeout"],
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 

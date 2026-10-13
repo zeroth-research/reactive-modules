@@ -916,7 +916,7 @@ class TA2MagicVampire(TA2Magic):
     """The certificate Vampire derives, checked before it is handed on."""
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
-                 artifacts=None, log=print):
+                 artifacts=None, log=print, encoding=None):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
@@ -925,6 +925,9 @@ class TA2MagicVampire(TA2Magic):
                 "uv pip install cvc5"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.exe = vampire
         self.timeout = float(timeout)
         self.artifacts = artifacts
@@ -939,7 +942,8 @@ class TA2MagicVampire(TA2Magic):
         # `SynthContext.build` refuses a component this route cannot weigh
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
-        ctx = SynthContext.build(self.module, claim, route="vampire",
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx

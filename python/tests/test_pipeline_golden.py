@@ -259,7 +259,7 @@ RUNS = [
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1, "smt_linear": 1, "houdini": 1, "nuterm": 1,
-    "nuterm_pre": 1, "ai_cegis_fixed": 2, "ai": 1, "sygus": 1, "vampire": 2,
+    "nuterm_pre": 1, "ai_cegis_fixed": 2, "ai": 1, "sygus": 1, "vampire": 1,
 }
 
 
