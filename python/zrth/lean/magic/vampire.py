@@ -167,6 +167,7 @@ from ..certificate import Certificate, Claim
 from ..common import Refused
 from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
+from ..smt import obligations as obl
 from ..smt.obligations import Candidate, Obligations
 from ..smt.record import found, note
 from ..smt.script import decimals, script, smt_int
@@ -586,7 +587,14 @@ class Question:
 
     def _obligations(self, tpl: Template, prp, *, inductive: bool,
                      implies: bool, ranked: bool) -> list:
+        """The obligations, one per case of the round: each case's guard is
+        a hypothesis of its own, and its folded state the successor."""
         tm, ob = self.tm, self.ob
+
+        def rows(vs):
+            return self._rows(tpl, ob.flatten(ob.s, vs))
+
+        inv = [("inv", rows)]
         obligations = []
         # init_inv. The initial state is a function of the inputs alone, so
         # this is quantified over the inputs and split on its own
@@ -594,17 +602,13 @@ class Question:
         # variable here that nothing binds.
         if inductive:
             for br in self.entry:
-                hyp = self._and([ob.init_pre, *br.guard])
-                obligations.append(self._forall(
-                    self.inputs,
-                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
+                q = obl.init_inv(ob.case(br.state), [rows], given=br.guard)
+                obligations.append(self._forall(self.inputs, self._stated(q)))
         for br in self.step:
-            here = self._rows(tpl, self.here)
+            case = ob.case(br.state)
             if inductive:
-                hyp = self._and([here, ob.update_pre, *br.guard])
-                obligations.append(self._forall(
-                    self.vars,
-                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
+                q = obl.step_inv(case, inv, [rows], given=br.guard)
+                obligations.append(self._forall(self.vars, self._stated(q)))
             if ranked:
                 # hrank, ite-free: positive where the property fails, and
                 # smaller after the round. Implies the `Int.toNat` form.
@@ -613,18 +617,16 @@ class Question:
                     tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
                     tm.mkTerm(Kind.LT, self._rank(tpl, self._cols(br)), now),
                 ])
-                fails = tm.mkTerm(Kind.NOT, self._at(prp, ob.s))
-                obligations.append(self._forall(
-                    self.vars,
-                    self._implies(
-                        self._and([here, fails, ob.update_pre, *br.guard]),
-                        drops)))
+                q = obl.ranked(case, inv, prp, drops, given=br.guard)
+                obligations.append(self._forall(self.vars, self._stated(q)))
         if implies:
-            obligations.append(self._forall(
-                self.state,
-                self._implies(self._rows(tpl, self.here),
-                              self._at(prp, ob.s))))
+            q = obl.inv_imp_P(ob, inv, prp)
+            obligations.append(self._forall(self.state, self._stated(q)))
         return obligations
+
+    def _stated(self, q):
+        """`q` as the implication Vampire reads, a literal `true` left out."""
+        return self._implies(self._and([h for _, h in q.hyps]), q.goal)
 
     def _ask_for(self, holes: tuple[str, ...], obligations: list,
                  fixed: "dict | None" = None, bounded: bool = False):
@@ -665,11 +667,6 @@ class Question:
         if hyp.getKind() == Kind.CONST_BOOLEAN and hyp.getBooleanValue():
             return goal
         return self.tm.mkTerm(Kind.IMPLIES, hyp, goal)
-
-    def _at(self, term, vs):
-        # Folded: substituting a matrix-shaped holder leaves a select of a
-        # constructor, and a tuple is the one thing Vampire cannot be shown.
-        return self.ob._readable(term.substitute(self.ctx.state, vs))
 
     def _cols(self, br: Branch) -> list:
         """A branch's successor state, one term per column."""

@@ -93,7 +93,14 @@ from dataclasses import dataclass
 
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.script import decimals
-from ..smt.obligations import Obligations
+from ..smt.obligations import (
+    Frame,
+    Obligations,
+    init_inv,
+    inv_imp_P,
+    ranked,
+    step_inv,
+)
 from ..smt_prompt import parse_predicate
 from ..smt_synth import (
     Search,
@@ -190,6 +197,14 @@ class _RankShape:
             return (f"linear on each side of `{self.cond_src}` -- "
                     f"`(ite c r1 r2)`, each `r` = {lin}")
         return f"linear in the state -- {lin}, integer coefficients, no branching"
+
+
+def _frame(ctx: SynthContext, st, el, en) -> Frame:
+    """The obligations' frame over `st`, `el` and `en`: bound variables for
+    the quantified query, a sample's values or a counterexample's constants
+    for the loop."""
+    return Frame.over(ctx.enc, st, el, en, init_pre=ctx.init_pre,
+                      update_pre=ctx.update_pre)
 
 
 def _shape(names, prefix: str = "c") -> str:
@@ -393,33 +408,30 @@ class TA2MagicLinear(TA2Magic):
 
         def rank(vs):
             if shape.kind == "split":
-                return tm.mkTerm(Kind.ITE, ctx.at(shape.cond, vs),
+                return tm.mkTerm(Kind.ITE, ctx.enc.at(shape.cond, vs),
                                  affine(cs[0], vs), affine(cs[1], vs))
             return affine(cs[0], vs)
 
         def build(st, el, en):
-            nxt = ctx.enc.next_state(st, el, en)
+            f = _frame(ctx, st, el, en)
+            nxt = f.succ
             drops = tm.mkTerm(Kind.LT, rank(nxt), rank(st))
             if shape.kind == "zeroed":
                 # `(ite P 0 r)` at a successor where `P` holds is 0, below the
                 # `r >= 1` the round starts from: only a round that stays
                 # outside `P` has to fall.
-                drops = tm.mkTerm(Kind.OR, ctx.at(ctx.prp, nxt), drops)
-            falls = tm.mkTerm(
-                Kind.IMPLIES,
-                tm.mkTerm(Kind.AND, inv(st),
-                          tm.mkTerm(Kind.NOT, ctx.at(ctx.prp, st)),
-                          ctx.with_inputs(ctx.update_pre, el, en)),
+                drops = tm.mkTerm(Kind.OR, f.at(ctx.prp, nxt), drops)
+            falls = ranked(
+                f, [("inv", inv)], ctx.prp,
                 tm.mkTerm(Kind.AND,
                           tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
                           drops),
-            )
+            ).implication(tm)
             if not k:
                 # Nothing to make inductive: the invariant is whatever was
                 # supplied, which the caller has not been asked to prove.
                 return falls
-            return tm.mkTerm(Kind.AND,
-                             *self._inductive(ctx, inv, st, el, en), falls)
+            return tm.mkTerm(Kind.AND, *self._inductive(ctx, inv, f), falls)
 
         verdict = self._decide(
             ctx, _Template(unknowns=rows + [x for c in cs for x in c], build=build))
@@ -621,25 +633,15 @@ class TA2MagicLinear(TA2Magic):
 
         return [x for row in rows for x in row], inv
 
-    def _inductive(self, ctx: SynthContext, inv, st, el, en) -> tuple:
+    def _inductive(self, ctx: SynthContext, inv, f: Frame) -> tuple:
         """`init -> inv` and `inv /\\ pre -> inv'`.
 
         The two obligations an invariant owes whatever it is *for*. Implying
         the property is `_safety_at`'s third; ranking under it is
         `_buchi_at`'s.
         """
-        tm = ctx.tm
-        return (
-            tm.mkTerm(Kind.IMPLIES,
-                      ctx.with_inputs(ctx.init_pre, el, en),
-                      inv(ctx.enc.init_state(en))),
-            tm.mkTerm(
-                Kind.IMPLIES,
-                tm.mkTerm(Kind.AND, inv(st),
-                          ctx.with_inputs(ctx.update_pre, el, en)),
-                inv(ctx.enc.next_state(st, el, en)),
-            ),
-        )
+        return (init_inv(f, [inv]).implication(ctx.tm),
+                step_inv(f, [("inv", inv)], [inv]).implication(ctx.tm))
 
     def _rows_smt(self, cols: list, given: "str | None", values, k: int) -> str:
         """The solved rows as SMT-LIB, conjoined to `given`."""
@@ -665,10 +667,11 @@ class TA2MagicLinear(TA2Magic):
         flat, inv = self._inv_rows(ctx, cols, given, k)
 
         def build(st, el, en):
+            f = _frame(ctx, st, el, en)
             return tm.mkTerm(
                 Kind.AND,
-                *self._inductive(ctx, inv, st, el, en),
-                tm.mkTerm(Kind.IMPLIES, inv(st), ctx.at(ctx.prp, st)),
+                *self._inductive(ctx, inv, f),
+                inv_imp_P(f, [("inv", inv)], ctx.prp).implication(tm),
             )
 
         verdict = self._decide(ctx, _Template(unknowns=flat, build=build))

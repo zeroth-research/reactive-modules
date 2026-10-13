@@ -64,6 +64,16 @@ class Query:
         parts = [t for _, t in self.hyps] + [tm.mkTerm(Kind.NOT, self.goal)]
         return parts[0] if len(parts) == 1 else tm.mkTerm(Kind.AND, *parts)
 
+    def implication(self, tm):
+        """`hyps -> goal`, every hypothesis kept as given. Inline only."""
+        from cvc5 import Kind
+
+        assert not self.defines, "a defined round has no implication form"
+        if not self.hyps:
+            return self.goal
+        return tm.mkTerm(Kind.IMPLIES,
+                         conjunction(tm, [t for _, t in self.hyps]), self.goal)
+
     def labelled(self, tm) -> dict:
         """`negation` as named parts, the goal's negation as `goal`. A
         literal `true` or `false` is left out: an unsat core never needs it."""
@@ -88,10 +98,13 @@ class Candidate:
 #
 # A frame has `tm`; the constants `s`; `succ`, the state after one round from
 # them, and `entry`, the state after tick 0; the preconditions `init_pre` and
-# `update_pre` over its inputs; `at(term, vs)`, a term over the state read at
+# `update_pre` over its inputs; `at(pred, vs)`, a predicate read at the state
 # `vs`; and `define_next()` / `define_entry()`, what a query must define for
-# `succ` / `entry` to mean the round. Each statement builds its terms in the
-# order written, which is the order cvc5 numbers them in.
+# `succ` / `entry` to mean the round. A predicate is a term over the parser's
+# state, or a function of a state (a template with its coefficients open).
+# `given` are hypotheses about nothing a frame reads, such as the guard of
+# one case of a round; they follow the precondition. Each statement builds
+# its terms in the order written, which is the order cvc5 numbers them in.
 # ══════════════════════════════════════════════════════════════════════════
 
 
@@ -115,6 +128,10 @@ def clamp(tm, t):
 
 def _named(f, hyps) -> list:
     return [(name, f.at(term, f.s)) for name, term in hyps]
+
+
+def _given(given) -> list:
+    return [(f"case{i}", g) for i, g in enumerate(given)]
 
 
 def _outside(f, hyps, prp) -> list:
@@ -147,24 +164,25 @@ def _query(hyps, goal, *, defines=(), probes=()) -> Query:
     )
 
 
-def init_inv(f, goals: list) -> Query:
+def init_inv(f, goals: list, *, given=()) -> Query:
     """`init_pre e -> goals (init e)`, for all of `goals` at once."""
     entry = f.entry
     pre = f.init_pre
     at = [f.at(g, entry) for g in goals]
     goal = conjunction(f.tm, at)
-    return _query([("pre", pre)], goal, defines=f.define_entry(), probes=at)
+    return _query([("pre", pre)] + _given(given), goal,
+                  defines=f.define_entry(), probes=at)
 
 
-def step_inv(f, hyps: list, goals: list) -> Query:
+def step_inv(f, hyps: list, goals: list, *, given=()) -> Query:
     """`hyps s /\\ update_pre e -> goals (update s e)`; `hyps` are named."""
     succ = f.succ
     named = _named(f, hyps)
     pre = f.update_pre
     at = [f.at(g, succ) for g in goals]
     goal = conjunction(f.tm, at)
-    return _query(named + [("pre", pre)], goal, defines=f.define_next(),
-                  probes=at)
+    return _query(named + [("pre", pre)] + _given(given), goal,
+                  defines=f.define_next(), probes=at)
 
 
 def inv_imp_P(f, hyps: list, goal) -> Query:
@@ -186,6 +204,13 @@ def hrank(f, hyps: list, prp, rank) -> Query:
     goal = f.tm.mkTerm(Kind.LT, clamp(f.tm, f.at(rank, succ)),
                        clamp(f.tm, f.at(rank, f.s)))
     return _query(named, goal, defines=f.define_next())
+
+
+def ranked(f, hyps: list, prp, goal, *, given=()) -> Query:
+    """`hyps s /\\ ~P s /\\ update_pre e -> goal`, for a route that states
+    `hrank`'s conclusion in a shape of its own (read at `f.succ`)."""
+    named = _outside(f, hyps, prp)
+    return _query(named + _given(given), goal, defines=f.define_next())
 
 
 def rank_decrease(f, hyps: list, prp, rank) -> Query:
@@ -220,11 +245,18 @@ class Frame:
     that never reads one never encodes it.
     """
 
-    def __init__(self, enc, prefix: str, *, init_pre=None, update_pre=None):
+    def __init__(self, enc, prefix: str, *, init_pre=None, update_pre=None,
+                 consts=None):
         self.enc = enc
         self.tm = enc.tm
-        self.s, self.el, self.en = enc.fresh(prefix)
+        self.s, self.el, self.en = consts or enc.fresh(prefix)
         self._pres = (init_pre, update_pre)
+
+    @classmethod
+    def over(cls, enc, s, el, en, *, init_pre=None, update_pre=None) -> "Frame":
+        """A frame over terms the caller made: bound variables, say."""
+        return cls(enc, "", init_pre=init_pre, update_pre=update_pre,
+                   consts=(list(s), list(el), list(en)))
 
     @cached_property
     def succ(self) -> list:
@@ -242,8 +274,8 @@ class Frame:
     def update_pre(self):
         return self.enc.with_inputs(self._pres[1], self.el, self.en)
 
-    def at(self, term, vs):
-        return self.enc.at(term, vs)
+    def at(self, pred, vs):
+        return pred(vs) if callable(pred) else self.enc.at(pred, vs)
 
     def define_next(self) -> tuple:
         return ()
@@ -427,11 +459,19 @@ class Obligations:
     def entry(self) -> list:
         return self.si
 
-    def at(self, term, vs):
-        """`term`, over the state, read at `vs` -- folded, because
-        substituting a matrix-shaped holder leaves a select of a constructor
-        where the component was."""
-        return self._readable(term.substitute(self.ctx.state, vs))
+    def at(self, pred, vs):
+        """`pred` read at `vs` -- a term folded, because substituting a
+        matrix-shaped holder leaves a select of a constructor where the
+        component was."""
+        if callable(pred):
+            return pred(vs)
+        return self._readable(pred.substitute(self.ctx.state, vs))
+
+    def case(self, state) -> "_Case":
+        """This frame with `state` for both the successor and the initial
+        state, which nothing defines: one case of a round, its `ite`s
+        folded away."""
+        return _Case(self, state)
 
     def define_next(self) -> list:
         return self._defines(self.sp, self.next)
@@ -464,6 +504,22 @@ class Obligations:
         if all(h.getKind() != Kind.APPLY_CONSTRUCTOR for h in self.s):
             q = replace(q, witness=tuple(self.s) + tuple(self.sp))
         return q
+
+
+class _Case:
+    """`Obligations.case`."""
+
+    def __init__(self, ob: Obligations, state):
+        self.tm, self.s, self.el, self.en = ob.tm, ob.s, ob.el, ob.en
+        self.init_pre, self.update_pre = ob.init_pre, ob.update_pre
+        self.succ = self.entry = list(state)
+        self.at = ob.at
+
+    def define_next(self) -> tuple:
+        return ()
+
+    def define_entry(self) -> tuple:
+        return ()
 
 
 def _facts(hyps: list[Candidate]) -> list:
