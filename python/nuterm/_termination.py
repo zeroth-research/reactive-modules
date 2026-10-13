@@ -26,7 +26,7 @@ from __future__ import annotations
 import z3
 
 # torch must load before the zrth C-extension (see _bench)
-from ._bench import Bench, INT, var  # noqa: F401
+from nuterm._bench import Bench, INT, var  # noqa: F401
 from nuterm._farkas import System, certify, decrease, inductive, read_system
 from nuterm._invariants import as_predicates, infer_invariants
 from nuterm._property import Liveness, Safety

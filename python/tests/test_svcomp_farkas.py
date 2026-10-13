@@ -19,8 +19,8 @@ import pytest
 import z3
 
 from nuterm import _farkas
-from benchmarks.svcomp._bench import INT
-from benchmarks.svcomp._termination import _v_module, compose, system_of
+from nuterm._bench import INT
+from nuterm._termination import _v_module, compose, system_of
 from tests._fixtures import candidate, loop_bench
 from zrth import LIA, Int, Module, Var, X, sugar
 from zrth.sugar import argmax as dsl_argmax
@@ -30,7 +30,7 @@ from nuterm._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
 from nuterm._property import Liveness, Safety
-from benchmarks.svcomp._termination import terminates
+from nuterm._termination import terminates
 from nuterm._nodes import Unsupported, node_view
 from nuterm._farkas import (
     Net,

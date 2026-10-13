@@ -1,4 +1,4 @@
-"""Tests for the corpus runner (``benchmarks.svcomp.__main__``).
+"""Tests for the corpus runner (``tests.benchmarks.svcomp.__main__``).
 
 The property under test is that a benchmark's result does not depend on what ran
 before it. Z3's context is global and accumulates every term created in the
@@ -11,9 +11,9 @@ import shutil
 
 import pytest
 
-from benchmarks.svcomp import __main__ as runner
-from benchmarks.svcomp import discover
-from benchmarks.svcomp.__main__ import _spawn, certify_one
+from tests.benchmarks.svcomp import __main__ as runner
+from tests.benchmarks.svcomp import discover
+from tests.benchmarks.svcomp.__main__ import _spawn, certify_one
 
 
 @pytest.mark.parametrize("argv, jobs", [

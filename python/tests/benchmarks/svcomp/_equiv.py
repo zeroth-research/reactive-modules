@@ -39,7 +39,8 @@ import torch
 from zrth import X
 from zrth.eval import eval_itype
 
-from ._bench import Bench
+from nuterm._bench import Bench
+from nuterm._train import run_block
 
 # The C sources live in this package (self-contained).
 _C_DIR = Path(__file__).parent / "c"
@@ -114,16 +115,6 @@ def _run_c(binf: Path, inputs: list[int], state: tuple[str, ...],
 # ---------------------------------------------------------------------------
 # Module side
 # ---------------------------------------------------------------------------
-
-def run_block(atoms, state, get_block):
-    """Evaluate one block of every atom against ``state``, writing each term's
-    outputs back, and return the updated state."""
-    for a in atoms:
-        for t in get_block(a):
-            read = [state[w] for w in t.read]
-            out_sort = t.write[0].dtype if len(t.write) else None
-            state.update(zip(t.write, eval_itype(t.itype, read, out_sort)))
-
 
 def _run_module(bench: Bench, inputs: list[int], max_steps: int) -> dict[str, int] | None:
     """Run init(inputs) then update to a fixpoint. Returns final state, or None
