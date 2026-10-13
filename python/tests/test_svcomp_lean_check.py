@@ -1,4 +1,4 @@
-"""Tests for the kernel-check driver (``benchmarks.svcomp._lean_check``).
+"""Tests for the kernel-check driver (``nuterm._lean_check``).
 
 The outcome taxonomy is what the runner's summary reports, so each class is
 pinned against a file that actually provokes it from the Lean toolchain.
@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from benchmarks.svcomp import _lean_check as lc
+from nuterm import _lean_check as lc
 
 pytestmark = pytest.mark.skipif(shutil.which("lake") is None,
                                 reason="no Lean toolchain")

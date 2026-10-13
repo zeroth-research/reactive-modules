@@ -1,4 +1,4 @@
-"""Regression tests for the Farkas verifier (``benchmarks.svcomp._farkas``).
+"""Regression tests for the Farkas verifier (``nuterm._farkas``).
 
 These pin the properties the emitted proofs rest on:
 
@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 import z3
 
-from benchmarks.svcomp import _farkas
+from nuterm import _farkas
 from benchmarks.svcomp._bench import INT
 from benchmarks.svcomp._termination import _v_module, compose, system_of
 from tests._fixtures import candidate, loop_bench
@@ -26,13 +26,13 @@ from zrth import LIA, Int, Module, Var, X, sugar
 from zrth.sugar import argmax as dsl_argmax
 from zrth.sugar import expr as dsl_expr
 from zrth.sugar import ite as dsl_ite
-from benchmarks.svcomp._farkas import (certify, check_supported,
+from nuterm._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)
-from benchmarks.svcomp._property import Liveness, Safety
+from nuterm._property import Liveness, Safety
 from benchmarks.svcomp._termination import terminates
-from benchmarks.svcomp._nodes import Unsupported, node_view
-from benchmarks.svcomp._farkas import (
+from nuterm._nodes import Unsupported, node_view
+from nuterm._farkas import (
     Net,
     _pre_activations,
     affine_coeffs,
@@ -256,7 +256,7 @@ def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
     ones the walk refuses a module for by name (see below), before the engine
     could reason over an output it can neither pin nor split. A kind declared
     here before its rule shows up in this set."""
-    from benchmarks.svcomp._farkas import OPS
+    from nuterm._farkas import OPS
     unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
     assert unruled == {"min", "max", "argmax"}
 

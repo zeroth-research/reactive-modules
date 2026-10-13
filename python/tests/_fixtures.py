@@ -18,9 +18,9 @@ from dataclasses import dataclass
 import z3
 
 from benchmarks.svcomp._bench import Bench, INT
-from benchmarks.svcomp._farkas import certify, inductive
-from benchmarks.svcomp._invariants import as_predicates
-from benchmarks.svcomp._property import Safety
+from nuterm._farkas import certify, inductive
+from nuterm._invariants import as_predicates
+from nuterm._property import Safety
 from benchmarks.svcomp._termination import compose, system_of, terminates
 from zrth import LIA, Var, sugar
 
