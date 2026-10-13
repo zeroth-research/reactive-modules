@@ -129,3 +129,14 @@ def test_no_private_name_crosses_a_module(path):
             bad.append(f"{_name(path)}:{node.lineno} reads "
                        f"{node.value.id}.{node.attr}")
     assert not bad, "\n".join(bad)
+
+
+def test_the_project_builder_does_not_know_the_routes():
+    """`create_project` is told what to remove and what to add to the lakefile;
+    it does not read the route table to find out."""
+    bad = [
+        f"project.py:{line} imports {module}"
+        for module, _, _, line in _imports(LEAN / "project.py")
+        if module.startswith("zrth.lean.infer_route")
+    ]
+    assert not bad, "\n".join(bad)

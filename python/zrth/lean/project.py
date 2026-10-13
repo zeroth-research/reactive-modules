@@ -21,6 +21,7 @@ from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 import re
 import shutil
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -574,6 +575,7 @@ def create_project(
     lean_cert: LeanCertificate | None = None,
     module_file: Path | str | None = None,
     lakefile_vars: dict | None = None,
+    remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
 ) -> Path:
     """
@@ -598,6 +600,9 @@ def create_project(
                            Declared as data rather than passed per route:
                            the lakefile is written here, before any route
                            runs, so a route cannot amend it afterwards.
+        `remove`:          Project-relative files an earlier run in the same
+                           `-o` may have left where a lean_lib globs; they
+                           are deleted before anything is written there.
         `ctx`:             A `LeanContext` this run already built, so the
                            discovery pass runs once rather than once here
                            and again for every file rewritten after
@@ -647,14 +652,8 @@ def create_project(
     # an inference route writes is written *after* this, so anything already
     # there is a copy an earlier run left in the same `-o`: it is about a
     # different module, and lake would build it against this run's `System/`.
-    #
-    # Taken from the rows rather than named here, so the hazard is covered
-    # for every route that declares a file rather than for the one filename
-    # someone remembered. Directory entries are left alone -- nothing globs
-    # them until the route that owns them declares its lean_lib.
-    from .infer_route import ROUTES
-
-    for rel in {o for r in ROUTES for o in r.owns if not o.endswith("/")}:
+    # The caller names those files in `remove`.
+    for rel in remove:
         (project_dir / rel).unlink(missing_ok=True)
 
     # Copy static files (Core/, LeanAI/)

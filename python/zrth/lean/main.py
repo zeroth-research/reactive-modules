@@ -103,7 +103,9 @@ from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .common import LeanContext, Refused
 from .native import lean_gaps
-from .infer_route import InferInput, InferResult, ProjectHandle
+from .infer_route import (
+    InferInput, InferResult, ProjectHandle, owned_files,
+)
 from .project import (
     ENCODINGS,
     LakeBuildError,
@@ -478,6 +480,11 @@ def _generate(settings: Settings, module, ctx: LeanContext,
                 if settings.route is not None and settings.route.lakefile
                 else None
             ),
+            # `Certificate/` is globbed by the build, so a copy of a file a
+            # route writes, left by an earlier run in this `-o`, would be
+            # built against this run's module. Directories are left alone:
+            # nothing globs them until a route declares a lean_lib for them.
+            remove=owned_files(),
             ctx=ctx,
         )
     except (Refused, OSError) as e:

@@ -699,6 +699,18 @@ def test_the_workspace_is_not_a_route_owned_path():
         assert not any(o.startswith(ARTIFACTS_DIR) for o in route.owns)
 
 
+def test_owned_files_are_the_files_not_the_directories_the_rows_own():
+    from zrth.lean.infer_route import owned_files
+
+    files = owned_files()
+    assert files == tuple(sorted(files))
+    assert "Certificate/Certificate.lean" in files
+    assert not any(f.endswith("/") for f in files)
+    assert set(files) == {
+        o for r in ROUTES for o in r.owns if not o.endswith("/")
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # What a refusal leaves behind
 # ══════════════════════════════════════════════════════════════════════════

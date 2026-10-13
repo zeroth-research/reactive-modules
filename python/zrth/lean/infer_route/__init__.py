@@ -67,7 +67,7 @@ __all__ = [
     "FIXABLE", "Alias", "InferInput", "InferResult", "InferRoute", "Opt",
     "ProjectHandle", "ROUTES", "DEFAULT_ROUTE", "index_routes",
     "route_by_name", "route_names", "all_route_options",
-    "shared_route_options", "all_route_aliases",
+    "shared_route_options", "all_route_aliases", "owned_files",
 ]
 
 # The order is the order `--infer` lists them in.
@@ -161,3 +161,14 @@ def all_route_aliases() -> tuple[tuple[InferRoute, Alias], ...]:
     """Every deprecated spelling, with the route it selects."""
     return tuple((r, a) for r in ROUTES for a in r.aliases)
 
+
+
+def owned_files() -> tuple[str, ...]:
+    """Every file, not directory, any route declares it owns, sorted.
+
+    What an earlier run's route may have left in the project: `create_project`
+    is told to remove these before this run's route writes its own.
+    """
+    return tuple(sorted(
+        {o for r in ROUTES for o in r.owns if not o.endswith("/")}
+    ))
