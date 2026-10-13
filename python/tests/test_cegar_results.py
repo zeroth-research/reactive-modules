@@ -74,12 +74,12 @@ def _run(monkeypatch, kind):
     """Call `_run_query` against a solver scripted to answer `kind`."""
     env = _Env()
     solver = _Solver(kind)
+    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: None)
+    magic = TA2MagicCEGAR("", _counter(), log=lambda *_: None)
     monkeypatch.setattr(cegar.cvc5, "Solver", lambda _tm: solver)
     var = env.tm.mkConst(env.tm.getIntegerSort(), "s0")
     query = env.tm.mkTerm(cvc5.Kind.EQUAL, var, env.tm.mkInteger(0))
-    result = TA2MagicCEGAR._run_query(
-        None, "inv-step", query, env, [("s", [var])]
-    )
+    result = magic._run_query("inv-step", query, env.tm, [("s", [var])])
     return result, solver
 
 

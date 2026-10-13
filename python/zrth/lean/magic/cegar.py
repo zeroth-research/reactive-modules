@@ -48,8 +48,9 @@ from ..smt.obligations import (
     rank_positive,
     step_inv,
 )
+from ..smt.limits import bounded_solver, call_ms
 from ..smt.run import encoding_of
-from ..smt_prompt import CegarPromptEnv, PromptResult, prompt_inv_ranking
+from ..smt_prompt import PromptResult, prompt_inv_ranking
 
 
 @dataclass
@@ -65,7 +66,8 @@ class TA2MagicCEGAR(TA2Magic):
     Each attempt:
       1. Ask LLM for SMT-LIB invariant + ranking expressions.
       2. Check four obligations with cvc5 (init, inductive, rank-decrease,
-         rank-nonneg). Each check is: assert the negation, SAT ⇒ failure.
+         rank-positive). Each check is: assert the negation, SAT ⇒ failure,
+         each query held to the run's `--smt-timeout`.
       3. If all UNSAT, return. Else format model as feedback and retry.
 
     `known` is what earlier runs established about *shapes* rather than
@@ -92,14 +94,19 @@ class TA2MagicCEGAR(TA2Magic):
         known: tuple[str, ...] = (),
         budget_s: float | None = None,
         encoding=None,
+        budget=None,
+        log=print,
     ):
         super().__init__(source)
-        if cvc5 is None:
-            raise RuntimeError(
-                "cvc5 package is required for TA2MagicCEGAR. "
-                "Install with: uv pip install cvc5"
+        if cvc5 is None:                             # pragma: no cover
+            raise Refused(
+                "--infer ai-cegis needs the `cvc5` package, which is not "
+                "importable. Install with: uv pip install cvc5"
             )
         self.module = module
+        # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
+        self.budget = budget
+        self.log = log
         # The run's `smt.run.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
@@ -150,7 +157,7 @@ class TA2MagicCEGAR(TA2Magic):
 
         while self._another(attempt, complete, start, slowest):
             began = time.monotonic()
-            print(f"[CEGAR] attempt {attempt}")
+            self.log(f"[CEGAR] attempt {attempt}")
             attempt += 1
             try:
                 result = prompt_inv_ranking(
@@ -170,14 +177,14 @@ class TA2MagicCEGAR(TA2Magic):
                 # and retrying it five times only hides the reason.
                 raise
             except ValueError as e:
-                print(f"  parse error: {e}")
+                self.log(f"  parse error: {e}")
                 feedback = f"Your reply could not be parsed: {e}"
                 slowest = max(slowest, time.monotonic() - began)
                 continue
 
-            print(f"  inv: {result.inv_src}")
+            self.log(f"  inv: {result.inv_src}")
             if not safety:
-                print(f"  ranking: {result.ranking_src}")
+                self.log(f"  ranking: {result.ranking_src}")
 
             obligations = self._check_all(
                 enc,
@@ -189,13 +196,13 @@ class TA2MagicCEGAR(TA2Magic):
             )
             failures = [o for o in obligations if not o.ok]
             if not failures:
-                print("[CEGAR] all obligations UNSAT — accepted")
+                self.log("[CEGAR] all obligations UNSAT — accepted")
                 return Certificate(
                     result.inv_src, None if safety else result.ranking_src
                 )
 
             feedback = self._format_feedback(failures)
-            print(f"[CEGAR] failures: {[o.name for o in failures]}")
+            self.log(f"[CEGAR] failures: {[o.name for o in failures]}")
             slowest = max(slowest, time.monotonic() - began)
 
         # `Refused` for the reason `magic.ai` gives: running out of
@@ -242,6 +249,9 @@ class TA2MagicCEGAR(TA2Magic):
             return Frame(enc, prefix, init_pre=init_pre_term,
                          update_pre=update_pre_term)
 
+        if self.budget is not None:
+            self.budget.start_phase()
+
         checks = [
             self._check_init(frame("init_"), r),
             self._check_inductive(frame("ind_"), r),
@@ -258,13 +268,13 @@ class TA2MagicCEGAR(TA2Magic):
     def _check_inv_implies_prp(self, f: Frame, r, prp_term):
         """`inv s → prp s`: what makes the invariant a *safety* proof."""
         q = inv_imp_P(f, [("inv", r.inv_term)], prp_term)
-        return self._run_query("inv_imp_P", q.negation(f.tm), f.enc.env,
+        return self._run_query("inv_imp_P", q.negation(f.tm), f.tm,
                                extra_vars=[("s", f.s)])
 
     def _check_init(self, f: Frame, r):
         q = init_inv(f, [r.inv_term])
         return self._run_query(
-            "init_inv", q.negation(f.tm), f.enc.env,
+            "init_inv", q.negation(f.tm), f.tm,
             extra_vars=[("extl_l", f.el), ("extl_n", f.en)],
         )
 
@@ -273,7 +283,7 @@ class TA2MagicCEGAR(TA2Magic):
         return self._run_query(
             "step_inv",
             q.negation(f.tm),
-            f.enc.env,
+            f.tm,
             extra_vars=[
                 ("s", f.s),
                 ("extl_l", f.el),
@@ -287,7 +297,7 @@ class TA2MagicCEGAR(TA2Magic):
         return self._run_query(
             "rank_decrease",
             q.negation(f.tm),
-            f.enc.env,
+            f.tm,
             extra_vars=[
                 ("s", f.s),
                 ("extl_l", f.el),
@@ -303,7 +313,7 @@ class TA2MagicCEGAR(TA2Magic):
         `rank_decrease`, exactly `hrank` over `Int.toNat ranking`."""
         q = rank_positive(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
         return self._run_query(
-            "rank_positive", q.negation(f.tm), f.enc.env,
+            "rank_positive", q.negation(f.tm), f.tm,
             extra_vars=[("s", f.s), ("ranking(s)", [f.at(r.ranking_term, f.s)])],
         )
 
@@ -313,14 +323,13 @@ class TA2MagicCEGAR(TA2Magic):
         self,
         name: str,
         neg_query,
-        env: CegarPromptEnv,
+        tm,
         extra_vars: list[tuple[str, list]],
     ) -> ObligationResult:
         """Check `neg_query` for SAT. UNSAT ⇒ obligation holds."""
-        print(f"[smt] check query: {neg_query}")
-        solver = cvc5.Solver(env.tm)
-        solver.setLogic("ALL")
-        solver.setOption("produce-models", "true")
+        self.log(f"[smt] check query: {neg_query}")
+        solver = bounded_solver(tm, call_ms(self.budget), logic="ALL",
+                                produce_models="true")
         solver.assertFormula(neg_query)
         res = solver.checkSat()
         if res.isUnsat():

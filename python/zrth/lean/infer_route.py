@@ -369,7 +369,8 @@ def _run_ai(inp: InferInput) -> InferResult:
     from .magic.ai import TA2MagicAI
 
     magic = TA2MagicAI(
-        inp.project.encoding(""), model=inp.model, base_url=inp.base_url
+        inp.project.encoding(""), model=inp.model, base_url=inp.base_url,
+        log=inp.log,
     )
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
     # behind it, which is what this route's `returns="lean"` declares. No
@@ -473,6 +474,8 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         known=_ruled_out(inp),
         budget_s=inp.opts["cegar_budget"],
         encoding=inp.smt,
+        budget=inp.budget,
+        log=inp.log,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 

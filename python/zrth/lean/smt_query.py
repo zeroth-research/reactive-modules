@@ -31,7 +31,7 @@ from enum import Enum
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
 from .smt import obligations as ob
-from .smt.limits import SmtBudget
+from .smt.limits import SmtBudget, call_ms
 from .smt.run import encoding_of
 from .smt.script import script
 from .smt.terms import ite_conditions, nodes, state_dependent
@@ -150,7 +150,7 @@ class ModuleQueries:
         return self.enc.at(term, s)
 
     def _solver(self, budget: SmtBudget):
-        return self.enc.solver(budget.next_call_ms(), logic="ALL")
+        return self.enc.solver(call_ms(budget), logic="ALL")
 
     def _ask(self, name, build, budget, artifacts=None):
         """UNSAT on the negation means the obligation holds.
