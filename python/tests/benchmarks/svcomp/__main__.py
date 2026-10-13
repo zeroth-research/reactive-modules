@@ -4,7 +4,6 @@
     python -m tests.benchmarks.svcomp ndecr            # only names containing 'ndecr'
     python -m tests.benchmarks.svcomp --lean           # also emit and kernel-check proofs
     python -m tests.benchmarks.svcomp --lean --jobs 4  # with four benchmarks in flight
-    python -m tests.benchmarks.svcomp --ranks 2        # allow a lexicographic rank
     python -m tests.benchmarks.svcomp --export out/     # write each proof as its own project
 
 Without ``--lean`` each DSL-encoded program gets a trained neural ranking
@@ -41,7 +40,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import discover
-from nuterm._train import learn_ranking
+from nuterm.__main__ import certify_one, run_export as _run_export, run_plain as _run_plain
 
 WORKER_FLAG = "--worker"
 _WORKER_TIMEOUT = 2400.0        # above _lean_check.CHECK_TIMEOUT plus training
@@ -51,52 +50,12 @@ def _default_jobs() -> int:
     return max(1, (os.cpu_count() or 2) - 1)
 
 
-# How many components a rank may have (`--ranks`). One is a plain drop; more is
-# a lexicographic rank, for a program no single rank decreases on.
-RANKS = 1
-
-
-def _run_plain(benches) -> int:
-    verified = 0
-    for b in benches:
-        r = learn_ranking(b, ranks=RANKS)
-        verified += bool(r.verified)
-        tag = "VERIFIED  " if r.verified else "unverified"
-        extra = f" ({r.reason})" if r.reason else ""
-        print(f"{tag} {r.name}: {r.n_pairs} pairs, loss {r.final_loss:.4g}{extra}",
-              flush=True)
-    print(f"\n{verified}/{len(benches)} verified")
-    return verified
-
-
-def certify_one(bench):
-    """Train, verify, emit and kernel-check one benchmark in this process."""
-    from nuterm import _lean_check as lc
-
-    t0 = time.perf_counter()
-    try:
-        # the trainer verified the candidate it accepted; emit that evidence
-        r = learn_ranking(bench, ranks=RANKS)
-        t_train = time.perf_counter() - t0
-        res = (lc.certify(bench.name, r.system, r.proof,
-                          label="terminates via a ranking function")
-               if r.verified
-               else lc.CheckResult(bench.name, "UNVERIFIED", detail=r.reason or ""))
-    except Exception as e:
-        t_train = time.perf_counter() - t0
-        res = lc.CheckResult(bench.name, "ERROR", detail=f"{type(e).__name__}: {e}")
-    res.train_s = t_train
-    return res
-
-
 def _spawn(name: str):
     """Run ``certify_one`` for ``name`` in a fresh process and read back its
     result, so the benchmark sees an empty Z3 context."""
     from nuterm import _lean_check as lc
 
     cmd = [sys.executable, "-m", "tests.benchmarks.svcomp", WORKER_FLAG, name]
-    if RANKS != 1:
-        cmd += ["--ranks", str(RANKS)]      # a worker is a fresh process
     # the ranking nets have a handful of hidden units, so a worker gains nothing
     # from intra-op threads; left at the default each would claim several cores
     # and the pool would oversubscribe the machine several times over.
@@ -153,25 +112,6 @@ def _run_lean(benches, jobs: int) -> int:
     return tally["CHECKED"]
 
 
-def _run_export(benches, out_dir: Path) -> int:
-    """Train and verify each benchmark, then write its proof as a standalone
-    project under ``out_dir``. Nothing is compiled here."""
-    from nuterm import _lean_check as lc
-
-    written = 0
-    for bench in benches:
-        r = learn_ranking(bench)
-        if not r.verified:
-            print(f"unverified {bench.name}: {r.reason or ''}", flush=True)
-            continue
-        path = lc.export_project(bench.name, r.system, r.proof, out_dir,
-                                 label="terminates via a ranking function")
-        written += 1
-        print(f"exported   {bench.name} -> {path}", flush=True)
-    print(f"\n{written}/{len(benches)} exported")
-    return written
-
-
 def _run_worker(name: str) -> int:
     """One benchmark, one JSON line on stdout. Invoked by :func:`_spawn`."""
     match = [b for b in discover() if b.name == name]
@@ -198,17 +138,6 @@ def main(argv: list[str]) -> int:
             return 2
         del argv[i:i + 2]
 
-    global RANKS
-    if "--ranks" in argv:
-        i = argv.index("--ranks")
-        try:
-            RANKS = int(argv[i + 1])
-        except (IndexError, ValueError):
-            print("--ranks needs a positive integer")
-            return 2
-        if RANKS < 1:
-            print("--ranks needs a positive integer")
-            return 2
     export_to = None
     if "--export" in argv:
         i = argv.index("--export")
