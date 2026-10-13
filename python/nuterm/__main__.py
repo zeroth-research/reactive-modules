@@ -21,19 +21,34 @@ from ._bench import Bench, bench_of_module
 from ._train import learn_ranking
 
 
-def load(path: Path) -> Bench:
-    """The :class:`Bench` that the Python file ``path`` defines."""
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"cannot load {path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.path.insert(0, str(path.resolve().parent))
+def _import(path: Path):
+    """Import ``path``. A file inside a package is imported under its dotted name,
+    so its relative imports work; any other file is loaded on its own."""
+    path = path.resolve()
+    root, parts = path.parent, [path.stem]
+    while (root / "__init__.py").exists():
+        parts.insert(0, root.name)
+        root = root.parent
+    sys.path.insert(0, str(root))
     try:
+        if len(parts) > 1:
+            return importlib.import_module(".".join(parts))
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"cannot load {path}")
+        mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        return mod
     finally:
         sys.path.pop(0)
+
+
+def load(path: Path) -> Bench:
+    """The :class:`Bench` that the Python file ``path`` defines."""
+    mod = _import(path)
     bench = getattr(mod, "BENCH", None)
-    if isinstance(bench, Bench):
+    # duck-typed: the file may have imported `Bench` through another package path
+    if bench is not None and all(hasattr(bench, a) for a in ("name", "state", "inputs", "build")):
         return bench
     if callable(getattr(mod, "module", None)):
         return bench_of_module(mod.module(), path.stem, path.name)
