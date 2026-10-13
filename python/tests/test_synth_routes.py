@@ -485,7 +485,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
     would state a falsehood in an LLM prompt.
     """
     from zrth.lean.magic.linear import TA2MagicLinear
-    from zrth.lean.smt_query import SmtBudget
+    from zrth.lean.smt.limits import SmtBudget
 
     store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
                       producer="smt-linear")
@@ -628,7 +628,8 @@ def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
     answer: `check_obligations` states `init_inv`, `step_inv` and
     `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
     """
-    from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
+    from zrth.lean.smt.limits import SmtBudget
+    from zrth.lean.smt_query import ModuleQueries, Status
 
     q = ModuleQueries.build(module_of(name), claim, cert)
     assert q is not None, "the predicates should be readable for this module"
@@ -813,7 +814,8 @@ def bv_counter(width: int, top: int):
 
 
 def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
-    from zrth.lean.smt_query import ModuleQueries, SmtBudget, Status
+    from zrth.lean.smt.limits import SmtBudget
+    from zrth.lean.smt_query import ModuleQueries, Status
 
     q = ModuleQueries.build(module, claim, cert)
     assert q is not None

@@ -101,7 +101,6 @@ from ..smt.obligations import (
     ranked,
     step_inv,
 )
-from ..smt_prompt import parse_predicate
 from ..smt_synth import (
     Search,
     SynthContext,
@@ -285,7 +284,7 @@ class TA2MagicLinear(TA2Magic):
             search = self._safety(ctx, cols, inv)
             if search.found is not None:
                 self.log(f"[smt-linear] inv: {search.found}")
-            record(self.artifacts, search, log=self.log)
+            record(self.artifacts, search)
             if search.found is None:
                 raise Refused(
                     f"--infer smt-linear found no invariant. {search.note}",
@@ -306,7 +305,7 @@ class TA2MagicLinear(TA2Magic):
         if search.found is not None:
             self.log(f"[smt-linear] inv: {inv_src}")
             self.log(f"[smt-linear] ranking: {search.found}")
-        record(self.artifacts, search, log=self.log)
+        record(self.artifacts, search)
         if search.found is None:
             raise Refused(
                 f"--infer smt-linear found no ranking function. {search.note}",
@@ -349,8 +348,8 @@ class TA2MagicLinear(TA2Magic):
             conds = []
         for src in conds[:MAX_SPLITS]:
             try:
-                term = parse_predicate(ctx.env, src)
-            except Exception:                       # pragma: no cover
+                term = ctx.enc.parse(src, "--infer smt-linear")
+            except Refused:                         # pragma: no cover
                 continue
             shapes.append(_RankShape("split", cond_src=src, cond=term))
         return shapes
@@ -606,13 +605,11 @@ class TA2MagicLinear(TA2Magic):
         it, and both conjoin it to whatever `--invariant` or a resumed
         artifact already supplied.
         """
-        from ..smt_prompt import parse_predicate
-
         tm, n = ctx.tm, len(cols)
         Int = tm.getIntegerSort()
         rows = [[tm.mkConst(Int, f"a{j}_{i}") for i in range(n + 1)]
                 for j in range(k)]
-        given_term = parse_predicate(ctx.env, given) if given else None
+        given_term = ctx.enc.parse(given, "--invariant") if given else None
 
         def inv(vs):
             parts = []

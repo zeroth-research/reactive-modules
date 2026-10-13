@@ -153,7 +153,8 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.smt_query import SmtBudget, predicate_facts, solver_hints
+    from zrth.lean.smt.limits import SmtBudget
+    from zrth.lean.smt_query import predicate_facts, solver_hints
 
     lean = None
     if claim is not None:

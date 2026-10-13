@@ -339,8 +339,8 @@ class Obligations:
 
         self.next = [readable(t) for t in ctx.enc.next_state(self.s, self.el, self.en)]
         self.init = [readable(t) for t in ctx.enc.init_state(self.en)]
-        self.update_pre = readable(ctx.with_inputs(ctx.update_pre, self.el, self.en))
-        self.init_pre = readable(ctx.with_inputs(ctx.init_pre, self.el, self.en))
+        self.update_pre = readable(ctx.enc.with_inputs(ctx.update_pre, self.el, self.en))
+        self.init_pre = readable(ctx.enc.with_inputs(ctx.init_pre, self.el, self.en))
 
     def _readable(self, t):
         """`t`, with every tuple the encoding leaves folded away.

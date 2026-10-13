@@ -29,7 +29,8 @@ from zrth.lean.magic.learn import (
     _smt_term,
 )
 from zrth.lean.smt.script import smt_int
-from zrth.lean.smt_query import SmtBudget, Status, pre_check
+from zrth.lean.smt.limits import SmtBudget
+from zrth.lean.smt_query import Status, pre_check
 
 pytest.importorskip("cvc5")
 

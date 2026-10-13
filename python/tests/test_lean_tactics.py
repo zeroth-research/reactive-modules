@@ -443,7 +443,7 @@ class _Settings:
     """The two fields `_render` reads, without building a whole CLI parse."""
 
     def __init__(self, smt_tactics="cvc5"):
-        from zrth.lean.smt_query import SmtBudget
+        from zrth.lean.smt.limits import SmtBudget
 
         self.smt_tactics = smt_tactics
         self.budget = SmtBudget()

@@ -183,7 +183,7 @@ class TA2MagicSygus(TA2Magic):
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
 
         search = self._synthesise(ctx, cols, consts)
-        record(self.artifacts, search, log=self.log)
+        record(self.artifacts, search)
         if search.found is None:
             raise Refused(
                 f"--infer sygus found no invariant. {search.note}",
@@ -289,7 +289,7 @@ class TA2MagicSygus(TA2Magic):
                     "trans", state + nxt, Bool, self._trans(ctx, state, nxt)
                 ),
                 solver.defineFun(
-                    "post", state, Bool, ctx.at(ctx.prp, state)
+                    "post", state, Bool, ctx.enc.at(ctx.prp, state)
                 ),
             )
             result = solver.checkSynth()
@@ -328,7 +328,7 @@ class TA2MagicSygus(TA2Magic):
               for i, v in enumerate(ctx.extl_next)]
         body = tm.mkTerm(
             Kind.AND,
-            ctx.with_inputs(ctx.init_pre, el, en),
+            ctx.enc.with_inputs(ctx.init_pre, el, en),
             self._same(ctx, state, ctx.enc.init_state(en)),
         )
         return self._exists(ctx, el + en, body)
@@ -342,7 +342,7 @@ class TA2MagicSygus(TA2Magic):
               for i, v in enumerate(ctx.extl_next)]
         body = tm.mkTerm(
             Kind.AND,
-            ctx.with_inputs(ctx.update_pre, el, en),
+            ctx.enc.with_inputs(ctx.update_pre, el, en),
             self._same(ctx, nxt, ctx.enc.next_state(state, el, en)),
         )
         return self._exists(ctx, el + en, body)
@@ -430,7 +430,7 @@ class TA2MagicSygus(TA2Magic):
         grammar.addRules(atom, atoms)
         body = coeff
         for col in cols:
-            read = ctx.at(col.term, args)
+            read = ctx.enc.at(col.term, args)
             if rational and read.getSort().isInteger():
                 read = tm.mkTerm(Kind.TO_REAL, read)
             body = tm.mkTerm(Kind.ADD, body, tm.mkTerm(Kind.MULT, coeff, read))

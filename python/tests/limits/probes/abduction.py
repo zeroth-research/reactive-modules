@@ -40,9 +40,9 @@ def abduce(modname: str, inv: str) -> str:
     el = q.msmt.fresh_extl_l("a_el")
     en = q.msmt.fresh_extl_n("a_en")
     nxt = q.msmt.update_state(s, el, en)
-    solver.assertFormula(q._sub_state(q.inv, s))
+    solver.assertFormula(q.enc.at(q.inv, s))
     try:
-        return str(solver.getAbduct(q._sub_state(q.inv, nxt)))
+        return str(solver.getAbduct(q.enc.at(q.inv, nxt)))
     except Exception as e:
         return f"<{type(e).__name__}: {str(e)[:70]}>"
 

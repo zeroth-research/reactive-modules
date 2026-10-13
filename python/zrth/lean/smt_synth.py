@@ -202,18 +202,6 @@ class SynthContext:
 
     # --- terms the searches build on ------------------------------------
 
-    def at(self, term, vs: list):
-        """`term` with the state variables replaced by `vs`."""
-        return self.enc.at(term, vs)
-
-    def with_inputs(self, term, el: list, en: list):
-        """`term` with the env's input constants replaced by `el` / `en`.
-
-        A precondition is written over `e0..`/`el0..`, which are constants of
-        the parsing env; an obligation quantifies its own.
-        """
-        return self.enc.with_inputs(term, el, en)
-
 
 @dataclass(frozen=True)
 class Reading:
@@ -709,7 +697,7 @@ class Search:
         )
 
 
-def record(store, search: Search, *, log=None) -> None:
+def record(store, search: Search) -> None:
     """Leave `search` in `artifacts/` for the next run.
 
     A found predicate is written as its own role (`smt.record.found`). An

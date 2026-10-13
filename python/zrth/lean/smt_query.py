@@ -27,14 +27,18 @@ import time
 import weakref
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
 from .smt import obligations as ob
-from .smt.limits import SmtBudget, call_ms
+from .smt.limits import call_ms
 from .smt.run import encoding_of
 from .smt.script import script
 from .smt.terms import ite_conditions, nodes, state_dependent
+
+if TYPE_CHECKING:
+    from .smt.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -142,14 +146,8 @@ class ModuleQueries:
 
         return self.tm.mkTerm(Kind.NOT, t)
 
-    def _sub_inputs(self, term, el, en):
-        """Rebind the env's shared `e*`/`el*` consts to a query's own vars."""
-        return self.enc.with_inputs(term, el, en)
-
-    def _sub_state(self, term, s):
-        return self.enc.at(term, s)
-
-    def _solver(self, budget: SmtBudget):
+    def solver(self, budget: SmtBudget):
+        """A solver on this module's terms, held to `budget`'s next call."""
         return self.enc.solver(call_ms(budget), logic="ALL")
 
     def _ask(self, name, build, budget, artifacts=None):
@@ -172,7 +170,7 @@ class ModuleQueries:
         try:
             negation, witness = build()
             written = _dump(artifacts, name, negation)
-            solver = self._solver(budget)
+            solver = self.solver(budget)
             if witness:
                 solver.setOption("produce-models", "true")
             solver.assertFormula(negation)
@@ -798,7 +796,7 @@ def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) 
         if budget.exhausted:
             return
         s, _, _ = q.enc.fresh("d_")
-        inv_s = q._sub_state(q.inv, s)
+        inv_s = q.enc.at(q.inv, s)
         cond_s = cond.substitute(q.state_vars, s)
         value = None
         if _unsat(q, q._and(inv_s, cond_s), budget):
@@ -838,7 +836,7 @@ def _refutation_shape(
         if budget.exhausted:
             break
         try:
-            solver = q._solver(budget)
+            solver = q.solver(budget)
             solver.setOption("produce-proofs", "true")
             solver.setOption("produce-unsat-cores", "true")
             for term in labels.values():
@@ -892,7 +890,7 @@ def _unsat(q: "ModuleQueries", formula, budget: SmtBudget) -> bool:
     if budget.exhausted:
         return False
     try:
-        solver = q._solver(budget)
+        solver = q.solver(budget)
         solver.assertFormula(formula)
         return solver.checkSat().isUnsat()
     except Exception:
