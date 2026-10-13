@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from ..common import Refused
 from .api import Alias, InferInput, InferResult, InferRoute, Opt
+
+if TYPE_CHECKING:
+    from ..project import LakefileParts
 
 
 def _resolve(opts: dict):
@@ -21,7 +25,7 @@ def _check_project_name(settings, opts) -> "str | None":
     `import 1projNA` is "unexpected token; expected identifier", four steps
     later and in generated code.
     """
-    from ..project import na_module_name
+    from ..fbk_proveit import na_module_name
 
     name = settings.project_name
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_']*", name):
@@ -49,11 +53,46 @@ def _precheck(module, opts, config, claim):
         raise Refused(str(e)) from e
 
 
-def _lakefile(config) -> dict:
+def _lakefile(config, project_name: str) -> "LakefileParts":
     """What this route needs of the lakefile: the checkout required, and the
     NA model declared as a lean_lib.  Without the two, the certificate this
     route installs is a file lake reaches and cannot elaborate."""
-    return {"ltl_project": str(config)}
+    from ..fbk_proveit import PROVEIT_DIR, na_module_name
+    from ..project import LakefileParts, LeanLib, Require
+
+    return LakefileParts(
+        libs=(
+            LeanLib(
+                na_module_name(project_name),
+                PROVEIT_DIR,
+                comment=(
+                    "`--fbk-proveit`: `proveit.py` compiles the NA model out "
+                    "of tree and so\n"
+                    "imports it under its bare file stem, which the "
+                    "certificate then names.\n"
+                    "Mapping that module name back onto the file is what "
+                    "lets `lake build`\n"
+                    "resolve the same import the certificate was generated "
+                    "against."
+                ),
+            ),
+        ),
+        requires=(
+            Require(
+                "LTL_Certifying",
+                str(config),
+                comment=(
+                    "`--fbk-proveit`: the certificate imports "
+                    "LTLCertifying.*. A path require\n"
+                    "rather than a git one because the route already has the "
+                    "checkout in hand,\n"
+                    "and because that checkout pins cslib and smt to the "
+                    "revisions above \u2014 the\n"
+                    "two package sets resolve as one."
+                ),
+            ),
+        ),
+    )
 
 
 def _run(inp: InferInput) -> InferResult:

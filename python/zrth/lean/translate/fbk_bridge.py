@@ -118,7 +118,7 @@ def atom_to_lean_fbk_bridge(
 ) -> str:
     """Emit the bridge file for `ctx`.
 
-    `na_module` is the Lean module name of the NA model (`project.na_module_name`).
+    `na_module` is the Lean module name of the NA model (`fbk_proveit.na_module_name`).
 
     `bodies` are the slot texts the model was written from -- the same ones,
     because the theorem below is about *that* file. Pass what

@@ -475,8 +475,9 @@ def _generate(settings: Settings, module, ctx: LeanContext,
             executable=settings.executable,
             lean_cert=lean_cert,
             module_file=settings.module_file,
-            lakefile_vars=(
-                settings.route.lakefile(settings.route_config)
+            lakefile=(
+                settings.route.lakefile(
+                    settings.route_config, settings.project_name)
                 if settings.route is not None and settings.route.lakefile
                 else None
             ),

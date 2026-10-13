@@ -339,9 +339,10 @@ class InferRoute:
     # whether a `too_weak` invariant is usable depends on what the route
     # would do with it.
     reads_artifacts: frozenset[str] = frozenset()
-    # `config -> {template var: value}`, merged into the lakefile render.
-    # Declared rather than passed because the lakefile is written while the
-    # project is created, before any route runs.
+    # `(config, project_name) -> LakefileParts`: the libraries and requires
+    # the lakefile gets for this route.  Declared rather than passed because
+    # the lakefile is written while the project is created, before any route
+    # runs.
     lakefile: Callable | None = None
 
     # --- hooks, in the order they fire ----------------------------------

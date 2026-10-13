@@ -1106,13 +1106,18 @@ def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
     """`Certificate/Certificate.lean` is root-imported, so `lake build`
     reaches it. It imports `LTLCertifying.*`, `Smt` and the NA model, and a
     lakefile missing any of the three turns that reach into an error."""
-    from zrth.lean.project import generate_lakefile, na_module_name
+    from pathlib import Path
+
+    from zrth.lean.fbk_proveit import na_module_name
+    from zrth.lean.infer_route import route_by_name
+    from zrth.lean.project import generate_lakefile
 
     bare = generate_lakefile("Proj")
     assert "LTL_Certifying" not in bare
     assert "srcDir" not in bare
 
-    wired = generate_lakefile("Proj", ltl_project="/checkout")
+    parts = route_by_name("fbk-proveit").lakefile(Path("/checkout"), "Proj")
+    wired = generate_lakefile("Proj", parts=parts)
     assert 'name = "LTL_Certifying"' in wired
     assert 'path = "/checkout"' in wired
     # The NA lib maps the model's module name onto the directory it is
@@ -1127,8 +1132,7 @@ def test_the_na_lib_names_the_file_the_model_is_written_to(tmp_path):
     """The lean_lib's name and srcDir are the model's module name and
     directory. Drift between them is a `lake build` that cannot find an
     import the certificate already carries."""
-    from zrth.lean.project import PROVEIT_DIR, na_module_name
-    from zrth.lean.fbk_proveit import write_na_model
+    from zrth.lean.fbk_proveit import PROVEIT_DIR, na_module_name, write_na_model
 
     model = write_na_model(
         tmp_path, "Proj", LeanContext(_counter()), "true"

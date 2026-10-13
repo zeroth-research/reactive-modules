@@ -955,7 +955,7 @@ gains two entries:
 | lakefile entry | resolves |
 |---|---|
 | `[[require]] name = "LTL_Certifying", path = <checkout>` | `import LTLCertifying.Safety.Lemmas` and its two siblings. A path require because the route already holds the checkout, and because that checkout pins `cslib` and `smt` to the revisions the generated project already requires — the two package sets resolve as one |
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `project.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk_proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
 
 `import Smt` needs nothing new — verith's own route already requires
 `smt` — and neither does the cvc5 shared library the `smt` tactic dlopens:

@@ -52,49 +52,56 @@ TEMPLATE_DIR = STATIC_DIR
 CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean", "Mat.lean"]
 LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
-# The `--fbk-proveit` route's subdirectory inside the generated project. Its
-# NA model is both a `proveit.py` input and a lake target of the project, so
-# the directory and the model's module name are needed on both sides.
-PROVEIT_DIR = "ProveIt"
-
-
-def na_module_name(project_name: str) -> str:
-    """Lean module name of the NA model the `--fbk-proveit` route writes.
-
-    `proveit.py` compiles an out-of-tree model into an olean and imports it
-    under the file stem, so the file name *is* the module name the generated
-    certificate carries -- and the name the project's lakefile has to map
-    back onto ``PROVEIT_DIR``.
-    """
-    return f"{project_name}NA"
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # Lean project files
 # ══════════════════════════════════════════════════════════════════════════
 
 
+@dataclass(frozen=True)
+class LeanLib:
+    """A `[[lean_lib]]` a route adds: `name` is the module name its files are
+    imported under, `src_dir` the project-relative directory they are in."""
+
+    name: str
+    src_dir: str
+    comment: str = ""
+
+
+@dataclass(frozen=True)
+class Require:
+    """A `[[require]]` a route adds, from a local checkout at `path`."""
+
+    name: str
+    path: str
+    comment: str = ""
+
+
+@dataclass(frozen=True)
+class LakefileParts:
+    """What an inference route adds to the lakefile: libraries after
+    `System`, requires after `smt`, each preceded by its `comment`."""
+
+    libs: tuple[LeanLib, ...] = ()
+    requires: tuple[Require, ...] = ()
+
+
 def generate_lakefile(
     project_name: str,
     executable: bool = False,
-    ltl_project: Path | str | None = None,
+    parts: LakefileParts = LakefileParts(),
 ) -> str:
-    """Render the project's lakefile.
+    """Render the project's lakefile, with `parts` added to the fixed ones.
 
-    `ltl_project` is the `--fbk-proveit` checkout: given one, the lakefile
-    also requires it and declares the NA model as a lean_lib, which is what
-    makes the installed certificate -- `Certificate/Certificate.lean`, which
-    the root module imports -- a buildable target rather than a file lake
-    reaches and cannot elaborate.
+    A route cannot amend the lakefile after the fact -- it is written while
+    the project is created, before any route runs -- so what the route needs
+    in it is given here, from its row's `lakefile` hook.
     """
     return render(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
         cslib_rev=CSLIB_REV,
-        ltl_project=str(ltl_project) if ltl_project is not None else None,
-        na_lib=na_module_name(project_name) if ltl_project is not None else None,
-        proveit_dir=PROVEIT_DIR,
+        parts=parts,
     )
 
 
@@ -107,7 +114,7 @@ def stream(cmd: list[str], *, cwd: Path) -> tuple[int, str]:
 
     Returns the exit code *and* the output rather than raising, so each
     caller can say what went wrong in its own vocabulary -- `lake` and
-    `proveit.py` do not fail in the same words. `FileNotFoundError`
+    the tool a route runs do not fail in the same words. `FileNotFoundError`
     propagates: a missing executable is the caller's to name.
     """
     print(f"$ {' '.join(cmd)}")
@@ -132,9 +139,9 @@ def build_certificate(project_dir: Path) -> None:
     """`lake build` the certificate of a generated project.
 
     `lake update` runs first: a freshly generated project has no manifest at
-    all, and one left by an earlier run predates this run's lakefile -- with
-    `--fbk-proveit` that lakefile has a require the manifest has never seen,
-    and `lake build` resolves neither case.
+    all, and one left by an earlier run predates this run's lakefile -- a
+    route's lakefile can add a require the manifest has never seen, and
+    `lake build` resolves neither case.
 
     A build that succeeds while the certificate still holds `sorry` is not a
     proof, so that is an error too. `zeroth_hammer` leaves a `sorry` where it
@@ -574,7 +581,7 @@ def create_project(
     executable: bool = False,
     lean_cert: LeanCertificate | None = None,
     module_file: Path | str | None = None,
-    lakefile_vars: dict | None = None,
+    lakefile: LakefileParts | None = None,
     remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
 ) -> Path:
@@ -592,14 +599,11 @@ def create_project(
                            where it is `None`.
         `module_file`:     Path to the Python source file used to create the module
                            (written as a debug artifact alongside the project).
-        `lakefile_vars`:   What the inference route needs of the lakefile,
-                           from its row's `lakefile` hook -- the
-                           `--infer fbk-proveit` route's checkout, for
-                           instance, which the lakefile has to require for
-                           the certificate that route installs to build.
-                           Declared as data rather than passed per route:
-                           the lakefile is written here, before any route
-                           runs, so a route cannot amend it afterwards.
+        `lakefile`:        What the inference route adds to the lakefile,
+                           from its row's `lakefile` hook. Declared as data
+                           rather than passed per route: the lakefile is
+                           written here, before any route runs, so a route
+                           cannot amend it afterwards.
         `remove`:          Project-relative files an earlier run in the same
                            `-o` may have left where a lean_lib globs; they
                            are deleted before anything is written there.
@@ -627,13 +631,14 @@ def create_project(
         print("Wrote system.py")
 
     # Render and write project-level files from templates
-    lakefile = project_dir / "lakefile.toml"
-    lakefile.write_text(
+    lakefile_path = project_dir / "lakefile.toml"
+    lakefile_path.write_text(
         generate_lakefile(
-            project_name, executable=executable, **(lakefile_vars or {})
+            project_name, executable=executable,
+            parts=lakefile or LakefileParts(),
         )
     )
-    print(f"Wrote {lakefile}")
+    print(f"Wrote {lakefile_path}")
 
     toolchain = project_dir / "lean-toolchain"
     toolchain.write_text(

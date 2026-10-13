@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .common import LeanContext
-from .project import PROVEIT_DIR, na_module_name, stream
+from .project import stream
 from .translate.fbk import (
     NA_IMPORTS,
     NAUnsupported,
@@ -55,6 +55,23 @@ from .translate.fbk import (
     check_na_supported,
     pre_over_slots,
 )
+
+
+# The route's subdirectory inside the generated project. The NA model is both
+# a `proveit.py` input and a lake target of the project, so the directory and
+# the model's module name are needed on both sides.
+PROVEIT_DIR = "ProveIt"
+
+
+def na_module_name(project_name: str) -> str:
+    """Lean module name of the NA model this route writes.
+
+    `proveit.py` compiles an out-of-tree model into an olean and imports it
+    under the file stem, so the file name *is* the module name the generated
+    certificate carries -- and the name the project's lakefile has to map
+    back onto ``PROVEIT_DIR``.
+    """
+    return f"{project_name}NA"
 
 
 class ProveItError(RuntimeError):
@@ -363,7 +380,7 @@ def write_na_model(
     model under (`resolve_model` uses the stem for an out-of-tree model),
     so it has to be a valid Lean identifier -- and it is the same name the
     generated lakefile's lean_lib declares, which is why both come from
-    `project.na_module_name`.
+    `na_module_name`.
     """
     out_dir = project_dir / PROVEIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
