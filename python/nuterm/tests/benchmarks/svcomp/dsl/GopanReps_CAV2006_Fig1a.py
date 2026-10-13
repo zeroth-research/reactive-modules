@@ -10,6 +10,14 @@
     }
 
 No nondet inputs: both variables start from constants.
+
+Original header comment:
+
+    Program from Fig.1a of
+    2006CAV - Gopan,Reps - Lookahead Widening
+
+    Date: 2014-06-22
+    Author: Caterina Urban, Matthias Heizmann
 """
 
 from __future__ import annotations

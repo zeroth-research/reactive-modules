@@ -12,6 +12,14 @@
 
 The loop only runs under the outer `if (M > 0)`; the precondition restricts
 the comparison to that domain.
+
+Original header comment:
+
+    Program depicted in Fig.8b of
+    2013TACAS - Cook,See,Zuleger - Ramsey vs. Lexicographic Termination Proving
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

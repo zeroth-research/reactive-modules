@@ -7,6 +7,14 @@
         y = y - 1;
         z = z - 1;
     }
+
+Original header comment:
+
+    Program used in the experimental evaluation of the following paper.
+    2008ESOP - Chawdhary,Cook,Gulwani,Sagiv,Yang - Ranking Abstractions
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

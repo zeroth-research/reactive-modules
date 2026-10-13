@@ -11,6 +11,14 @@ Notes:
   - `y` is a constant (init 100, never written) and `z` is a nondet parameter
     (read in the branch, never written), both held unchanged as ctrl vars.
   - `z == 0` is written with `==` directly.
+
+Original header comment:
+
+    Program used in the experimental evaluation of the following paper.
+    2008ESOP - Chawdhary,Cook,Gulwani,Sagiv,Yang - Ranking Abstractions
+
+    Date: 2014
+    Author: Caterina Urban
 """
 
 from __future__ import annotations

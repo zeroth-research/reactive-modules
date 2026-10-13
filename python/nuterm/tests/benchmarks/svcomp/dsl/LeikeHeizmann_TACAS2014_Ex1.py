@@ -7,6 +7,14 @@
         if (y > 0) { q = q - y - 1; }
         else       { q = q + y - 1; }
     }
+
+Original header comment:
+
+    Program from Example 1 of
+    2014TACAS - Leike, Heizmann - Ranking Templates for Linear Loops
+
+    Date: 2014-06-29
+    Author: Jan Leike
 """
 
 from __future__ import annotations

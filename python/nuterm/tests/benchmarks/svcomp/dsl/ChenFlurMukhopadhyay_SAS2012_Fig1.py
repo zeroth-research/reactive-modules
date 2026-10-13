@@ -9,6 +9,14 @@
         y = z;
         z = -z - 1;
     }
+
+Original header comment:
+
+    Program from Fig.1 of
+    2012SAS - Chen,Flur,Mukhopadhyay - Termination Proofs for Linear Simple Loops
+
+    Date: 2013-12-18
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

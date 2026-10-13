@@ -11,6 +11,14 @@
     }
 
 Precondition: y1 > 0 && y2 > 0.
+
+Original header comment:
+
+    Program from Fig.1 of
+    2005CAV - Bradley,Manna,Sipma - Linear Ranking with Reachability
+
+    Date: 12.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

@@ -19,6 +19,14 @@ Notes:
     `i, j, M, N` (inputs order).
   - `a`, `b` are copies of `i`, `j` at entry and are never written; `M`, `N`
     are nondet parameters, never written. All are held unchanged.
+
+Original header comment:
+
+    Program from Fig.7 of
+    2013FSE - Nori,Sharma - Termination Proofs from Tests
+
+    Date: 18.12.2013
+    Author: heizmann@informatik.uni-freiburg.de
 """
 
 from __future__ import annotations

@@ -9,6 +9,23 @@
         y = z;
         z = -z - 1;
     }
+
+Original header comment:
+
+    Date: 2014-06-08
+    Author: leike@informatik.uni-freiburg.de
+
+
+    This is Example 3.7 from the test suit used in
+
+    Termination Proofs for Linear Simple Loops.
+    Hong Yi Chen, Shaked Flur, and Supratik Mukhopadhyay.
+    SAS 2012.
+
+    The test suite is available at the following URL.
+    https://tigerbytes2.lsu.edu/users/hchen11/lsl/LSL_benchmark.txt
+
+    Comment: terminating, non-linear
 """
 
 from __future__ import annotations
