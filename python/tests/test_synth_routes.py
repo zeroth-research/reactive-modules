@@ -356,6 +356,11 @@ def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
     out = TA2MagicLinear(bench.build()[0], log=lambda *_: None).infer(claim)
     assert out.ranking is not None
 
+# `m_twovars` takes about 135 s to search and needs every query decided
+# inside the 5 s call budget, so it fails on a loaded machine.
+# `test_smt_linear_proves_an_empty_space_and_writes_it_down` covers the
+# same refusal and note in a few seconds.
+@pytest.mark.slow
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
     """`m_twovars` has no linear rank under any invariant this route states.
 
@@ -414,6 +419,11 @@ def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
     assert out.inv.startswith("(and (>= s0 0)")
 
 
+# `m_twovars` takes about 135 s to search and needs every query decided
+# inside the 5 s call budget, so it fails on a loaded machine.
+# `test_smt_linear_proves_an_empty_space_and_writes_it_down` covers the
+# same refusal and note in a few seconds.
+@pytest.mark.slow
 def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     from zrth.lean.magic.linear import TA2MagicLinear
 
@@ -433,6 +443,36 @@ def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
     # Every shape it searched is named, branching ones included: the note is
     # read as a list of shapes a later prompt need not propose.
+    assert "zero where the property holds" in text
+    assert "linear on each side of" in text
+
+
+def test_smt_linear_proves_an_empty_space_and_writes_it_down(tmp_path):
+    """The two `m_twovars` tests above, on a module that answers in seconds.
+
+    `m_step2` steps 0, 2, ..., 10 and back to 0, so `G F (s0 = 1)` is false
+    and no ranking function of any shape exists. The refusal and the note
+    both have to say so as a proof, and the note has to name every shape
+    searched.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    prp = "(= s0 1)"
+    store = store_for(tmp_path, "m_step2", kind="buchi", prp=prp,
+                      producer="smt-linear")
+    with pytest.raises(Refused) as e:
+        TA2MagicLinear(
+            module_of("m_step2"), artifacts=store, log=lambda *_: None
+        ).infer(Claim(prp=prp, kind="buchi"))
+    assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+    assert not store.usable("note", statuses=("unknown",))
+    notes = store.usable("note", languages=("md",), statuses=("no_solution",))
+    assert len(notes) == 1
+    text = store.read(notes[0])
+    assert "No ranking function of these shapes" in text
+    assert "linear in the state" in text
     assert "zero where the property holds" in text
     assert "linear on each side of" in text
 
