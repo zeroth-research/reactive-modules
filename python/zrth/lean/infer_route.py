@@ -472,6 +472,7 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         base_url=inp.base_url,
         known=_ruled_out(inp),
         budget_s=inp.opts["cegar_budget"],
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 

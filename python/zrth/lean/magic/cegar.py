@@ -31,10 +31,8 @@ from dataclasses import dataclass
 
 try:
     import cvc5  # type: ignore
-    from cvc5 import Kind
 except ImportError:
     cvc5 = None
-    Kind = None
 
 from zrth import Module
 
@@ -42,13 +40,16 @@ from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 from .ai import _make_client, _describe_preconditions
-from ..smt_module import ModuleSMT
-from ..smt_prompt import (
-    CegarPromptEnv,
-    PromptResult,
-    parse_predicate,
-    prompt_inv_ranking,
+from ..smt.obligations import (
+    Frame,
+    init_inv,
+    inv_imp_P,
+    rank_decrease,
+    rank_positive,
+    step_inv,
 )
+from ..smt.run import encoding_of
+from ..smt_prompt import CegarPromptEnv, PromptResult, prompt_inv_ranking
 
 
 @dataclass
@@ -90,6 +91,7 @@ class TA2MagicCEGAR(TA2Magic):
         base_url: str | None = None,
         known: tuple[str, ...] = (),
         budget_s: float | None = None,
+        encoding=None,
     ):
         super().__init__(source)
         if cvc5 is None:
@@ -98,6 +100,9 @@ class TA2MagicCEGAR(TA2Magic):
                 "Install with: uv pip install cvc5"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.max_attempts = max_attempts
         # Wall-clock seconds to keep asking for, in place of `max_attempts`.
         # A fixed count is the wrong leash for a run that has a time limit
@@ -121,17 +126,16 @@ class TA2MagicCEGAR(TA2Magic):
               given: Certificate = Certificate()) -> Certificate:
         """The certificate of `claim`, as SMT-LIB. What `given` holds is
         fixed: it is shown to the model and only the rest is asked for."""
-        tm = cvc5.TermManager()
-        msmt = ModuleSMT(tm=tm, module=self.module)
-        env = CegarPromptEnv(msmt)
+        enc = encoding_of(self.encoding or self.module)
+        env = enc.env
 
-        # Parse predicates — Python expression first, SMT-LIB fallback.
-        def parsed(src):
-            return tm.mkBoolean(True) if src is None else parse_predicate(env, src)
+        # An absent predicate is `true`, and every obligation states it.
+        def parsed(src, flag):
+            return enc.tm.mkBoolean(True) if src is None else enc.parse(src, flag)
 
-        prp_term = parsed(claim.prp)
-        init_pre_term = parsed(claim.init_pre)
-        update_pre_term = parsed(claim.update_pre)
+        prp_term = parsed(claim.prp, "--safety" if claim.is_safety else "--buchi")
+        init_pre_term = parsed(claim.init_pre, "--pre")
+        update_pre_term = parsed(claim.update_pre, "--pre")
 
         preconds = _describe_preconditions(claim)
         feedback: str | None = None
@@ -176,8 +180,7 @@ class TA2MagicCEGAR(TA2Magic):
                 print(f"  ranking: {result.ranking_src}")
 
             obligations = self._check_all(
-                msmt,
-                env,
+                enc,
                 result,
                 prp_term,
                 init_pre_term,
@@ -222,22 +225,9 @@ class TA2MagicCEGAR(TA2Magic):
 
     # --- obligation checks ---------------------------------------------
 
-    def _subst_inputs(
-        self,
-        env: CegarPromptEnv,
-        term: "cvc5.Term",
-        el: list,
-        en: list,
-    ) -> "cvc5.Term":
-        """Substitute the env's `e0/el0` consts with obligation-local vars."""
-        old = list(env.extl_next_vars) + list(env.extl_latched_vars)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
-
     def _check_all(
         self,
-        msmt: ModuleSMT,
-        env: CegarPromptEnv,
+        enc,
         r: PromptResult,
         prp_term,
         init_pre_term,
@@ -245,118 +235,77 @@ class TA2MagicCEGAR(TA2Magic):
         *,
         safety: bool = False,
     ) -> list[ObligationResult]:
+        """`rule_buchi`'s obligations, `hrank` split in two, or
+        `rule_globally`'s; each over fresh constants of its own."""
+
+        def frame(prefix):
+            return Frame(enc, prefix, init_pre=init_pre_term,
+                         update_pre=update_pre_term)
+
         checks = [
-            self._check_init(msmt, env, r, init_pre_term),
-            self._check_inductive(msmt, env, r, update_pre_term),
+            self._check_init(frame("init_"), r),
+            self._check_inductive(frame("ind_"), r),
         ]
         if safety:
-            checks.append(self._check_inv_implies_prp(msmt, env, r, prp_term))
+            checks.append(self._check_inv_implies_prp(frame("ip_"), r, prp_term))
         else:
             checks += [
-                self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
-                self._check_ranking_positive(msmt, env, r, prp_term, update_pre_term),
+                self._check_ranking_decrease(frame("rd_"), r, prp_term),
+                self._check_ranking_positive(frame("rp_"), r, prp_term),
             ]
         return checks
 
-    def _check_inv_implies_prp(self, msmt, env, r, prp_term):
+    def _check_inv_implies_prp(self, f: Frame, r, prp_term):
         """`inv s → prp s`: what makes the invariant a *safety* proof."""
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("ip_s")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s))
-        return self._run_query("inv_imp_P", neg_query, env, extra_vars=[("s", s)])
+        q = inv_imp_P(f, [("inv", r.inv_term)], prp_term)
+        return self._run_query("inv_imp_P", q.negation(f.tm), f.enc.env,
+                               extra_vars=[("s", f.s)])
 
-    def _check_init(self, msmt, env, r, init_pre_term):
-        tm = msmt.tm
-        el = msmt.fresh_extl_l("init_el")
-        en = msmt.fresh_extl_n("init_en")
-        pre = self._subst_inputs(env, init_pre_term, el, en)
-        s0 = msmt.init_state(en)
-        inv_at_init = r.inv_term.substitute(env.state_vars, s0)
-        neg_query = tm.mkTerm(Kind.AND, pre, tm.mkTerm(Kind.NOT, inv_at_init))
+    def _check_init(self, f: Frame, r):
+        q = init_inv(f, [r.inv_term])
         return self._run_query(
-            "init_inv", neg_query, env, extra_vars=[("extl_l", el), ("extl_n", en)]
+            "init_inv", q.negation(f.tm), f.enc.env,
+            extra_vars=[("extl_l", f.el), ("extl_n", f.en)],
         )
 
-    def _check_inductive(self, msmt, env, r, update_pre_term):
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("ind_s")
-        el = msmt.fresh_extl_l("ind_el")
-        en = msmt.fresh_extl_n("ind_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        s_next = msmt.update_state(s, el, en)
-        inv_next = r.inv_term.substitute(env.state_vars, s_next)
-        neg_query = tm.mkTerm(Kind.AND, inv_s, pre, tm.mkTerm(Kind.NOT, inv_next))
+    def _check_inductive(self, f: Frame, r):
+        q = step_inv(f, [("inv", r.inv_term)], [r.inv_term])
         return self._run_query(
             "step_inv",
-            neg_query,
-            env,
+            q.negation(f.tm),
+            f.enc.env,
             extra_vars=[
-                ("s", s),
-                ("extl_l", el),
-                ("extl_n", en),
-                ("s_next", s_next),
+                ("s", f.s),
+                ("extl_l", f.el),
+                ("extl_n", f.en),
+                ("s_next", f.succ),
             ],
         )
 
-    def _check_ranking_decrease(self, msmt, env, r, prp_term, update_pre_term):
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("rd_s")
-        el = msmt.fresh_extl_l("rd_el")
-        en = msmt.fresh_extl_n("rd_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        s_next = msmt.update_state(s, el, en)
-        rank_s = r.ranking_term.substitute(env.state_vars, s)
-        rank_next = r.ranking_term.substitute(env.state_vars, s_next)
-        decrease = tm.mkTerm(Kind.LT, rank_next, rank_s)
-        neg_query = tm.mkTerm(
-            Kind.AND,
-            inv_s,
-            tm.mkTerm(Kind.NOT, prp_s),
-            pre,
-            tm.mkTerm(Kind.NOT, decrease),
-        )
+    def _check_ranking_decrease(self, f: Frame, r, prp_term):
+        q = rank_decrease(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
         return self._run_query(
             "rank_decrease",
-            neg_query,
-            env,
+            q.negation(f.tm),
+            f.enc.env,
             extra_vars=[
-                ("s", s),
-                ("extl_l", el),
-                ("extl_n", en),
-                ("s_next", s_next),
-                ("ranking(s)", [rank_s]),
-                ("ranking(s_next)", [rank_next]),
+                ("s", f.s),
+                ("extl_l", f.el),
+                ("extl_n", f.en),
+                ("s_next", f.succ),
+                ("ranking(s)", [f.at(r.ranking_term, f.s)]),
+                ("ranking(s_next)", [f.at(r.ranking_term, f.succ)]),
             ],
         )
 
-    def _check_ranking_positive(self, msmt, env, r, prp_term, update_pre_term):
-        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`.
-
-        With `rank_decrease`, exactly `rule_buchi`'s `hrank` over the Lean
-        ranking `Int.toNat ranking`: `toNat r' < toNat r` holds iff `r >= 1`
-        and `r' < r`. It used to be `inv s → ranking s >= 0` over every state,
-        which `hrank` never asks -- and which rejects every linear rank of a
-        state that is unbounded where the property already holds, such as
-        `1 + y` for `while (y >= 0) y = y - 1`.
-        """
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("rp_s")
-        el = msmt.fresh_extl_l("rp_el")
-        en = msmt.fresh_extl_n("rp_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        rank_s = r.ranking_term.substitute(env.state_vars, s)
-        positive = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(1))
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s), pre,
-                              tm.mkTerm(Kind.NOT, positive))
-        return self._run_query("rank_positive", neg_query, env,
-                               extra_vars=[("s", s), ("ranking(s)", [rank_s])])
+    def _check_ranking_positive(self, f: Frame, r, prp_term):
+        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`: with
+        `rank_decrease`, exactly `hrank` over `Int.toNat ranking`."""
+        q = rank_positive(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
+        return self._run_query(
+            "rank_positive", q.negation(f.tm), f.enc.env,
+            extra_vars=[("s", f.s), ("ranking(s)", [f.at(r.ranking_term, f.s)])],
+        )
 
     # --- solver driver --------------------------------------------------
 
