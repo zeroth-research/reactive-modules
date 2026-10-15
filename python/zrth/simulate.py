@@ -248,9 +248,7 @@ def _affine(op, r, in_flow, breakpoints):
             _breakpoint(breakpoints, delta, pins)
             return TDEP
         case SPN.IsZero():
-            if r[0] is TDEP:
-                raise FlowNotSolvable("a place count that depends on time is tested")
-            return r[0] == 0
+            return TDEP if r[0] is TDEP else r[0] == 0
         case SPN.And():
             if r[0] is False or r[1] is False:
                 return False
