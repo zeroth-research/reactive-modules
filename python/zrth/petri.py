@@ -12,14 +12,15 @@ and fires only when all hold a token, so a join is atomic:
     t = Var(Clock())                                  # the time reference the clocks run against
     birth, death = Transition(rate=2.0, t=t), Transition(rate=1.0, t=t)
     queue = Place(initial=0, inputs=[birth.event], outputs=[death.event])
-    net = compose(birth, death, queue, hide={birth.clock, death.clock})
+    net = compose(birth, death, queue)
 
     trace = simulate(net, t=t, horizon=100.0, seed=1)
     trace.series(queue.count)
 
-A variable is created by the module that owns it unless passed in (`event=`, `clock=`,
-`count=`), which is how a transition and a place that each need the other's variable are
-written: declare the shared variables first, then the modules.
+A variable is created by the module that owns it unless passed in (`event=`, `count=`),
+which is how a transition and a place that each need the other's variable are written:
+declare the shared variables first, then the modules. A transition's clock is its own
+business: it is private, reachable as `transition.clock` for plotting a trace.
 
     part, machine, ev = Var(Nat()), Var(Nat()), Var(Event())
     work = Transition(rate=1.0, t=t, event=ev, inputs=[part, machine])
@@ -66,16 +67,16 @@ def _vars(vs, sort, what):
 
 
 class Transition(Module):
-    """A stochastic transition. `clock` and `event` are its variables, `t` the time
-    reference, `inputs` the counts of the places it takes a token from."""
+    """A stochastic transition. `event` is its variable, `clock` its private one, `t` the
+    time reference, `inputs` the counts of the places it takes a token from."""
 
-    def __new__(cls, rate, *, t, inputs=(), event=None, clock=None, name=None):
+    def __new__(cls, rate, *, t, inputs=(), event=None, name=None):
         if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
             raise TypeError(f"a transition's rate is a positive number, got {rate!r}")
         rate = float(rate)
         t = _var(t, Clock(), "the time reference")
         inputs = _vars(inputs, Nat(), "inputs")
-        clock, event = _var(clock, Clock(), "clock"), _var(event, Event(), "event")
+        clock, event = Var(Clock()), _var(event, Event(), "event")
 
         def init(self, t, *counts):
             return exp(rate), False
@@ -97,7 +98,9 @@ class Transition(Module):
         next.__signature__ = _signature(["self", "clk", "ev", "t", *names])
         flow.__signature__ = _signature(["self", "clk", "ev", "t", *names])
         built = type(cls.__name__, (cls,), {"init": init, "next": next, "flow": flow})
-        self = Module.__new__(built, ctrl=(clock, event), extl=(t, *inputs), theory=SPN)
+        self = Module.__new__(
+            built, ctrl=(clock, event), extl=(t, *inputs), hide={clock}, theory=SPN
+        )
         self.rate, self.t, self.name, self.inputs = rate, t, name, inputs
         self.clock, self.event = clock, event
         return self

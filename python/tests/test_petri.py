@@ -15,7 +15,7 @@ def birth_death(lam=2.0, mu=1.0):
     t = Var(Clock())
     birth, death = Transition(rate=lam, t=t, name="b"), Transition(rate=mu, t=t, name="d")
     queue = Place(initial=0, inputs=[birth.event], outputs=[death.event], name="n")
-    net = compose(birth, death, queue, hide={birth.clock, death.clock})
+    net = compose(birth, death, queue)
     return net, t, queue, birth, death
 
 
@@ -42,6 +42,7 @@ def test_a_transition_and_a_place_are_modules():
     tr = Transition(rate=1.5, t=t)
     assert isinstance(tr, Transition) and tr.rate == 1.5 and tr.t is t
     assert set(tr.ctrl) == {tr.clock, tr.event} and set(tr.extl) == {t}
+    assert list(tr.prvt) == [tr.clock] and list(tr.intf) == [tr.event]
     pl = Place(initial=3, inputs=[tr.event])
     assert isinstance(pl, Place) and pl.initial == 3 and set(pl.ctrl) == {pl.count}
     assert set(pl.extl) == {tr.event} and pl.inputs == (tr.event,) and pl.outputs == ()
@@ -59,12 +60,12 @@ def test_a_seeded_run_matches_the_example():
 
 
 def test_a_place_nets_several_arcs():
-    # two producers into one place, one consumer out of it; nothing hidden unless asked
+    # two producers into one place, one consumer out of it
     t = Var(Clock())
     a, b, c = (Transition(rate=1.0, t=t) for _ in range(3))
     p = Place(inputs=[a.event, b.event], outputs=[c.event])
     net = compose(a, b, c, p)
-    assert set(net.prvt) == set()
+    assert set(net.prvt) == {a.clock, b.clock, c.clock}
     trace = simulate(net, t=t, horizon=200.0, seed=5)
     n = trace.series(p.count)
     assert all(v >= 0 for v in n)
@@ -132,6 +133,8 @@ def test_bad_arguments_raise():
         Transition(rate=1.0, t=t, inputs=[Var(Event())])
     with pytest.raises(TypeError, match="event"):
         Transition(rate=1.0, t=t, event=Var(Nat()))
+    with pytest.raises(TypeError):
+        Transition(rate=1.0, t=t, clock=Var(Clock()))
     with pytest.raises(TypeError, match="tokens"):
         Place(initial=-1, inputs=[Var(Event())])
     with pytest.raises(TypeError, match="inputs"):
