@@ -1,6 +1,6 @@
-import Zrth.Reactive.Atom
+import Zrth.Credal.Atom
 
-namespace Zrth2
+namespace Zrth2.Credal
 
 /-!
 # Modules
@@ -74,4 +74,4 @@ def Compatible (m₁ m₂ : Module V) : Prop :=
 
 end Module
 
-end Zrth2
+end Zrth2.Credal

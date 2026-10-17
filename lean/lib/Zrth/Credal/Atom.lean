@@ -1,8 +1,8 @@
-import Zrth.Reactive.Var
+import Zrth.Credal.Var
 import Mathlib.Probability.Kernel.Basic
 import Mathlib.Analysis.Convex.Basic
 
-namespace Zrth2
+namespace Zrth2.Credal
 
 /-!
 # Atoms
@@ -84,4 +84,4 @@ def Awaits (a b : Atom V) : Prop := ∃ i j, a.wait i = b.ctrl j
 
 end Atom
 
-end Zrth2
+end Zrth2.Credal

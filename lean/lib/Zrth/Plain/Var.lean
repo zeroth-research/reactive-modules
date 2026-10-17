@@ -1,7 +1,7 @@
 import Mathlib.Geometry.Manifold.VectorBundle.Tangent
 import Mathlib.MeasureTheory.MeasurableSpace.Defs
 
-namespace Zrth2
+namespace Zrth2.Plain
 
 /-!
 # Variables and their values
@@ -56,4 +56,4 @@ noncomputable abbrev I {n : ℕ} (t : Fin n → V) :
       (ModelPi fun i : Fin n => Var.H (t i)) :=
   ModelWithCorners.pi fun i : Fin n => Var.I (t i)
 
-end Zrth2
+end Zrth2.Plain
