@@ -18,7 +18,8 @@ that the procedures reading that Lean would have to follow).
 [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md) and [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
 overlap in places; where they do, the item says so. Each item has an ID and
 a status (`open`, `fixed <commit>`, `wontfix: why`) so the list can be worked
-down. Paths are relative to `python/zrth/lean/` unless stated.
+down. Paths are relative to `python/zrth/lean/` unless stated. A refactor
+is checked by diffing `python/scripts/route_transcripts.py` before and after.
 
 ## Summary
 
@@ -75,9 +76,9 @@ explicit exception instead of a convention.
 | ID | Status | Finding |
 |----|--------|---------|
 | PL-1 | fixed f42fc88f | `main()` is ~200 lines running a dozen concerns in sequence; inference alone is spread over `precheck`, `_infer`, `_replan`, a re-render and `write_predicates`. No function per stage. |
-| PL-2 | fixed 309ba849..8996c985 except fbk-proveit (`translate/fbk.py`, `fbk_proveit.py` build their own `ModuleSMT`; phases 4/6). Every golden run encodes once, `bare` never; `tests/test_pipeline_golden.py` pins the count | The module is encoded into cvc5 four to six times per run (`main.py:286,313,418,529,538`, each `pre_check`, then inside each route), while the `InferResult` docstring argues against re-encoding. A per-run encoding object would fix it. Related: `DESIGN_REVIEW.md` E. |
+| PL-2 | fixed 309ba849..8996c985, c3cecc54 (fbk-proveit). Every golden run encodes once, `bare` never; `tests/test_pipeline_golden.py` and `test_lean_fbk.py` pin the count | The module is encoded into cvc5 four to six times per run (`main.py:286,313,418,529,538`, each `pre_check`, then inside each route), while the `InferResult` docstring argues against re-encoding. A per-run encoding object would fix it. Related: `DESIGN_REVIEW.md` E. |
 | PL-3 | fixed e2dd5aaf | With a route, the pre-inference hints and Lean rendering are computed and then discarded by `_replan`. |
-| PL-4 | open | `returns="installed"` (fbk-proveit) is a second control path that bypasses codegen. |
+| PL-4 | fixed ce8c794b (the route hands its files back in `InferResult.files` and the pipeline writes them through the handle; `returns="files"` only skips regenerating from predicates there are none of) | `returns="installed"` (fbk-proveit) is a second control path that bypasses codegen. |
 | PL-5 | fixed a4e6b159 | Bug: with no `--infer`, a module with no Lean form reports `error: --infer: ...` -- `_refused` falls back to that prefix when there is no route (`main.py:156,493`). |
 | PL-6 | fixed d5b31785 | Bug: `_record_predicates(..., inferred=True)` also labels the *property* "Inferred by this run's route" (`main.py:230`). |
 | PL-7 | fixed 16e37bf1 | Dead condition: `settings.hammer_file` at `main.py:504` (already returned at `:437`). |
@@ -92,23 +93,23 @@ that tracks staleness, generic CLI checks, good tests.
 
 | ID | Status | Finding |
 |----|--------|---------|
-| RT-1 | open | Adding a route means editing the 1,235-line `infer_route.py`: adapter, row, every option's help, and the resume helpers (`_resume_inv`, `_take_inv`, `_ruled_out`, `FIXABLE`) that other routes cannot reuse. |
-| RT-2 | partly fixed 631c7026, e1f45825..ed5980b6 (docstring and `infer(claim, given)`; `ai` still differs, `learn` constructor still takes `source`) | `TA2Magic` (`magic/__init__.py:25`) is vestigial: no two constructors agree, `learn` ignores `source` (the adapter passes `""`), fbk has no class, and dispatch is through `_run_*` adapters. Its docstring says only CEGAR implements safety; five routes do. |
-| RT-3 | open | `ProjectHandle` access control is decorative: fbk receives `project_dir` and writes `ProveIt/*`, `Certificate/Certificate.lean`, `Certificate/Equivalence.lean` directly (`fbk_proveit.py:368,497,545`); `handle.path()` has no production caller. |
-| RT-4 | open | `create_project` imports `ROUTES` to delete every route's owned files (`project.py:678`): an import cycle with `infer_route`, and the project builder knows about routes. |
-| RT-5 | open | fbk-specific code lives in `project.py`: `PROVEIT_DIR`, `na_module_name`, `generate_lakefile(ltl_project=...)`. The `lakefile` hook returns fbk's own kwarg; it should return generic fragments (extra `require`s and `lean_lib`s). |
-| RT-6 | partly fixed 405b252e..d7a4936f, 83c13102 (`smt/`: one walker, script printer, Vampire driver, budget, recorder, per-run `ModuleEncoding`, obligation builder `smt/obligations.py`). Left: nuterm's z3 encoding and `_farkas.Inductive/LexDecrease` (RT-8); `sygus._pre/_trans`, existential relations not on the builder; fbk's encodings; smt-linear's `_bound_vars`/`_fresh_consts` instead of `ModuleEncoding.fresh`; houdini and vampire parse with `env.parse_expr` (their candidates may be Real) where the rest use `ModuleEncoding.parse` | No shared SMT layer. Two module encoders (cvc5 via `smt_encode`/`ModuleSMT`; z3 via `benchmarks.svcomp._farkas` for nuterm). Obligations built six ways: `cegar._check_*`, `ModuleQueries.check_*`, `houdini.Obligations`, `linear._inductive/_safety_at/_buchi_at`, `sygus._pre/_trans`, `_farkas.Inductive/LexDecrease`. Input substitution three times (`cegar._subst_inputs`, `SynthContext.with_inputs`, `ModuleQueries._sub_inputs`), SMT script printing four times, two Vampire subprocess drivers, three near-identical artifact recorders, three ite-condition collectors. |
+| RT-1 | fixed 33e34328 (`infer_route/<name>.py` exports `ROUTE`; resume helpers are `InferInput.resumable_inv`/`taking_inv`/`ruled_out`) | Adding a route means editing the 1,235-line `infer_route.py`: adapter, row, every option's help, and the resume helpers (`_resume_inv`, `_take_inv`, `_ruled_out`, `FIXABLE`) that other routes cannot reuse. |
+| RT-2 | fixed 631c7026, e1f45825..ed5980b6, 862c904f (the contract is the row's `run(InferInput) -> InferResult`; `TA2Magic` only names `infer(claim, given)` and holds nothing; `ai` answers in Lean, which its row declares) | `TA2Magic` (`magic/__init__.py:25`) is vestigial: no two constructors agree, `learn` ignores `source` (the adapter passes `""`), fbk has no class, and dispatch is through `_run_*` adapters. Its docstring says only CEGAR implements safety; five routes do. |
+| RT-3 | fixed ce8c794b (fbk writes `ProveIt/` through `handle.path`; its certificate and equivalence proof come back as files) | `ProjectHandle` access control is decorative: fbk receives `project_dir` and writes `ProveIt/*`, `Certificate/Certificate.lean`, `Certificate/Equivalence.lean` directly (`fbk_proveit.py:368,497,545`); `handle.path()` has no production caller. |
+| RT-4 | fixed d74fed8a (`create_project(remove=...)`, from `infer_route.owned_files()`; `tests/test_layering.py` checks `project.py` imports no route) | `create_project` imports `ROUTES` to delete every route's owned files (`project.py:678`): an import cycle with `infer_route`, and the project builder knows about routes. |
+| RT-5 | fixed ae78b487 (the `lakefile` hook returns `project.LakefileParts`; `PROVEIT_DIR`/`na_module_name` live in `fbk_proveit.py`) | fbk-specific code lives in `project.py`: `PROVEIT_DIR`, `na_module_name`, `generate_lakefile(ltl_project=...)`. The `lakefile` hook returns fbk's own kwarg; it should return generic fragments (extra `require`s and `lean_lib`s). |
+| RT-6 | partly fixed 405b252e..d7a4936f, 83c13102 (`smt/`: one walker, script printer, Vampire driver, budget, recorder, per-run `ModuleEncoding`, obligation builder `smt/obligations.py`). Left: nuterm's z3 encoding and `_farkas.Inductive/LexDecrease` (RT-8); `sygus._pre/_trans`, existential relations not on the builder; `translate/fbk._slot_bodies` runs its own `Solver` for the rewriter (on the run's encoding since c3cecc54; CG-2); smt-linear's `_bound_vars`/`_fresh_consts` instead of `ModuleEncoding.fresh`; houdini and vampire parse with `env.parse_expr` (their candidates may be Real) where the rest use `ModuleEncoding.parse` | No shared SMT layer. Two module encoders (cvc5 via `smt_encode`/`ModuleSMT`; z3 via `benchmarks.svcomp._farkas` for nuterm). Obligations built six ways: `cegar._check_*`, `ModuleQueries.check_*`, `houdini.Obligations`, `linear._inductive/_safety_at/_buchi_at`, `sygus._pre/_trans`, `_farkas.Inductive/LexDecrease`. Input substitution three times (`cegar._subst_inputs`, `SynthContext.with_inputs`, `ModuleQueries._sub_inputs`), SMT script printing four times, two Vampire subprocess drivers, three near-identical artifact recorders, three ite-condition collectors. |
 | RT-7 | fixed fd0ff290 (`tests/test_layering.py`: no route imports another) | `linear` and `vampire` import from `houdini`, so `houdini.py` (~2,000 lines) is a shared library by accident. |
 | RT-8 | open | `magic/learn.py:69` imports `benchmarks.svcomp`, which is not packaged: `nuterm` works only when run from `python/`. cvc5 is only a dev dependency (`pyproject.toml:58`) yet most routes need it. |
 | RT-9 | fixed 405b252e, 10364d04, 12738ceb for the SMT layer (`tests/test_layering.py`); Lean codegen not checked yet (CG-9) | Private names cross modules: `smt_query._constants` (houdini, modes, houdini_solver), `houdini_solver._kill_group` (vampire), `ai._make_client` / `_describe_preconditions` (cegar). |
 | RT-10 | fixed 12738ceb, 73e484bd (`magic/llm.py`; `log=`, `budget=`, `Refused`) | Inconsistent plumbing: ai/cegar `print` while the rest take `log=`; cegar's cvc5 calls have no time limit (`cegar.py:387`); cegar defaults `model="gpt-4"`, ai `"claude-sonnet-4-6"`; cegar raises `RuntimeError`, not `Refused`, when cvc5 is missing. |
 | RT-11 | fixed ec35fe5d | **Security:** `smt_prompt.parse_predicate` runs `eval` on LLM replies with `{"__builtins__": {}}` (`smt_prompt.py:273`). That sandbox is escapable, so a reply can run arbitrary Python. |
-| RT-12 | open | `InferResult` carries only inv/ranking x smt/lean: no channel for lemmas, tactic hints or extra Lean other than writing files directly. |
+| RT-12 | fixed ce8c794b for extra Lean (`InferResult.files`, checked against `owns`). Tactic hints from a route: not added, since no route has any; the pipeline asks cvc5 for hints over whatever predicates come back | `InferResult` carries only inv/ranking x smt/lean: no channel for lemmas, tactic hints or extra Lean other than writing files directly. |
 | RT-13 | open | `nuterm` records its answer only as `inv.smt` (`smt-src`, encoded), not as a resumable `inv` artifact, so a following `--infer ai-cegis` asks the model again instead of resuming. |
 | RT-14 | open | `ai-cegis` builds an LLM client even when every predicate is fixed (`magic/cegar.py`), and its names still say CEGAR (`cegar.py`, `TA2MagicCEGAR`, `CegarPromptEnv`) for what the CLI calls `ai-cegis`. |
 
 **Direction:** one module per route exporting `ROUTE`; resume helpers on
-`ProjectHandle`; fbk through `handle.path()`; a generic lakefile hook; an
+`InferInput`; fbk through `handle.path()`; a generic lakefile hook; an
 `smt/` package with one per-run `ModuleEncoding` and one obligation builder
 (`smt/obligations.py`) that every SMT route uses.
 
@@ -145,8 +146,8 @@ the certificate's proof structure.
 
 ```
 inputs/          adapter registry (python, smv, svcomp, petri)  -> Problem
-smt/             one ModuleEncoding per run + one obligation builder (done but fbk)
-routes/<name>.py each exports ROUTE; run(InferInput) -> InferResult (SMT), no mutation
+smt/             one ModuleEncoding per run + one obligation builder (RT-6 lists who bypasses it)
+infer_route/     <name>.py exports ROUTE; run(InferInput) -> InferResult, no mutation (done)
 lean/            Problem + Certificate -> files; tactics planned from terms, not text
 pipeline.py      load -> generate -> infer -> regenerate certificate -> check/build
 ```
@@ -159,5 +160,6 @@ pipeline.py      load -> generate -> infer -> regenerate certificate -> check/bu
    most of the rest.
 3. **Shared encoding and obligations** -- PL-2, RT-6, RT-7, RT-9, RT-10.
 4. **Routes as modules** -- RT-1..RT-5, RT-12, PL-4.
-5. **Input adapters** -- IN-1..IN-5.
+5. **Input adapters** -- IN-6 first, then IN-1..IN-5. Plan, open questions
+   and how to check: [`PHASE5_HANDOFF.md`](PHASE5_HANDOFF.md).
 6. **Codegen cleanup** -- CG-1, CG-2, CG-4..CG-6, CG-8, CG-9, CG-11, RT-8.
