@@ -44,22 +44,10 @@ from zrth.lean.common import (
     flat_layout,
 )
 from zrth.lean.native import _product_type, _product_type_scalar
-from zrth.lean.lean_names import DATA, SYSTEM_LAYOUT, cert_module
+from zrth.lean.lean_names import DATA, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def
 from zrth.lean.translate._shared import scalar_eq_name
 from zrth.lean.translate.fbk import SlotBodies, check_na_shape, check_na_supported
 
-# The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
-# `matVecAffine 2 [[1, 0], [0, 1]] [0, 1] (fun i j => match i, j with ...)`
-# and no arithmetic prover can touch it.
-_MAT_SIMP = (
-    "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, "
-    "add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, "
-    "Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, "
-    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, "
-    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
-    # above then compute; without the defs here the fold never opens.
-    "matMin, matMax, argmax_1d, argmax"
-)
 
 
 def _lemmas(*names: str) -> str:
@@ -96,7 +84,7 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str
     what broke the `rfl`.
     """
     plain = f"{defs}{extra}"
-    mat = f"{defs}, {_MAT_SIMP}{extra}"
+    mat = f"{defs}, {', '.join(MAT_SIMP)}{extra}"
     s = "simp_all" if from_hyps else "simp"
     return [
         "  first",
@@ -256,12 +244,7 @@ def atom_to_lean_fbk_bridge(
     lines += [
         "-- ── the module as a reactive module, and the two hypotheses ──────",
         "",
-        f"def RM : ReactiveModule ({extl_native}) (CtrlNative) := {{",
-        "    init := fun e => init e.2",
-        "    update := fun x e => update x e.1 e.2",
-        "    init_pre := init_pre",
-        "    update_pre := update_pre",
-        "}",
+        rm_def(extl_native, "CtrlNative"),
         "",
         "theorem start_maps (s : CtrlNative) :",
         "    RM.toTS.start s → Definition.INIT (toSlots s) = true := by",

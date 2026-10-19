@@ -57,6 +57,38 @@ EQUIVALENCE = "Equivalence"     # fbk-proveit: the NA model is the module
 PROVEIT_DIR = "ProveIt"
 
 
+# The lemmas `simp_mat` reduces matrix arithmetic with, after the
+# certificate's own definitions. The bridge's cascade uses the same set:
+# without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
+# (fun i j => match i, j with ...)` and no arithmetic prover can touch it.
+MAT_SIMP: tuple[str, ...] = (
+    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
+    "mul_Mat_apply", "add_Mat_apply", "Bool.or_eq_true", "decide_eq_true_eq",
+    "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
+    "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
+    "List.ofFn_succ", "List.ofFn_zero",
+    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
+    # above then compute; without the defs here the fold never opens.
+    "matMin", "matMax", "argmax_1d", "argmax",
+)
+
+
+def rm_def(extl_type: str, ctrl_type: str, noncomputable: bool = False) -> str:
+    """`RM`, the module as a `ReactiveModule` over the functional
+    encoding's `init`/`update` and the certificate's preconditions. The
+    certificate states its theorems about it and the fbk bridge relates it
+    to the NA model, each in its own namespace, so both print this one."""
+    return "\n".join([
+        f"{'noncomputable ' if noncomputable else ''}def RM : ReactiveModule "
+        f"({extl_type}) ({ctrl_type}) := {{",
+        "    init := fun e => init e.2",
+        "    update := fun x e => update x e.1 e.2",
+        "    init_pre := init_pre",
+        "    update_pre := update_pre",
+        "}",
+    ])
+
+
 def cert_file(stem: str) -> str:
     """The certificate library's file `stem`, relative to the project."""
     return f"{CERT_LIB}/{stem}.lean"

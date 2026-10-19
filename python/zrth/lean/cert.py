@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from zrth.lean.native import _product_type
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.common import LeanContext, Refused
+from zrth.lean.lean_names import MAT_SIMP, rm_def
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
 
@@ -285,7 +286,6 @@ def generate_certificate_lean(
     const_names = ctx.constants.names()
     const_list = ", ".join(const_names) if const_names else ""
 
-    rm_noncomp = "noncomputable " if ctx.uses_real else ""
 
     # Inline definitions when used standalone (no separate Certificate/Data.lean).
     if module_inline is not None:
@@ -315,10 +315,10 @@ def generate_certificate_lean(
         "project/Certificate/Certificate.lean.j2",
         module_inline=module_inline,
         inline_defs=inline_defs,
-        noncomp=rm_noncomp,
-        extl_type=extl_native,
-        ctrl_type=ctrl_native,
+        noncomp="noncomputable " if ctx.uses_real else "",
+        rm_def=rm_def(extl_native, ctrl_native, noncomputable=ctx.uses_real),
         all_defs=all_defs,
+        mat_simp=", ".join(MAT_SIMP),
         is_safety=defs.is_safety,
         plan=plan,
     )

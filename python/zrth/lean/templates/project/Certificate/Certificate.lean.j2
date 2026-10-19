@@ -22,16 +22,11 @@ set_option maxHeartbeats {{ plan.max_heartbeats }}
 {{ inline_defs }}
 
 {% endif %}
-{{ noncomp }}def RM : ReactiveModule ({{ extl_type }}) ({{ ctrl_type }}) := {
-    init := fun e => init e.2
-    update := fun x e => update x e.1 e.2
-    init_pre := init_pre
-    update_pre := update_pre
-}
+{{ rm_def }}
 
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
-  `(tactic| simp [{{ all_defs }}, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+  `(tactic| simp [{{ all_defs }}, {{ mat_simp }}])
 
 -- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
 -- Gives omega/decide access to invariant and property conditions in hypotheses
