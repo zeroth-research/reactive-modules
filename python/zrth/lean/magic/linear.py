@@ -754,7 +754,7 @@ class TA2MagicLinear(TA2Magic):
         tm = ctx.tm
         solver = bounded_solver(tm, call_ms(self.budget), produce_models="true")
         solver.setLogic("ALL")
-        st, el, en = self._bound_vars(ctx)
+        st, el, en = ctx.enc.bound("q_")
         body = tpl.build(st, el, en)
         quantified = st + el + en
         solver.assertFormula(
@@ -821,7 +821,7 @@ class TA2MagicLinear(TA2Magic):
             verify = bounded_solver(tm, call_ms(self.budget),
                                     produce_models="true")
             verify.setLogic("ALL")
-            st, el, en = self._fresh_consts(ctx, f"cex{step}_")
+            st, el, en = ctx.enc.fresh(f"cex{step}_")
             verify.assertFormula(
                 tm.mkTerm(Kind.NOT,
                           tpl.build(st, el, en).substitute(tpl.unknowns, values))
@@ -862,27 +862,6 @@ class TA2MagicLinear(TA2Magic):
             f"counterexample loop needs a finite candidate space, so this is "
             f"a proof about that space rather than about every integer."
         )
-
-    def _bound_vars(self, ctx: SynthContext):
-        """Fresh bound variables for the state and the inputs."""
-        tm = ctx.tm
-        st = [tm.mkVar(v.getSort(), f"q{i}") for i, v in enumerate(ctx.state)]
-        el = [tm.mkVar(v.getSort(), f"bel{i}")
-              for i, v in enumerate(ctx.extl_latched)]
-        en = [tm.mkVar(v.getSort(), f"ben{i}")
-              for i, v in enumerate(ctx.extl_next)]
-        return st, el, en
-
-    def _fresh_consts(self, ctx: SynthContext, prefix: str):
-        """Fresh *constants* for the state and the inputs, for a model."""
-        tm = ctx.tm
-        st = [tm.mkConst(v.getSort(), f"{prefix}q{i}")
-              for i, v in enumerate(ctx.state)]
-        el = [tm.mkConst(v.getSort(), f"{prefix}l{i}")
-              for i, v in enumerate(ctx.extl_latched)]
-        en = [tm.mkConst(v.getSort(), f"{prefix}e{i}")
-              for i, v in enumerate(ctx.extl_next)]
-        return st, el, en
 
     def _value(self, solver, term) -> int:
         return int(solver.getValue(term).getIntegerValue())

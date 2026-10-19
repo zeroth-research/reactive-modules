@@ -57,3 +57,17 @@ def test_the_clamped_and_the_split_hrank_agree_on_an_int_ranking(positive):
         solver.assertFormula(
             tm.mkTerm(Kind.NOT, tm.mkTerm(Kind.EQUAL, clamped, split)))
         assert solver.checkSat().isUnsat(), f"{name}'s clamp disagrees"
+
+
+def test_bound_is_fresh_as_variables_a_quantifier_can_close():
+    """`fresh` makes constants, which a model assigns. A quantifier needs
+    variables of the same sorts, which `--infer smt-linear` used to make on
+    its own; `bound` is them."""
+    from zrth.lean.smt.run import ModuleEncoding
+
+    enc = ModuleEncoding(_module("m_relu_input"))
+    bound, fresh = enc.bound("q_"), enc.fresh("c_")
+    assert [len(vs) for vs in bound] == [1, 1, 1]
+    for vs, consts in zip(bound, fresh):
+        assert all(v.getKind() == Kind.VARIABLE for v in vs)
+        assert [v.getSort() for v in vs] == [c.getSort() for c in consts]

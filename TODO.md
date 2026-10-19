@@ -80,8 +80,7 @@ Paths are relative to `python/zrth/lean/`.
   asking the model.
 - **Not every SMT user is on `smt/`.** `sygus._pre`/`_trans` and their
   existential relations are not on the obligation builder
-  `smt/obligations.py`; smt-linear uses `_bound_vars`/`_fresh_consts`
-  instead of `ModuleEncoding.fresh`; houdini and vampire parse with
+  `smt/obligations.py`; houdini and vampire parse with
   `env.parse_expr` (their candidates may be Real) where the rest use
   `ModuleEncoding.parse`; nuterm (`python/nuterm/`) encodes the module in
   z3 on its own, with `_farkas.Inductive`/`LexDecrease` as its obligations.

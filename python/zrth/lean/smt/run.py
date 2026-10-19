@@ -142,6 +142,16 @@ class ModuleEncoding:
                 self.msmt.fresh_extl_l(f"{prefix}el"),
                 self.msmt.fresh_extl_n(f"{prefix}en"))
 
+    def bound(self, prefix: str = "") -> tuple[list, list, list]:
+        """Bound variables for a state and the inputs latched and awaited,
+        for a quantifier to close: `fresh`'s sibling, named the same way."""
+        def vs(terms: list, tag: str) -> list:
+            return [self.tm.mkVar(t.getSort(), f"{prefix}{tag}{i}")
+                    for i, t in enumerate(terms)]
+
+        return (vs(self.state, "s"), vs(self.extl_latched, "el"),
+                vs(self.extl_next, "en"))
+
     def at(self, term, vs: list):
         """`term` with the state replaced by `vs`."""
         return None if term is None else term.substitute(self.state, vs)
