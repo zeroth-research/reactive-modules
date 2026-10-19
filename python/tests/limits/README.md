@@ -179,8 +179,7 @@ translator has no `max`, so it must be written as an `Ite`); as a ReLU-shaped
 *invariant* (`x = ite(x≥0, x, 0)`); in a `Linear → ReLU → Linear` net, the
 shape a small Q-network compiles to; and combined with an external input under
 `--pre "(>= (X @extl.0) 1)"`. It works because `Core/Mat.lean` gives `ReLu` a `@[simp]
-relu_apply` and `omega` understands `max` over `Int` — which is exactly what
-`Min`/`Max` lack (`KNOWN_ISSUES.md` #26).
+relu_apply` and `omega` understands `max` over `Int`.
 
 **Scale.** A 32-wide state verifies. A straight-line transition body verifies
 to at least 64 chained operations now that `maxRecDepth` is raised; the
@@ -316,19 +315,11 @@ expression. `--ranks` is for the Farkas side, which has `lexDec` end to end.
 
 ---
 
-## What has been fixed, and what the evidence was
+## What the fixes taught
 
-Compressed; the ones with more to say have a section in `SMT_ASSIST.md`
-or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
+What the matrix's fixes showed about the proofs, compressed; the ones with
+more to say have a section in `SMT_ASSIST.md`.
 
-- **FBK only compiled when it shared a file with ScalarRel.** `simp` cannot
-  equate `FBK.effect_0.match_1` with `ScalarRel.effect_0.match_1`: two
-  per-declaration auxiliaries that print identically, are defeq, and are not
-  the same constant. `first | rfl | simp [...]`. The test fixture had been
-  concatenating the four encodings into one file, which is why nothing caught
-  it. The same defect class defeats `bv_decide`, which abstracts the two as
-  distinct opaque variables and reports "a potentially spurious
-  counterexample".
 - **A ReLU arrives as `ite (>= e 0) e 0`** because there is no `max` kind to
   translate from. Left as an `ite` each unit costs a `split_ifs` branch, and
   `hrank` mentions the ranking twice, so a k-unit net fans one goal into
@@ -350,10 +341,6 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
   over the emitted file, so teaching the printer to share cut a five-layer net
   from 62 `max` to 10 and silently dropped it two heartbeat tiers, failing it
   at 400k. Branch points are now counted on the term.
-- **`Min`/`Max` were not encodable for SMT at all.** They are unary reductions
-  over a matrix, like `Argmax`, but were wired to the binary `_elementwise`
-  path, so any cvc5 query about such a module raised `TypeError` —
-  `--infer ai-cegis` included.
 - **`norm_num at *` was the whole bill for an Int net, and unnecessary.**
   Profiled, `NN2Deep5` spent 47.3 s of its 48.7 s of tactic execution in
   `norm_num`, and 0.79 s in the `omega` that actually closed the goal.
@@ -392,29 +379,22 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
 
 ## Where to pick up
 
-1. **`matMin` / `matMax` / `argmax_1d` never reduce**
-   (`KNOWN_ISSUES.md` #26, #30) — the only three real limits left, and all
-   one defect: they are folds over
-   `(List.finRange m).flatMap …` and `simp_mat` carries nothing that computes
-   `List.finRange`. `--pre-check cvc5` confirms all three certificates are
-   *true* (4.6 / 4.2 / 3.2 ms), so this is purely a Lean-side reduction
-   problem. Redefine over `List.ofFn`, whose `ofFn_succ` / `ofFn_zero` are
-   already in `simp_mat`, then re-run this matrix.
-2. **`Uninterpreted` has no Lean form** (`KNOWN_ISSUES.md` #23, #27) — the
+1. **`Uninterpreted` has no Lean form** (`KNOWN_ISSUES.md` #23, #27) — the
    one generation failure.
-3. **`--smt-tactics=cvc5` does not pay yet.** `NN2RealAllPos4` exists to
+2. **`--smt-tactics=cvc5` does not pay yet.** `NN2RealAllPos4` exists to
    give it the best case there is — a Real net whose every ReLU is
    non-negative under the invariant, so cvc5 settles all four branch
    conditions. Timing the `Certificate.Certificate` job alone, alternating
    and deleting the olean each time: 77 s / 76 s off against 75 s / 71 s on.
    A first suspect was that `ranking`'s conditions read `u3 ≥ 0` (shared)
    while `cert_facts` stated the expanded `1 * s 0 0 + 3 ≥ 0`, so
-   `simp only [if_pos hf0]` had nothing to match. A predicate with a
-   settled condition is now printed unshared and the two match exactly —
-   and the numbers did not move: 68 / 69 s off against 68 / 70 s on. The
-   3-7% before the fix was noise. Rebuilt with the inner `try` stripped, so
-   a no-op `simp only` would be an error, it builds clean — the rewrite
-   *is* firing and all four branches really are collapsed.
+   `simp only [if_pos hf0]` had nothing to match. Printed unshared, so that
+   the two match exactly, the numbers did not move: 68 / 69 s off against
+   68 / 70 s on. The 3-7% before was noise. (The rewrite matches through the
+   `let`s anyway, because `simp` zeta-reduces first, so the certificate is
+   printed shared again since `6a68153d`.) Rebuilt with the inner `try`
+   stripped, so a no-op `simp only` would be an error, it builds clean —
+   the rewrite *is* firing and all four branches really are collapsed.
 
    Profiled, the cost is somewhere else entirely. `hrank` is **70 s of the
    75** (the whole rest of the file, `sorry`ing it out, is 5.2 s), and
@@ -425,14 +405,8 @@ or an entry in `../../zrth/lean/KNOWN_ISSUES.md`.
    it does not touch the per-branch constant, which is the bill. So
    `n_branch` and `n_conditions` are the wrong cost model in kind — they
    count branches, and what is paid for is instances per branch.
-4. **cvc5 abduction** — the plan and its runnable evidence are in
-   `SMT_ASSIST.md` §6 and `probes/abduction.py`. §7's half of this is done:
-   `--infer sygus` and `--infer smt-linear` are routes, and §7 now records
-   what the measurements said about the plan as written (the grammar step
-   was half wrong, `tlimit-per` is what bounds `checkSynth`, and the value
-   was in the invariant and in the refutations, not in a synthesised rank).
-   `probes/sygus.py` still produces the ranking-function numbers §7 quotes.
-5. **Nothing in CI builds a generated project** (`KNOWN_ISSUES.md` #29).
-   This directory is now
-   checked in, which is the precondition; the remaining work is a slow-marked
-   test that runs a handful of cases the way `just test-lean` does.
+3. **cvc5 abduction** — the plan and its runnable evidence are in
+   `SMT_ASSIST.md` §6 and `probes/abduction.py`.
+4. **Nothing in CI builds a generated project** (`KNOWN_ISSUES.md` #29):
+   a slow-marked test that runs a handful of these cases the way
+   `just test-lean` does.
