@@ -289,42 +289,36 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
         for w in (*t.read, *t.write):
             f.theories.add(_sort_name(w.dtype))
 
-    # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
-    # to a branch in the goal even though the term itself is not an `Ite`.
-    f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in pred_text
-    f.has_and = " ∧ " in pred_text
-    f.has_or = " ∨ " in pred_text
-    f.has_eq = " = " in pred_text
-    # Floors come printed from the terms (`floors`, over `($v)` already)
-    # when there are facts; text with no term behind it is scanned.
+    # The predicates' shape comes from the facts cvc5 read off their terms;
+    # text is read only where no term stands behind it -- a Lean answer
+    # (`verbatim`), or every predicate when there are no facts at all.
     scanned = verbatim if facts is not None else pred_text
+    # Floors come printed from the terms (`floors`, over `($v)` already).
     f.floor_args = tuple(dict.fromkeys(
         (*(floors if facts is not None else ()),
          *(_rebind(a) for a in floor_arguments(scanned)))
     ))
     f.has_floor = bool(f.floor_args)
-    f.nonlinear = is_nonlinear(pred_text)
+    # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
+    # to a branch in the goal even though the term itself is not an `Ite`.
+    f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in scanned
+    f.has_and = " ∧ " in scanned
+    f.has_or = " ∨ " in scanned
+    f.has_eq = " = " in scanned
+    f.nonlinear = is_nonlinear(scanned)
     text_branch = (
-        pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
+        scanned.count("(max ") + scanned.count("(min ") + scanned.count("if ")
     )
     f.n_branch = text_branch
+    f.n_conditions = text_branch
     if facts is not None:
-        # Exact where the text is a guess. `n_branch` takes the larger of the
-        # two: the terms cover only the fields that came from SMT-LIB, so a
-        # predicate compiled from Python IR alongside them would otherwise go
-        # uncounted, and over-counting only ever buys a bigger budget.
-        # The facts speak for the predicates printed from terms; a
-        # `verbatim` one (a Lean answer) has none, so its text is read and
-        # what it says is kept rather than overwritten.
-        f.nonlinear = facts.nonlinear or is_nonlinear(verbatim)
+        f.nonlinear = f.nonlinear or facts.nonlinear
         f.has_and = f.has_and or facts.has_and
         f.has_or = f.has_or or facts.has_or
         f.has_eq = f.has_eq or facts.has_eq
         f.has_ite = f.has_ite or facts.has_ite
-        f.n_branch = max(text_branch, facts.n_branch)
-        f.n_conditions = facts.n_conditions
-    else:
-        f.n_conditions = text_branch
+        f.n_branch = text_branch + facts.n_branch
+        f.n_conditions = text_branch + facts.n_conditions
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f

@@ -83,7 +83,7 @@ import ZerothHammer
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, linear, 1 branch point(s) (0 distinct)
+-- predicates: branching, conjunctive, linear, 1 branch point(s)
 set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 
