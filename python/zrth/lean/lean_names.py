@@ -73,6 +73,21 @@ MAT_SIMP: tuple[str, ...] = (
 )
 
 
+# The linters every generated Lean file turns off, after its imports. Each
+# proof is one tactic cascade for every goal shape, so on any one goal some
+# of its steps do nothing and some of its simp lemmas go unused; and the
+# encodings' binders are positional, used or not. Those five linters said
+# so 1063 times over the test suite's certificates, which buried the one
+# warning a build is read for: `declaration uses 'sorry'`.
+LINTERS_OFF = "\n".join(
+    f"set_option linter.{name} false"
+    for name in (
+        "unusedVariables", "unusedSimpArgs", "unusedTactic",
+        "unreachableTactic", "unnecessarySeqFocus",
+    )
+)
+
+
 def rm_def(extl_type: str, ctrl_type: str, noncomputable: bool = False) -> str:
     """`RM`, the module as a `ReactiveModule` over the functional
     encoding's `init`/`update` and the certificate's preconditions. The

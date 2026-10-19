@@ -25,6 +25,7 @@ from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.cert import generate_zeroth_hammer_lean, lean_certificate
 from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.lean_names import LINTERS_OFF
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
 from zrth.lean.translate.scalar import _argmax_scalar_def_lines
 
@@ -408,7 +409,7 @@ def generate_lean_files(sync_core_templates) -> None:
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
-            "import Core.Mat\nimport Core.Box\n\n"
+            f"import Core.Mat\nimport Core.Box\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
             + "\n\n"
             + t.to_lean_scalar()
@@ -435,13 +436,16 @@ def generate_lean_files(sync_core_templates) -> None:
         d = _CERTS_DIR / f"RelEnc{name}"
         d.mkdir(exist_ok=True)
         (d / "Base.lean").write_text(
-            "import Core.Mat\nimport Core.Box\n\n" + t.to_lean_functional() + "\n"
+            f"import Core.Mat\nimport Core.Box\n\n{LINTERS_OFF}\n\n"
+            + t.to_lean_functional() + "\n"
         )
         (d / "Scalar.lean").write_text(
-            f"import Core.Basic\nimport {base}.Base\n\n" + t.to_lean_scalar() + "\n"
+            f"import Core.Basic\nimport {base}.Base\n\n{LINTERS_OFF}\n\n"
+            + t.to_lean_scalar() + "\n"
         )
         (d / "ScalarRel.lean").write_text(
-            f"import Core.Basic\nimport {base}.Scalar\n\n" + t.to_lean_rel() + "\n"
+            f"import Core.Basic\nimport {base}.Scalar\n\n{LINTERS_OFF}\n\n"
+            + t.to_lean_rel() + "\n"
         )
         (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
 
@@ -479,7 +483,7 @@ def generate_lean_files(sync_core_templates) -> None:
         (_CERTS_DIR / f"Bridge{name}.lean").write_text(
             "\n".join([
                 "import Core.Basic", "import Core.Box", "import Core.Mat",
-                "import Smt", "",
+                "import Smt", "", LINTERS_OFF, "",
                 t.to_lean_functional(), "",
                 t.to_lean_scalar(), "",
                 _strip(generate_data_lean(ctx, cert)), "",

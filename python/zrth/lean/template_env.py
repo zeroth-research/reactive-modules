@@ -1,6 +1,8 @@
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pathlib import Path
 
+from zrth.lean.lean_names import LINTERS_OFF
+
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = TEMPLATES_DIR / "static"
 PROJECT_TEMPLATES_DIR = TEMPLATES_DIR / "project"
@@ -12,6 +14,8 @@ env = Environment(
     trim_blocks=True,
     lstrip_blocks=True,
 )
+# Every generated file says it after its imports; see `LINTERS_OFF`.
+env.globals["linters_off"] = LINTERS_OFF
 
 
 def render(template_path: str, **context: object) -> str:

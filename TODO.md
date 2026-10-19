@@ -104,13 +104,6 @@ Paths are relative to `python/zrth/lean/`.
 
 ## Lean generation
 
-- **Generated certificates build with linter warnings.**
-  `tests/lean/Certs/Countdown.lean` gets 15: `init_inv`'s
-  `all_goals (cert_prep <;> cert_close)` "does nothing" (`simp_mat` and
-  `simp_defs` already closed it), `cert_states`' binder `v` is unused
-  whenever its body is `skip`, unused `e`/`extl_l`/`extl_n` binders, a
-  `dsimp` and an `infer_instance` that do nothing, and an unused simp
-  argument.
 - **Nothing in CI builds a `verith -o` project.** The Lean tests compile
   standalone `Certs/*.lean`, except the slow ones in
   `tests/test_lean_svcomp.py`, which build `create_project` output with

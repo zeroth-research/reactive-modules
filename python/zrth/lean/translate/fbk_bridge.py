@@ -41,7 +41,9 @@ import re
 from zrth.lean.layout import flat_layout
 from zrth.lean.context import LeanContext
 from zrth.lean.native import _product_type, _product_type_scalar
-from zrth.lean.lean_names import DATA, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def
+from zrth.lean.lean_names import (
+    DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
+)
 from zrth.lean.translate._shared import scalar_eq_name
 from zrth.lean.translate.fbk import SlotBodies, check_na_shape, check_na_supported
 
@@ -171,6 +173,7 @@ def atom_to_lean_fbk_bridge(
         f"import {cert_module(DATA)}",
         f"import {na_module}",
         "",
+        LINTERS_OFF,
         "",
         "-- The same budgets the certificate and the scalar equivalence carry:",
         "-- a 64-deep straight-line transition exhausts the default recursion",

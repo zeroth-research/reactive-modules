@@ -31,7 +31,7 @@ from .native import (
 
 from .translate import ModuleToLean4
 from .lean_names import (
-    CERT_LIB, DATA, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
+    CERT_LIB, DATA, LINTERS_OFF, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
 )
 
 if TYPE_CHECKING:
@@ -283,7 +283,7 @@ def write_encoding(
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"
         + "".join(f"import {i}\n" for i in imports)
-        + f"\n{body}\n"
+        + f"\n{LINTERS_OFF}\n\n{body}\n"
     )
     return path
 
@@ -359,6 +359,9 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # `System` lean_lib's root module pulls in; `{project_name}.{module_name}`
     # named no file the generator ever writes.
     lines.append("import System")
+    lines.append("")
+    lines.append(LINTERS_OFF)
+    lines.append("")
     lines.append("open Box")
     lines.append("")
 

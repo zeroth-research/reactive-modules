@@ -1,6 +1,12 @@
 === Certificate/Data.lean
 import Core.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
@@ -30,6 +36,12 @@ import Core.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.
@@ -159,6 +171,12 @@ import Mathlib.Algebra.BigOperators.Fin
 import Core.Basic
 import Core.Box
 import ZerothHammer
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.
