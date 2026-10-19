@@ -77,6 +77,38 @@ adapter now (names from the C variables, and its precondition conjoined with
 **G. Petri nets (PNML).** Same shape (`petri_mod.py`, `PETRI_NET`). In
 scope? *Recommended: no.*
 
+## Answers (2026-10-19)
+
+- **A**: refuse. `parse_smv(strict=True)` rejects a VAR with no `init` or
+  no `next` (not the recommendation: no reading them as inputs).
+- **A'**: `integer` and ranges lower to `Int`; enums keep their BV codes.
+- **B**: as recommended -- a file's spec is the claim only when no
+  `--safety`/`--buchi` is given, both is an error, several need `--spec N`.
+  Optional commit, last.
+- **C**: a `Named` wrapper the Python file returns; nothing else names.
+- **D**: replaces the names design below. Properties are written in the
+  reactive module's own terms, latched by default and `X` for the updated
+  value:
+
+  | surface                    | today's internal name |
+  |----------------------------|-----------------------|
+  | `(X @intf.{i})`, `(X x)`   | `s{i}`                |
+  | `(X @extl.{i})`, `(X u)`   | `e{i}`                |
+  | `@extl.{i}`, `u`           | `el{i}`               |
+  | `@intf.{i}`, `x`           | none yet: refused     |
+
+  (`x` a source name of interface/ctrl variable `i`, `u` of external
+  input `i`.) The `@` keeps positional names from clashing with a source
+  name. The bare `s0`/`e0`/`el0` spelling is dropped from the CLI, and every
+  CLI caller (bench matrix, limits, tests, docs, transcripts) is rewritten.
+  Internals (Lean, LLM prompts, SMT dumps) keep `s/e/el`: the rewrite is at
+  the CLI boundary, and what `verith` prints back to the user (a found
+  invariant or ranking, the certificate summary) is rewritten back to the
+  surface spelling so it can be pasted into `--invariant`.
+- **E**: plumbing only.
+- **F**: leave the SV-COMP shim (but its claims move to the new spelling).
+- **G**: no.
+
 ## Design (from the phase-5 planner, before the answers)
 
 - **Registry** `inputs/__init__.py`, shaped like `infer_route/`: one module
