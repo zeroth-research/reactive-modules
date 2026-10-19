@@ -179,8 +179,9 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`_bind_wires_scalar` builds the input bindings, appending `" 0 0"` for scalar
-wires so downstream ops receive bare values.
+`translate._shared._scalar_bindings_with_recon` builds the input bindings: a
+one-element wire is bound to its bare accessor, so downstream ops receive bare
+values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:

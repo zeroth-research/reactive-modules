@@ -64,23 +64,27 @@ def _accessor(pos: int, total: int) -> str:
     return ".2" * pos + ".1"
 
 
+def lean_elem_type(sort: Sort) -> str:
+    """The Lean type of one element of `sort`, ignoring its shape: `Bool`,
+    `Int`, `Real` (proofs read the module's floats as reals) or
+    `(BitVec w)`."""
+    if isinstance(sort, Bool):
+        return "Bool"
+    if isinstance(sort, Int):
+        return "Int"
+    if isinstance(sort, Real):
+        return "Real"
+    if isinstance(sort, BitVec):
+        return f"(BitVec {sort._0})"
+    raise ValueError(f"Unsupported Sort for Lean conversion: {sort}")
+
+
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     """Map a Wire's Sort to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
 
     dt = wire.dtype
     shape = dtype_shape(dt)
-
-    if isinstance(dt, Bool):
-        ty = "Bool"
-    elif isinstance(dt, Int):
-        ty = "Int"
-    elif isinstance(dt, Real):
-        # TODO: Float is *NOT* Real, but we stick to that for proofs atm
-        ty = "Real"
-    elif isinstance(dt, BitVec):
-        ty = f"(BitVec {dt._0})"
-    else:
-        raise ValueError(f"Unsupported Sort for Lean conversion: {dt}")
+    ty = lean_elem_type(dt)
 
     if _is_scalar_shape(shape):
         return ty if simple_types else f"(Mat {ty} 1 1)"
@@ -346,17 +350,6 @@ def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
 
 
-def _bind_wires_scalar(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
-    """Like _bind_wires but appends ' 0 0' for scalar (Mat 1 1) input wires."""
-    out: dict[int, str] = {}
-    for name, wires in params:
-        n = len(wires)
-        for i, w in enumerate(wires):
-            base = f"{name}{_accessor(i, n)}"
-            out[w.id] = f"{base} 0 0" if _is_scalar_wire(w) else base
-    return out
-
-
 # ---------------------------------------------------------------------------
 # Flat-scalar helpers — support multi-element (Mat T 1 n) wires in the
 # scalar / relational encoding by expanding each wire into n scalars.
@@ -364,16 +357,7 @@ def _bind_wires_scalar(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
 
 def _flat_element_type(wire: Wire) -> str:
     """Base Lean scalar type for one element of the wire (no Mat wrapper)."""
-    dt = wire.dtype
-    if isinstance(dt, Bool):
-        return "Bool"
-    if isinstance(dt, Int):
-        return "Int"
-    if isinstance(dt, Real):
-        return "Real"
-    if isinstance(dt, BitVec):
-        return f"(BitVec {dt._0})"
-    raise ValueError(f"Unsupported Sort for scalar element: {dt}")
+    return lean_elem_type(wire.dtype)
 
 
 def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
@@ -495,20 +479,6 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
     return FlatLayout(tuple(wires), tuple(slots), tuple(offsets))
 
 
-def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
-    """Build a ``Fin n → T`` expression using a typed ``Fin.cons`` chain.
-
-    Annotates the whole chain with ``: Fin n → T`` so Lean knows the
-    application type before elaborating the ``j`` argument — without this,
-    the application site has type ``?m j`` which Lean can't unify with ``T``.
-    """
-    n = len(scalars)
-    result = f"(Fin.elim0 : Fin 0 → {elem_ty})"
-    for s in reversed(scalars):
-        result = f"(Fin.cons {s} {result})"
-    return f"({result} : Fin {n} → {elem_ty})"
-
-
 def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     """List-literal operands for a baked-constant `Linear` op (`Y = A·X + B`).
 
@@ -522,7 +492,7 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     B = term.itype._1
     out_m = dtype_shape(out_wire.dtype)[0]
     in_dim = int(A.shape[1])
-    ty = _sort_elem_ty(out_wire.dtype)
+    ty = lean_elem_type(out_wire.dtype)
     rows = [
         "[" + ", ".join(_get_dtype_item(out_wire.dtype, A[i][l].item()) for l in range(in_dim)) + "]"
         for i in range(out_m)
@@ -534,19 +504,6 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
         bias = [_get_dtype_item(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
     b_lit = f"([{', '.join(bias)}] : List {ty})"
     return out_m, a_lit, b_lit, ty
-
-
-def _sort_elem_ty(sort: Sort) -> str:
-    """Lean scalar element type ("Bool"/"Int"/"Real") for a Sort, ignoring shape."""
-    if isinstance(sort, Bool):
-        return "Bool"
-    if isinstance(sort, Int):
-        return "Int"
-    if isinstance(sort, Real):
-        return "Real"
-    if isinstance(sort, BitVec):
-        return f"(BitVec {sort._0})"
-    raise ValueError(f"Unsupported Sort for element type: {sort}")
 
 
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:

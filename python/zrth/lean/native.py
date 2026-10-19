@@ -19,7 +19,6 @@ from zrth.lean.common import (
     linear_list_literals,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
-    _bind_wires_scalar,
     _tensor_to_lean_inline,
     _flat_element_type,
     _flat_indices,

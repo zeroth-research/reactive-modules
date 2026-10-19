@@ -124,10 +124,12 @@ _SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (BitVec, "BitVec"))
 
 
 def _sort_name(dtype) -> str:
+    """The theory a sort's elements are in, a tag (`BitVec` without its
+    width), not a Lean type: `common.lean_elem_type` is that."""
     for cls, name in _SORT_NAMES:
         if isinstance(dtype, cls):
             return name
-    return "Int"
+    raise ValueError(f"Unsupported Sort: {dtype}")
 
 
 # A `*` whose two operands both mention the state parameter. An operand is a
