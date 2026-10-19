@@ -4,9 +4,9 @@ Everything below `Mat` turns a list of wires into a flat tuple of scalar
 elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 `ScalarRel` slices, the NA model's `var_k`, the bridge's `toSlots`, and
 cvc5's own tuple in `smt_encode`. Those were seven independent walks over the
-same row-major order, agreeing by construction and by comment;
-`KNOWN_ISSUES` #20 and #22 are what that was worth. They now all go through
-`layout.flat_layout`, and this is the test that says so.
+same row-major order, agreeing by construction and by comment; the
+defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
+all go through `layout.flat_layout`, and this is the test that says so.
 
 The shapes here are synthetic on purpose. Mutating `_flat_indices` to
 column-major and running the fast suite fails exactly one existing test:

@@ -52,7 +52,7 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
     certificates' `simp_mat` carries `List.ofFn_succ` and `List.ofFn_zero`
     and no lemma that computes `List.finRange`, so a `finRange` fold stays
     stuck in the goal at every concrete shape and every closer fails on it
-    (KNOWN_ISSUES #26, #30). Row-major order, seeds and tie-breaking are
+    (fixed in `be70a43`). Row-major order, seeds and tie-breaking are
     exactly as they were. -/
 
 /-- Reduce a matrix to its minimum, packed as `Mat t 1 1`.

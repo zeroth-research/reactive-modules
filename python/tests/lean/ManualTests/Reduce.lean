@@ -13,7 +13,7 @@ Both halves are here on purpose, because they fail independently:
 
 * **what they compute** — `decide` runs the kernel, which will evaluate any
   enumeration that is computable at all. The definitions were rewritten to
-  enumerate with `List.ofFn` (KNOWN_ISSUES #26, #30) and nothing pinned the
+  enumerate with `List.ofFn` (`be70a43`) and nothing pinned the
   answers, so this half is what says the rewrite preserved them.
 
 * **that they reduce under `simp`** — which is the defect that rewrite

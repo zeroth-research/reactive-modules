@@ -61,11 +61,11 @@ class FlatLayout:
     used to rebuild beside each other.
 
     Every view was being derived independently -- seven walks at the last
-    count, two of them in the same file -- and `KNOWN_ISSUES` #20 and #22 are
-    both two of those drifting apart: a per-wire index used where a
-    per-element one was meant. Both are `int`, so the one thing this can do
-    about that class of mistake is refuse to hand out the per-wire view by
-    position: :meth:`span` takes the wire itself.
+    count, two of them in the same file -- and the defects `d49ebdb9` and
+    `fe8600da` fixed were both two of those drifting apart: a per-wire index
+    used where a per-element one was meant. Both are `int`, so the one thing
+    this can do about that class of mistake is refuse to hand out the
+    per-wire view by position: :meth:`span` takes the wire itself.
 
     The row-major order is not a free choice. `smt_encode` packs `Mat t m n`
     into a cvc5 tuple at index `i*n + j`, and `smt_to_lean_bool` resolves the
