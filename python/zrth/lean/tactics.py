@@ -260,7 +260,7 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
 _BRANCHING_OPS = frozenset({"Ite", "ReLU", "Min", "Max"})
 
 
-def features_for(ctx, pred_text: str, facts=None) -> Features:
+def features_for(ctx, pred_text: str, facts=None, verbatim: str = "") -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
     `facts` is `smt_query.PredicateFacts` when the predicates came from
@@ -306,7 +306,10 @@ def features_for(ctx, pred_text: str, facts=None) -> Features:
         # two: the terms cover only the fields that came from SMT-LIB, so a
         # predicate compiled from Python IR alongside them would otherwise go
         # uncounted, and over-counting only ever buys a bigger budget.
-        f.nonlinear = facts.nonlinear
+        # The facts speak for the predicates printed from terms; a
+        # `verbatim` one (a Lean answer) has none, so its text is read and
+        # what it says is kept rather than overwritten.
+        f.nonlinear = facts.nonlinear or is_nonlinear(verbatim)
         f.has_and = f.has_and or facts.has_and
         f.has_or = f.has_or or facts.has_or
         f.has_eq = f.has_eq or facts.has_eq
@@ -516,9 +519,10 @@ def floor_arguments(pred_text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
+def plan_for(ctx, pred_text: str, facts=None, hints=None,
+             verbatim: str = "") -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
-    f = features_for(ctx, pred_text, facts)
+    f = features_for(ctx, pred_text, facts, verbatim)
 
     # ── prep: canonicalise the goal before anything tries to close it ──
     prep: list[str] = []

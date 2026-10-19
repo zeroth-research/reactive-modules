@@ -51,6 +51,10 @@ class PlanInputs:
 
     facts: PredicateFacts | None = None
     hints: SolverHints | None = None
+    # The Lean of the predicates taken as they were given (a `LeanAnswer`):
+    # no term stands behind them, so the facts cannot speak for them and
+    # the plan reads their text instead.
+    verbatim: str = ""
 
 
 @dataclass(frozen=True)
@@ -143,6 +147,32 @@ def render_certificate(
     return LeanPredicates(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,
+    )
+
+
+def prepare(
+    q: "ModuleQueries", hints: "SolverHints | None" = None,
+    verbatim: LeanAnswer | None = None,
+) -> LeanCertificate:
+    """`q`'s certificate as codegen takes it: the predicates printed, the
+    facts their terms give, `hints`, and the text of a `verbatim` answer.
+
+    The one place the printing is chosen. A condition the hints settle is
+    spliced into a tactic in expanded form, and a `have` outside a
+    definition cannot name a `let` inside it, so with such hints every
+    definition is printed unshared -- a condition can come from any of
+    them.
+    """
+    from .smt_query import predicate_facts
+
+    return LeanCertificate(
+        render_certificate(q, share=not (hints and hints.determined),
+                           verbatim=verbatim),
+        PlanInputs(
+            predicate_facts(q), hints,
+            verbatim="\n".join(t for t in (verbatim.inv, verbatim.ranking) if t)
+            if verbatim is not None else "",
+        ),
     )
 
 
@@ -260,6 +290,7 @@ def generate_certificate_lean(
         _predicate_text(ctx, lean_cert),
         facts=lean_cert.plan.facts,
         hints=lean_cert.plan.hints,
+        verbatim=lean_cert.plan.verbatim,
     )
 
     return render(

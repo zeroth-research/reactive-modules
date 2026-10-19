@@ -23,14 +23,11 @@ import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
 from zrth.lean.cert import (
-    LeanCertificate,
-    PlanInputs,
     generate_certificate_lean,
     generate_data_lean,
     predicate_terms,
-    render_certificate,
 )
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project import generate_standalone_cert_lean
@@ -152,19 +149,17 @@ CODEGEN = [
 
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
-             hints: bool) -> str:
+             hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
+    from zrth.lean.cert import prepare
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt_query import predicate_facts, solver_hints
+    from zrth.lean.smt_query import solver_hints
 
     lean = None
     if claim is not None:
         q = predicate_terms(module, claim, cert)
         h = solver_hints(q, SmtBudget()) if hints else None
-        lean = LeanCertificate(
-            render_certificate(q, share=not (h and h.determined)),
-            PlanInputs(predicate_facts(q), h),
-        )
+        lean = prepare(q, h, verbatim)
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
@@ -180,6 +175,17 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
                          ids=[c[0] for c in CODEGEN])
 def test_codegen_is_unchanged(name, make, claim, cert, hints):
     _check(f"codegen-{name}.golden", _codegen(make(), claim, cert, hints))
+
+
+def test_codegen_of_a_nonlinear_lean_answer_is_unchanged():
+    """`--infer ai` hands back Lean with no term behind it, so the facts
+    cannot speak for its ranking; a product in it still brings `nlinarith`
+    into the plan."""
+    answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
+                        "fun s => ((s 0 0) * (s 0 0)).toNat")
+    _check("codegen-lean_answer_nonlinear.golden",
+           _codegen(_fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+                    None, False, verbatim=answer))
 
 
 # ══════════════════════════════════════════════════════════════════════════

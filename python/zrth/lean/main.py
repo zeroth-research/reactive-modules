@@ -102,10 +102,9 @@ from pathlib import Path
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import (
     LeanCertificate,
-    PlanInputs,
     generate_zeroth_hammer_lean,
     predicate_terms,
-    render_certificate,
+    prepare,
 )
 from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
@@ -126,7 +125,7 @@ from .project import (
     write_encoding,
 )
 from .smt.run import lazy
-from .smt_query import pre_check, predicate_facts, solver_hints
+from .smt_query import pre_check, solver_hints
 from .translate import ModuleToLean4
 
 
@@ -300,10 +299,7 @@ def _render(settings: Settings, smt, claim: "Claim | None",
             f"<={settings.budget.phase_ms} ms total"
         )
         h = solver_hints(q, settings.budget, log=print)
-    defs = render_certificate(
-        q, share=not (h and h.determined), verbatim=verbatim
-    )
-    return LeanCertificate(defs, PlanInputs(predicate_facts(q), h))
+    return prepare(q, h, verbatim)
 
 
 def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
