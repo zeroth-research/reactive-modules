@@ -71,9 +71,6 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 
 Paths are relative to `python/zrth/lean/`.
 
-- **A Lean-rendering failure after inference writes no artifact note.**
-  `main._regenerate` raises it without the note that `_note_refusal` writes
-  when a route refuses.
 - **`ai-cegis` still says CEGAR, and builds a client it may not need.**
   `magic/cegar.py` builds an LLM client even when every predicate is fixed,
   and its names (`cegar.py`, `TA2MagicCEGAR`, `CegarPromptEnv`) say CEGAR for

@@ -123,6 +123,7 @@ from .project import (
     generate_standalone_cert_lean,
     write_encoding,
 )
+from .smt.record import note
 from .smt.run import lazy
 from .smt_query import pre_check, predicate_terms, solver_hints
 from .translate import ModuleToLean4
@@ -339,6 +340,24 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
     )
 
 
+def _note_unrenderable(store, route, e: Refused) -> None:
+    """Leave in `artifacts/` that a route's answer has no Lean form.
+
+    Not a refusal by the route: it answered, and what failed was printing
+    the answer as Lean, after the route had returned. So no note of the
+    route's own can say this, and without one the next run reads a found
+    predicate in `artifacts/` and nothing about why no certificate came of
+    it -- and an LLM route resuming from it proposes the same shape again.
+    """
+    note(
+        store, f"{e}\n",
+        status="unsupported",
+        what=f"An answer by `--infer {route.name}` that has no Lean form.",
+        why=("The route answered; what failed is writing that answer as "
+             "Lean, so the same shape proposed again fails the same way."),
+    )
+
+
 def _infer(
     settings: Settings, module, handle: ProjectHandle, claim: Claim,
     given: Certificate, prechecked, smt=None,
@@ -550,6 +569,7 @@ def _regenerate(settings: Settings, smt, handle: ProjectHandle, store,
         lean_cert = _render(settings, smt, claim, cert,
                             hints=lean is None, restated=True, verbatim=lean)
     except Refused as e:
+        _note_unrenderable(store, settings.route, e)
         raise _refused(settings, e) from e
     handle.write_predicates(lean_cert)
     return lean_cert

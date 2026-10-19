@@ -825,6 +825,35 @@ def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
     assert store.list() == ()
 
 
+def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
+    """The route answered and the answer could not be printed as Lean. That
+    fails after the route returned, so no note of its own can say so, and
+    without this one `artifacts/` holds the found predicate and nothing
+    about why no certificate came of it."""
+    from types import SimpleNamespace
+
+    from zrth.lean import main as m
+    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.infer_route import InferResult
+
+    def refuse(*a, **k):
+        raise Refused("SMT→Lean: unsupported kind INTS_MODULUS")
+
+    monkeypatch.setattr(m, "_render", refuse)
+    store = _note_store(tmp_path)
+    settings = SimpleNamespace(
+        pre_check=None,
+        route=SimpleNamespace(name="test-route", errors_self_named=False),
+    )
+    with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
+        m._regenerate(settings, None, _NoteHandle(store), store,
+                      Claim(prp="(= s0 0)", kind="safety"),
+                      InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
+    notes = [a for a in store.list() if a.role == "note"]
+    assert [a.status for a in notes] == ["unsupported"]
+    assert "INTS_MODULUS" in (store.dir / notes[0].name).read_text()
+
+
 def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
     """`reads_source` gates the input as `reads` gates the encodings: what
     a route is handed of the run is what its row declares."""
