@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING
 
 from ..common import Refused
+from ..lean_names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
 from .api import Alias, InferInput, InferResult, InferRoute, Opt
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
     """What this route needs of the lakefile: the checkout required, and the
     NA model declared as a lean_lib.  Without the two, the certificate this
     route installs is a file lake reaches and cannot elaborate."""
-    from ..fbk_proveit import PROVEIT_DIR, na_module_name
+    from ..fbk_proveit import na_module_name
     from ..project import LakefileParts, LeanLib, Require
 
     return LakefileParts(
@@ -145,11 +146,7 @@ ROUTE = InferRoute(
         "carries it as an `INIT` conjunct over the slots those inputs "
         "start"
     ),
-    owns=(
-        "ProveIt/",
-        "Certificate/Certificate.lean",
-        "Certificate/Equivalence.lean",
-    ),
+    owns=(f"{PROVEIT_DIR}/", cert_file(PROOF), cert_file(EQUIVALENCE)),
     lakefile=_lakefile,
     resolve=_resolve,
     extra_check=_check_project_name,

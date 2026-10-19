@@ -46,6 +46,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .common import LeanContext
+from .lean_names import (
+    EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
+)
 from .project import stream
 from .translate.fbk import (
     NA_IMPORTS,
@@ -55,12 +58,6 @@ from .translate.fbk import (
     check_na_supported,
     pre_over_slots,
 )
-
-
-# The route's subdirectory inside the generated project. The NA model is both
-# a `proveit.py` input and a lake target of the project, so the directory and
-# the model's module name are needed on both sides.
-PROVEIT_DIR = "ProveIt"
 
 
 def na_module_name(project_name: str) -> str:
@@ -552,9 +549,9 @@ def run(
     if notes:
         log(f".. proveit.py's certificate: {', '.join(notes)}")
 
-    files = {"Certificate/Certificate.lean": text}
+    files = {cert_file(PROOF): text}
     if equivalence:
-        files["Certificate/Equivalence.lean"] = equivalence_lean(
+        files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,
         )

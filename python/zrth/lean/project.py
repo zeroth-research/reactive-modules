@@ -33,6 +33,9 @@ from .native import (
 )
 
 from .translate import ModuleToLean4
+from .lean_names import (
+    CERT_LIB, DATA, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
+)
 
 if TYPE_CHECKING:
     from .inputs import SourceText
@@ -152,7 +155,7 @@ def build_certificate(project_dir: Path) -> None:
     cannot close an obligation, and lake reports those as warnings and exits
     0 -- which would make "built" mean nothing.
     """
-    for cmd in (["lake", "update"], ["lake", "build", "Certificate"]):
+    for cmd in (["lake", "update"], ["lake", "build", CERT_LIB]):
         try:
             rc, out = stream(cmd, cwd=project_dir)
         except FileNotFoundError as e:
@@ -163,7 +166,8 @@ def build_certificate(project_dir: Path) -> None:
                 + _build_why(out)
             )
 
-    unproved = [l for l in out.splitlines() if "sorry" in l and "Certificate/" in l]
+    unproved = [l for l in out.splitlines()
+                if "sorry" in l and f"{CERT_LIB}/" in l]
     if unproved:
         raise LakeBuildError(
             f"the certificate compiles but is not proved: "
@@ -241,34 +245,6 @@ def _build_why(out: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════
 
 
-@dataclass(frozen=True)
-class Layout:
-    """Where one route puts an encoding and what Lean calls it.
-
-    `base` is the name of the row with no suffix -- the functional encoding
-    -- and every other row hangs off it. In the project the files live in
-    their own `System/` directory and are named by suffix alone; a
-    `--cert-file` writes them next to whatever else is in the output
-    directory, so there the names carry `base` too (`flat`).
-    """
-
-    base: str
-    prefix: str = ""            # Lean module prefix, e.g. "System."
-    flat: bool = False          # file names carry `base`
-    directory: Path = Path()    # only `path` uses it
-
-    def stem(self, suffix: str) -> str:
-        return f"{self.base}{suffix}" if self.flat else (suffix or self.base)
-
-    def path(self, suffix: str) -> Path:
-        return self.directory / f"{self.stem(suffix)}.lean"
-
-    def lean_module(self, suffix: str) -> str:
-        return f"{self.prefix}{self.stem(suffix)}"
-
-
-# The project's own layout, also the one `generate_root` imports through.
-SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
 
 
 @dataclass(frozen=True)
@@ -541,9 +517,8 @@ def write_data_lean(
     if ctx is None:
         ctx = LeanContext(module)
 
-    src_dir = project_dir / "Certificate"
-    src_dir.mkdir(parents=True, exist_ok=True)
-    data_file = src_dir / "Data.lean"
+    data_file = project_dir / cert_file(DATA)
+    data_file.parent.mkdir(parents=True, exist_ok=True)
     data_file.write_text(generate_data_lean(ctx, lean_cert))
     print(f"Wrote {data_file}")
     return data_file
@@ -569,12 +544,11 @@ def write_certificate_lean(
     if ctx is None:
         ctx = LeanContext(module)
 
-    cert_dir = project_dir / "Certificate"
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(generate_certificate_lean(ctx, lean_cert))
-    print(f"Wrote {cert_file}")
-    return cert_file
+    path = project_dir / cert_file(PROOF)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(generate_certificate_lean(ctx, lean_cert))
+    print(f"Wrote {path}")
+    return path
 
 
 def create_project(
