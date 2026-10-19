@@ -119,7 +119,7 @@ from fractions import Fraction
 from itertools import product
 
 from ..certificate import Certificate, Claim
-from ..errors import Refused
+from ..errors import PredicateRefused, Refused
 from ..houdini_solver import (
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,
@@ -874,11 +874,10 @@ class Ranks:
         self.splits = []
         for src in splits:
             try:
-                term = ctx.env.parse_expr(src)
-            except Exception:                        # noqa: BLE001
+                self.splits.append(
+                    (src, ctx.enc.parse(src, "branch condition")))
+            except PredicateRefused:
                 continue
-            if not term.isNull():
-                self.splits.append((src, term))
         self._truth: dict = {}
 
     def _reading(self, col: Column) -> str:
@@ -1330,7 +1329,8 @@ class TA2MagicHoudini(TA2Magic):
         for _ in range(_REFITS + 1):
             started = time.monotonic()
             fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled,
-                                           keep=learnt))
+                                           keep=learnt),
+                                 "ranking", want="Int")
             broken = [self._broken_on(r, wide) for r in fitted]
             kept = [r for r, b in zip(fitted, broken) if b is None]
             fresh = [b for b in dict.fromkeys(b for b in broken if b is not None)
@@ -1585,16 +1585,17 @@ class TA2MagicHoudini(TA2Magic):
         parts = list(p) if p.getKind() == Kind.AND else [p]
         return [str(t) if len(parts) > 1 else claim.prp.strip() for t in parts]
 
-    def _parse(self, srcs: list[str]) -> list[Candidate]:
+    def _parse(self, srcs: list[str], role: str = "invariant",
+               want: str = "Bool") -> list[Candidate]:
+        """The candidates that read as a `want` over the module, through the
+        run's encoding. One that does not is no candidate, not an error:
+        the generators propose shapes, and a shape may not fit."""
         out = []
         for src in dict.fromkeys(srcs):
             try:
-                term = self.ctx.env.parse_expr(src)
-            except Exception:                        # noqa: BLE001
+                out.append(Candidate(src, self.ctx.enc.parse(src, role, want=want)))
+            except PredicateRefused:
                 continue
-            if term.isNull():
-                continue
-            out.append(Candidate(src, term))
         return out
 
     # --- out --------------------------------------------------------------

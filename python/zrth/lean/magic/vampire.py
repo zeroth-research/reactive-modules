@@ -164,7 +164,7 @@ from dataclasses import dataclass
 from itertools import combinations, product
 
 from ..certificate import Certificate, Claim
-from ..errors import Refused
+from ..errors import PredicateRefused, Refused
 from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from ..smt import obligations as obl
@@ -1095,10 +1095,11 @@ class TA2MagicVampire(TA2Magic):
         """
         ob, ctx = self.ob, self.ctx
         try:
-            facts = [Candidate(inv_src, ctx.env.parse_expr(inv_src))]
+            facts = [Candidate(inv_src, ctx.enc.parse(inv_src, "invariant"))]
             rank = (None if rank_src is None
-                    else Candidate(rank_src, ctx.env.parse_expr(rank_src)))
-        except Exception as e:                       # noqa: BLE001
+                    else Candidate(rank_src, ctx.enc.parse(
+                        rank_src, "ranking", want="Int")))
+        except PredicateRefused as e:
             self.log(f"[vampire] the answer does not parse back: {e}")
             return False
         solver = Cvc5Solver(ctx.tm, seconds=max(5.0, min(30.0, self.timeout)),

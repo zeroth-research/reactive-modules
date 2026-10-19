@@ -320,7 +320,7 @@ def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     inv = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
-    rising = magic._parse(["(- 100 s0)"])[0]
+    rising = magic._parse(["(- 100 s0)"], "ranking", want="Int")[0]
     answer = Cvc5Solver(magic.ctx.tm, seconds=30).prove(
         ob.drops(inv, rising), 5, model=True)
     assert answer.verdict is Verdict.REFUTED
@@ -497,7 +497,7 @@ def test_a_query_carries_its_transition_once_and_names_every_fact():
     assert [n for n, _t in q.probes] == ["g0", "g1"]
 
     assert ob.preserved(kept, kept[:1]).probes == ()
-    rank = magic._parse(["s0"])[0]
+    rank = magic._parse(["s0"], "ranking", want="Int")[0]
     assert ob.drops(kept, rank).probes == ()
 
 

@@ -78,10 +78,15 @@ Paths are relative to `python/zrth/lean/`.
   states that admits, so a later `--infer ai-cegis --safety` without it
   resumes it as the whole certificate, and fails `init_inv` instead of
   asking the model.
-- **Not every SMT user is on `smt/`.** houdini and vampire parse with
-  `env.parse_expr` (their candidates may be Real) where the rest use
-  `ModuleEncoding.parse`; nuterm (`python/nuterm/`) encodes the module in
-  z3 on its own, with `_farkas.Inductive`/`LexDecrease` as its obligations.
+- **nuterm is not on `smt/`** (needs a decision). Every other route
+  states its questions through `smt/` and the run's cvc5 encoding; nuterm
+  (`python/nuterm/`) encodes the module in z3 itself (`_nodes.py`), with
+  `_farkas.Inductive`/`LexDecrease` as its obligations. The Farkas engine
+  is z3 throughout (its regions, the LP, `zrth.z3`), so moving it is a
+  rewrite of the engine rather than a port of its front end, at the risk
+  of the 45/57 it certifies on the SV-COMP corpus. `magic/learn.py`, the
+  route's front end, reads and writes SMT-LIB through z3 for the same
+  reason.
 - **nuterm needs the editable install.** `magic/learn.py` imports `nuterm`,
   which sits beside `zrth` in `python/` and is not in the wheel: maturin
   packages `zrth` alone.
