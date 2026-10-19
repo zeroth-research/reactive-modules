@@ -194,8 +194,8 @@ only the `Certificate.Certificate` job is being timed:
 
 3-7%, which is at the edge of the noise on this machine even quiet.
 
-**Why: sharing and `cert_facts` are pulling against each other**, and both
-are additions from this pass. `ranking` is emitted with its repeated
+**Sharing and `cert_facts` look as if they pull against each other.**
+`ranking` is emitted with its repeated
 subterms `let`-bound, so its branch conditions read
 
 ```lean
@@ -211,29 +211,23 @@ have hf0 : ((((1 : Real) * (($v) 0 0)) + (3 : Real)) ≥ (0 : Real)) := …
 ```
 
 The `have` is proved either way -- it is a true statement about the state --
-but `simp only [if_pos hf0]` has nothing to match unless the `let`s have
-already been zeta-reduced into the goal, and only the rewrite removes the
-split. That is the whole of the missing benefit.
+and `simp only [if_pos hf0]` does match: the hint runs after the
+definitions are unfolded with `simp`'s default `zeta`, which substitutes
+the `let`s away. Checked in Lean, the same rewrite with `zeta := false`
+makes no progress. On the belief that it could not match, a predicate with
+a settled condition was for a while printed unshared, so that the two
+shapes matched on the nose; `6a68153d` returned to shared printing.
 
-So the predicate is now rendered **unshared whenever cvc5 settled a
-condition in it** (`main._render` asks `solver_hints` before
-`render_certificate` and passes it `share=False`, for *every* predicate
-rather than the two that were inferred, since a settled condition can come
-from the property). That costs almost nothing: settled conditions only
-survive as `if`s in Real predicates, where sharing saves little
-(NN2RealWide4 is 556 chars against 422), while the deep Int nets where
-sharing matters fold to `max` and offer no conditions to settle at all.
-The two shapes now match on the nose.
-
-**And it still does not pay.** Same measurement after the fix:
+**Either way it does not pay.** Measured with the predicates printed
+unshared:
 
 | | off | on |
 |---|---|---|
 | first pair | 68 s | 68 s |
 | second pair | 69 s | 70 s |
 
-Identical -- which also says the 3-7% before the fix was noise, not a
-partial win.
+Identical -- which also says the 3-7% measured with them shared was noise,
+not a partial win.
 
 And the rewrite is firing. Rebuilt with the inner `try` stripped, so that a
 `simp only` making no progress would be an error, it builds clean: all four
@@ -457,20 +451,18 @@ still true at init — abduction will happily converge on `False`.
 
 ---
 
-## 7. Synthesis: `--infer sygus` and `--infer smt-linear` — **built**
+## 7. Synthesis: `--infer sygus` and `--infer smt-linear`
 
-Written as a plan for a SyGuS *ranking function*; built as an invariant
-synthesiser and a template query, because that is what the measurements
-said. What follows is the plan's own claims against what running them
-showed (cvc5 1.3.4, `tests/limits` fixtures), and then what shipped.
+The two routes started as a plan for a SyGuS *ranking function*, and became
+an invariant synthesiser and a template query because of what the
+measurements below showed (cvc5 1.3.4, `tests/limits` fixtures).
 
-**What the plan had right.** `Solver.synthFun` + `addSygusConstraint` +
-`checkSynth` does find ranking functions with no LLM and no API key, and
-the module's encoded round (`ModuleEncoding.next_state`) against
-`declareSygusVar` state variables is the encoding — step 2 was exactly right and is what both routes do.
+**What works.** `Solver.synthFun` + `addSygusConstraint` + `checkSynth` does
+find ranking functions with no LLM and no API key, and the module's encoded
+round (`ModuleEncoding.next_state`) against `declareSygusVar` state
+variables is the encoding both routes use.
 
-**Step 3 — "give it a grammar" — was half wrong.** A grammar is not
-automatically a pruning:
+**A grammar is not automatically a pruning:**
 
 ```
                      default LIA    loose grammar    template grammar
@@ -480,29 +472,26 @@ m_twovars              14.4 s          12.8 s           14.6 s
 m_lex                      --              --             124 s
 ```
 
-The "linear combinations plus one `ite`" grammar the plan describes is
-*slower than no grammar at all* on `m_toward5`. What prunes is fixing the
+A loose grammar of linear combinations plus one `ite` is *slower than no
+grammar at all* on `m_toward5`. What prunes is fixing the
 affine form and enumerating only its coefficients — and even that does not
 rescue two variables. `m_lex` is the case that settles it: 124 s for a rank
 `--infer nuterm` certifies in seconds, and the answer that comes back is
 `ite (-2 + 2*x1 <= 12 - 2*x0 - x1) (100 + 2*x0 + 100*x1) (1 + 10*x0 + 3*x1)`
 where `4*x1 + x0` would do.
 
-**Step 4 — "check how it is bounded first" — was the right worry and has an
-answer.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
+**`tlimit-per`, not `tlimit`, bounds a query.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
 and returned a solution. It does not stop a quantified `checkSat` either — a
 20 s limit ran past 400 s. **`tlimit-per` stops both** (1001 ms and 5007 ms,
 `unknown`). No subprocess is needed; `smt.limits.bounded_solver` sets the
 pair for every query.
 
-**Step 5 — "a synthesised `ite` folds through the min/max peephole for free"
-— is wrong.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where
+**A synthesised `ite` does not fold to `min`/`max`.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where
 the branches *are* the comparison's operands. No solution cvc5 returned here
 has that shape, so each one costs a `split_ifs` branch, doubled because
 `hrank` mentions the ranking twice.
 
-**Step 6 — "fall back to `--infer ai-cegis`" — was not built, deliberately.**
-A route is a row and routes do not chain: a route that silently becomes
+**No fallback to `--infer ai-cegis`.** A route is a row and routes do not chain: a route that silently becomes
 another one makes two identical command lines mean different things, which
 is the argument `InferInput.resumable_inv` already makes about inheriting
 a predicate.
@@ -541,7 +530,7 @@ thing neither an LLM nor a learner produces, and it is what the routes were
 built around: it goes to `artifacts/` as a `no_solution` note and into the
 `--infer ai-cegis` prompt on the next run.
 
-**What shipped.**
+**The routes.**
 
 * `--infer sygus` (`--safety`) — `magic/sygus.py`. `addSygusInvConstraint`
   over a grammar of affine comparisons plus congruences, with the constants
@@ -586,10 +575,3 @@ built around: it goes to `artifacts/` as a `no_solution` note and into the
   confused them would put a falsehood in a prompt.
 * `--infer ai-cegis` resumes `note` artifacts as well as `inv` ones, and
   states them in the prompt as established facts.
-
-**What is still open.** Both searches are integer-only and refuse a Real,
-Bool, bitvector or matrix-shaped state by name; the `--safety` template
-stops being decidable in practice at two rows, which a CEGIS loop (sample
-states, solve for coefficients over the samples, verify, repeat) would
-push much further — it turns one hard `NIA` query into a loop of easy `LIA`
-ones, and an unsat sample system is still a proof of absence.
