@@ -64,6 +64,9 @@ DONE: Project created at: <OUT>/G
    nothing cvc5 can add to the plan
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))'
+   --ranking '(+ (* 2 (ite (> (+ 2 (X @intf.0)) 0) (+ 2 (X @intf.0)) 0)) (* 2 (ite (> (* 2 (X @intf.0)) 0) (* 2 (X @intf.0)) 0)) (* 2 (ite (> (* (- 2) (X @intf.0)) 0) (* (- 2) (X @intf.0)) 0)) (* 2 (ite (> (+ (- 1) (- (X @intf.0))) 0) (+ (- 1) (- (X @intf.0))) 0)) (* 2 (ite (> (- (X @intf.0)) 0) (- (X @intf.0)) 0)) (* 2 (ite (> (+ (- 1) (X @intf.0)) 0) (+ (- 1) (X @intf.0)) 0)) (* 2 (ite (> (- 1) 0) (- 1) 0)))'
 
 Project ready at: <OUT>/G
 

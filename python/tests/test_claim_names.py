@@ -1,5 +1,6 @@
 """Claims in the reactive module's own terms: `zrth.lean.inputs.names`."""
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -113,3 +114,27 @@ def test_a_bad_claim_or_name_is_an_error_line(tmp_path):
         assert r.returncode != 0, args
         assert "Traceback" not in r.stderr, r.stderr
         assert "error:" in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("internal, surface", [
+    ("s0", "(X @intf.0)"),
+    ("(not el0)", "(not @extl.0)"),
+    ("(s0 >= 0)", "(X(@intf.0) >= 0)"),
+])
+def test_text_both_dialects_read_is_shown_as_smtlib(internal, surface):
+    assert to_surface(internal) == surface
+
+
+def test_a_found_certificate_is_shown_as_the_flags_take_it(tmp_path):
+    """What one run found, the next can be given: printed in the input's
+    names, quoted for a shell."""
+    r = _verith(str(FIXTURES / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
+                "--infer", "houdini", "-o", str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    shown = r.stdout.split(".. The certificate, in the input's names:\n")[1]
+    flags = [shlex.split(line) for line in shown.splitlines()[:2]]
+    assert [f for f, _ in flags] == ["--invariant", "--ranking"]
+    again = _verith(str(FIXTURES / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
+                    *(word for pair in flags for word in pair),
+                    "--pre-check", "cvc5", "--cert-file", str(tmp_path / "C.lean"))
+    assert again.returncode == 0, again.stderr

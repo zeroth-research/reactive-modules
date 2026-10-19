@@ -329,12 +329,32 @@ def _quote(name: str) -> str:
         else f"|{name}|"
 
 
+_EMBEDDED = re.compile(r"(?<![A-Za-z0-9_])(s|e|el)\d+")
+
+
+def _smtlib_shaped(text: str, tree: ast.Expression) -> bool:
+    """Whether text both dialects read is shown as SMT-LIB: a lone name,
+    or a parenthesised form in which every internal name is a whole atom
+    and none is in head position (where Python's `(s0 >= 0)` has one)."""
+    if isinstance(tree.body, ast.Name):
+        return True
+    if not text.lstrip().startswith("("):
+        return False
+    toks = [t for t in _tokens(text) if t[0] not in ("ws", "comment")]
+    for j, (kind, tok) in enumerate(toks):
+        if kind != "atom" or not _EMBEDDED.search(tok):
+            continue
+        if not _INTERNAL.fullmatch(tok) or (j and toks[j - 1][0] == "lp"):
+            return False
+    return True
+
+
 def to_surface(text: str, names: Names | None = None) -> str:
     """`text`, a predicate in internal names, in the surface ones a claim
     takes: the input's names where `names` has them, positional otherwise.
     With no `names`, every variable is spelled by position."""
     parsed = _python(text)
-    if parsed is None:
+    if parsed is None or _smtlib_shaped(text, parsed[0]):
         out = []
         for kind, tok in _tokens(text):
             m = _INTERNAL.fullmatch(tok) if kind == "atom" else None

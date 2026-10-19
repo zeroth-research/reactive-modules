@@ -94,6 +94,7 @@ returns a :class:`zrth.Module`::
         return Module.sequential([state], init_terms, update_terms)
 """
 
+import shlex
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
@@ -547,6 +548,19 @@ def _regenerate(settings: Settings, smt, handle: ProjectHandle, store,
     return lean_cert
 
 
+def _show_certificate(cert: Certificate, names: "inputs.Names") -> None:
+    """The route's answer in the input's names, as `--invariant` and
+    `--ranking` take it: what one run found, the next can be given."""
+    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
+                                             ("--ranking", cert.ranking))
+             if text]
+    if not shown:
+        return
+    print(".. The certificate, in the input's names:")
+    for flag, text in shown:
+        print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")
+
+
 def main():
     settings = parse_args()
 
@@ -619,6 +633,7 @@ def main():
             else _regenerate(settings, smt, handle, store, claim, result)
         )
         handle.write_files(result.files)
+        _show_certificate(result.cert, problem.names)
 
     _build_cert(settings, project_dir, lean_cert)
 

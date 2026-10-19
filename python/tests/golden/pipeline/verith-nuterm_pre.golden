@@ -65,6 +65,8 @@ DONE: Project created at: <OUT>/G
    step_inv: the core needs only goal, inv of 3
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(>= (X @intf.0) 0)'
 
 Project ready at: <OUT>/G
 
