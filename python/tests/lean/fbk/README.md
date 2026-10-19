@@ -185,20 +185,13 @@ Of the 18 refusals, 11 are `Real` state, 4 external input wires, 2 an op
 `smt_encode` has no term for (`Transpose`, `Uninterpreted`), and 1 a
 property outside the Bool fragment (`mod`).
 
-The previous run of the same sweep certified 40 cases and refused 30.  What
-moved is the multi-element ctrl wire restriction and the op allowlist that
-went with it: `m_mixed`, `m_relu_vec`, `m_relu_net`, `m_relu_net8`,
-`m_relu_net16`, `m_max`, `m_min` and `m_argmax` all certify now, and the
-two `m_vec32` cases changed from `abort` to `lean-fail` — they encode, and
-ic3ia proves them, but checking the certificate for a 32-slot model runs
-out of Lean heartbeats (200000) in `whnf`.  The `m_relu` cases changed from
-`lean-fail` to `certified`, because the transition no longer spells a ReLU
-`Max.max`.
+The two `m_vec32` cases are `lean-fail`: they encode, and ic3ia proves
+them, but checking the certificate for a 32-slot model runs out of Lean
+heartbeats (200000) in `whnf`.
 
 ### What the sweep found
 
-Two of the four obstacles it turned up have since been fixed; these are
-the standing ones.
+The obstacles that stand:
 
 1. **`mod` stops at the witness, not the model** (`InvMod`, `abort`).
    `lean2vmt` does translate `%`, and ic3ia proves such a property — but
@@ -228,11 +221,5 @@ the standing ones.
 3. **Nonlinear ⇒ `unknown`** (`NonlinLexMul`).  Expected: ic3ia is IC3 with
    implicit predicate abstraction over *linear* arithmetic.  The route
    aborts cleanly.
-
-Fixed since: a trivially safe property produced an uncompilable
-certificate (two `vmt2lean` template bugs plus a tactic that ran past a
-closed goal), and `Ne`/`ReLU`/`Max`/`Min` were emitted as unapplied
-leaves by `lean2vmt`.  `InvTrue` and `MixedBoolInt` cover the first,
-`ReluTrans` the second.
 
 [ltl]: https://github.com/zeroth/proof-prototyping
