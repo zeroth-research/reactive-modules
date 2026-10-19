@@ -12,6 +12,20 @@ from zrth.lean.common import (
 from zrth.lean.native import _build_tuple, _product_type_scalar
 
 
+def has_block(ctx, block: str) -> bool:
+    """Whether the module's atom has `block` ("init" or "update") terms. An
+    encoding proves its theorems about a block only when the block has
+    some, so whatever cites one of them asks this same question."""
+    return bool(list(getattr(ctx.atom, block)))
+
+
+def scalar_eq_name(block: str) -> str:
+    """The theorem `scalar.py` proves for `block`: the functional block is
+    `Scalar.pack` of `Scalar.<block>` of the unpacked inputs. It exists
+    exactly when `has_block(ctx, block)`."""
+    return f"{block}_scalar_eq"
+
+
 def _flat_slice(expr: str, layout: FlatLayout, wire) -> str:
     """The components of the flat tuple `expr` that `wire` owns.
 

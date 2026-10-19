@@ -135,6 +135,7 @@ from zrth.lean.common import (
     flat_layout,
 )
 from zrth.lean.native import _reachable_terms
+from zrth.lean.translate._shared import has_block
 from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
@@ -194,6 +195,46 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # translation and reports whatever it raises -- and hands the result back,
 # so that translation is the one the emission uses rather than one thrown
 # away and repeated.
+def check_na_shape(ctx: LeanContext) -> None:
+    """:class:`NAUnsupported` unless `ctx`'s module has the shape the NA
+    encoding and its bridge assume: controlled state of Int and Bool
+    elements, init and update terms, and every ctrl wire written by both.
+    What can be read off the module without encoding it; the rest of
+    `check_na_supported` is what can only be found by trying."""
+    if not ctx.ctrl_next:
+        raise NAUnsupported("the module has no controlled state to encode")
+
+    elem_types = {_flat_element_type(w) for w in ctx.ctrl_next + ctx.extl_next}
+    bad = elem_types - NA_ELEMENT_TYPES
+    if bad:
+        raise NAUnsupported(
+            f"state element type(s) {', '.join(sorted(bad))} unsupported; "
+            "vmt2lean.py only maps Int and Bool back to Lean"
+        )
+
+    if not has_block(ctx, "init"):
+        raise NAUnsupported("the module has no init terms, so there is no INIT")
+    if not has_block(ctx, "update"):
+        raise NAUnsupported("the module has no update terms, so there is no TRANS")
+
+    # A ctrl wire nothing writes is a free (nondeterministic) variable, and
+    # this encoding has no way to say that: `Init_k`/`R_k` pin every slot to
+    # a value. Caught here rather than left to the encoder, whose own error
+    # for an unbound wire says nothing about why it matters.
+    for block, terms in (("init", ctx.atom.init), ("update", ctx.atom.update)):
+        loose = [
+            f"#{i}"
+            for i, w in enumerate(ctx.ctrl_next)
+            if not _reachable_terms(terms, [w])
+        ]
+        if loose:
+            raise NAUnsupported(
+                f"no {block} term writes ctrl wire(s) {', '.join(loose)}; "
+                "the NA encoding has no way to leave a state variable "
+                "unconstrained"
+            )
+
+
 def check_na_supported(
     ctx: LeanContext, simplify: bool = True, encoding=None
 ) -> SlotBodies:
@@ -218,38 +259,7 @@ def check_na_supported(
     are built on; without one a caller gets an encoding of `ctx.module` of
     its own.
     """
-    if not ctx.ctrl_next:
-        raise NAUnsupported("the module has no controlled state to encode")
-
-    elem_types = {_flat_element_type(w) for w in ctx.ctrl_next + ctx.extl_next}
-    bad = elem_types - NA_ELEMENT_TYPES
-    if bad:
-        raise NAUnsupported(
-            f"state element type(s) {', '.join(sorted(bad))} unsupported; "
-            "vmt2lean.py only maps Int and Bool back to Lean"
-        )
-
-    if not list(ctx.atom.init):
-        raise NAUnsupported("the module has no init terms, so there is no INIT")
-    if not list(ctx.atom.update):
-        raise NAUnsupported("the module has no update terms, so there is no TRANS")
-
-    # A ctrl wire nothing writes is a free (nondeterministic) variable, and
-    # this encoding has no way to say that: `Init_k`/`R_k` pin every slot to
-    # a value. Caught here rather than left to the encoder, whose own error
-    # for an unbound wire says nothing about why it matters.
-    for block, terms in (("init", ctx.atom.init), ("update", ctx.atom.update)):
-        loose = [
-            f"#{i}"
-            for i, w in enumerate(ctx.ctrl_next)
-            if not _reachable_terms(terms, [w])
-        ]
-        if loose:
-            raise NAUnsupported(
-                f"no {block} term writes ctrl wire(s) {', '.join(loose)}; "
-                "the NA encoding has no way to leave a state variable "
-                "unconstrained"
-            )
+    check_na_shape(ctx)
 
     # The one check that cannot be made by inspection: encode the module and
     # print it. Whatever `smt_encode` or `smt_to_lean_bool` refuses is what

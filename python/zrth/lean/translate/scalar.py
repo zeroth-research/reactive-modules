@@ -18,7 +18,12 @@ from zrth.lean.common import (
     flat_layout,
     itype_name,
 )
-from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
+from zrth.lean.translate._shared import (
+    _prepend_recon,
+    _scalar_bindings_with_recon,
+    has_block,
+    scalar_eq_name,
+)
 from zrth import Wire
 
 
@@ -265,7 +270,7 @@ def to_lean_scalar_equiv(
             # budget. Raised per theorem rather than file-wide.
             f"set_option maxHeartbeats 2000000 in",
             f"set_option maxRecDepth 100000 in",
-            f"theorem {func_name}_scalar_eq : ∀ {' '.join(binders)},",
+            f"theorem {scalar_eq_name(func_name)} : ∀ {' '.join(binders)},",
             f"    {func_name} {' '.join(vars_)} = {rhs} := by",
             f"  intro {' '.join(vars_)}",
             f"  simp only [{', '.join(simp_names)}]",
@@ -298,14 +303,14 @@ def to_lean_scalar_equiv(
         ("extl_n", ctx.extl_next),
     ]
 
-    if list(ctx.atom.init):
+    if has_block(ctx, "init"):
         init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
         extl_n_arg = _call_arg("extl_n", ctx.extl_next)
         extras = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
         lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
         lines.append("")
 
-    if list(ctx.atom.update):
+    if has_block(ctx, "update"):
         binders = [
             f"({p} : {_product_type(w) if w else 'Unit'})" for p, w in input_groups
         ]

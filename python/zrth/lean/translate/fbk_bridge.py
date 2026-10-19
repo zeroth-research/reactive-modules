@@ -44,7 +44,8 @@ from zrth.lean.common import (
     flat_layout,
 )
 from zrth.lean.native import _product_type, _product_type_scalar
-from zrth.lean.translate.fbk import SlotBodies, check_na_supported
+from zrth.lean.translate._shared import scalar_eq_name
+from zrth.lean.translate.fbk import SlotBodies, check_na_shape, check_na_supported
 
 # The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
 # `matVecAffine 2 [[1, 0], [0, 1]] [0, 1] (fun i j => match i, j with ...)`
@@ -130,6 +131,10 @@ def atom_to_lean_fbk_bridge(
     there is one: `start_maps` proves `INIT`, and an `INIT` with a conjunct
     this file does not know about is a proof that does not close.
     """
+    # Also when `bodies` were handed in: the proof below cites the scalar
+    # theorems and indexes the slots, which a module without that shape has
+    # neither of.
+    check_na_shape(ctx)
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     ty = layout.element_types()
@@ -274,7 +279,8 @@ def atom_to_lean_fbk_bridge(
         # `init_pre l`, spelled in `Bool`.
         f"  obtain ⟨l, {'hpre' if has_pre else '_'}, rfl⟩ := hs",
         *_cascade(
-            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init"
+            f"Definition.INIT, toSlots, {scalar_eq_name('init')}, Scalar.pack, "
+            "Scalar.init"
             + (", Definition.PRE, init_pre" if has_pre else ""),
             # Every slot's `var_k`, not only the pinned ones': a slot that
             # starts at an input another slot took first is pinned *to* that
@@ -298,7 +304,7 @@ def atom_to_lean_fbk_bridge(
         # closes it where `bridge_k` would have. Left off otherwise: it is
         # another definition in every `simp` arm of every slot.
         *_cascade(
-            "Definition.TRANS, toSlots, update_scalar_eq, Scalar.pack, "
+            f"Definition.TRANS, toSlots, {scalar_eq_name('update')}, Scalar.pack, "
             "Scalar.unpack_ctrl",
             ", " + ", ".join(
                 f"Definition.R_{k}, Definition.var_{k}, link_{k}, bridge_{k}"
