@@ -326,6 +326,30 @@ def try_omega_before_smt(cert: str) -> "tuple[str, int]":
     return _SMT_CLOSER.subn("first | omega | smt", cert)
 
 
+# What each patch hooks onto, looked for anywhere in the certificate. Both
+# patches leave a certificate they do not recognise as it came, which is
+# right for a template that has moved on and silent about it: a
+# `generalizeNatVar` still there with no `revert h;` before it is the
+# template having moved under the patch, and the certificate then fails
+# where the patch was the repair. The `smt` here is a bare one, not `try
+# smt` and not the end of a dotted name, as `_SMT_CLOSER` takes it.
+_HOOKS = (
+    (re.compile(r"\bgeneralizeNatVar\b"),
+     "`generalizeNatVar` with no `revert h;` before it, so its `Bool` was "
+     "not normalised"),
+    (re.compile(r"(?<![\w.])(?<!try )smt\b"),
+     "`smt` closing no parenthesised group, so `omega` was not offered "
+     "before it"),
+)
+
+
+def unpatched(cert: str, *counts: int) -> "list[str]":
+    """What the two patches above found nothing to change in, though the
+    tactic each hooks onto is in `cert`. `counts` are theirs, in order."""
+    return [what for n, (hook, what) in zip(counts, _HOOKS)
+            if n == 0 and hook.search(cert)]
+
+
 def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
@@ -539,7 +563,8 @@ def run(
             f"certificate to {raw_cert}"
         )
 
-    text, patched = leave_bool_before_generalize(raw_cert.read_text())
+    raw = raw_cert.read_text()
+    text, patched = leave_bool_before_generalize(raw)
     text, omegas = try_omega_before_smt(text)
     notes = []
     if patched:
@@ -548,6 +573,9 @@ def run(
         notes.append(f"{omegas} offered omega before smt")
     if notes:
         log(f".. proveit.py's certificate: {', '.join(notes)}")
+    for what in unpatched(raw, patched, omegas):
+        log(f"warning: --fbk-proveit: proveit.py's certificate has {what}; "
+            f"its template may have changed under this patch")
 
     files = {cert_file(PROOF): text}
     if equivalence:

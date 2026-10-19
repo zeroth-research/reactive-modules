@@ -1023,6 +1023,28 @@ def test_omega_is_offered_before_the_smt_that_closes_a_check():
     assert try_omega_before_smt(left) == (left, 0)
 
 
+def test_a_patch_that_found_nothing_to_change_is_reported():
+    """A certificate either patch leaves as it came is right for a template
+    that has moved on, and silent about it. Where the tactic the patch hooks
+    onto is still there, the template moved *under* the patch, and the
+    certificate then fails where the patch was the repair."""
+    from zrth.lean.fbk_proveit import (
+        leave_bool_before_generalize, try_omega_before_smt, unpatched,
+    )
+
+    def run(cert):
+        text, n = leave_bool_before_generalize(cert)
+        return unpatched(cert, n, try_omega_before_smt(text)[1])
+
+    assert run(_RAW_CHECK) == []
+    moved = _RAW_CHECK.replace("(revert h; generalizeNatVar", "(revert h1; generalizeNatVar")
+    assert [w.split()[0] for w in run(moved)] == ["`generalizeNatVar`"]
+    moved = _RAW_CHECK.replace("using 4; smt)", "using 4\n  smt")
+    assert [w.split()[0] for w in run(moved)] == ["`smt`"]
+    # Neither tactic at all is a different certificate, not a moved one.
+    assert run("theorem t : True := by\n  try smt\n  trivial\n") == []
+
+
 def _verith(*args) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["uv", "run", "verith", *args],
