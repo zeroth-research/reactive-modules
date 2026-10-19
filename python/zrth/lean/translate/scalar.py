@@ -9,10 +9,10 @@ from zrth.lean.native import (
     _argmax_scalar_name,
 )
 from zrth.lean.sorts import (
-    dtype_shape,
     dtype_to_lean_type,
     _flat_element_type,
     itype_name,
+    wire_shape,
 )
 from zrth.lean.layout import _flat_size, _mat_from_scalars, flat_layout
 from zrth.lean.context import LeanContext
@@ -52,7 +52,7 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
         parts.append(
             _mat_from_scalars(
                 flat_accrs[offset : offset + size],
-                list(dtype_shape(w.dtype)),
+                wire_shape(w),
                 _flat_element_type(w),
             )
         )
@@ -86,10 +86,9 @@ def _recon_lemma_lines(w) -> "list[str]":
     without this. Built by the same `_mat_from_scalars` as the reconstruction
     itself, so the shapes match syntactically.
     """
-    shape = list(dtype_shape(w.dtype))
+    shape = wire_shape(w)
     elem = _flat_element_type(w)
-    m = shape[0]
-    n = shape[1] if len(shape) == 2 else 1
+    m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
     lhs = _mat_from_scalars(slots, shape, elem)
     name = f"recon_{_elem_ty_slug(elem)}_{m}_{n}"
@@ -159,7 +158,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         for w in wires:
             if _flat_size(w) == 1:
                 continue
-            key = (tuple(dtype_shape(w.dtype)), _flat_element_type(w))
+            key = (wire_shape(w), _flat_element_type(w))
             if key in seen_recon:
                 continue
             seen_recon.add(key)

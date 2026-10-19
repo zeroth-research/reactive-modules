@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from zrth import Wire
-from .sorts import _flat_element_type, _is_scalar_shape, dtype_shape
+from .sorts import _flat_element_type, MatShape, wire_shape
 
 
 def _accessor(pos: int, total: int) -> str:
@@ -26,20 +26,10 @@ def _accessor(pos: int, total: int) -> str:
 
 
 def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
-    """Row-major (row, col) indices for all elements of the wire.
-
-    shape [] or [1] → [(0, 0)]
-    shape [n]       → [(0, 0), (0, 1), ..., (0, n-1)]
-    shape [m, n]    → [(i, j) for i in range(m) for j in range(n)]
-    """
-    shape = dtype_shape(wire.dtype)
-    if _is_scalar_shape(shape):
-        return [(0, 0)]
-    if len(shape) == 1:
-        return [(0, j) for j in range(shape[0])]
-    if len(shape) == 2:
-        return [(i, j) for i in range(shape[0]) for j in range(shape[1])]
-    raise ValueError(f"Shape {shape} not supported for scalar encoding")
+    """Row-major (row, col) indices for all elements of the wire: for an
+    m x n wire, `(i, j)` for `i` in `range(m)`, `j` in `range(n)`."""
+    shape = wire_shape(wire)
+    return [(i, j) for i in range(shape.m) for j in range(shape.n)]
 
 
 def _flat_size(wire: Wire) -> int:
@@ -144,11 +134,11 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
     return FlatLayout(tuple(wires), tuple(slots), tuple(offsets))
 
 
-def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
+def _mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
-    shape [] or [1]: ``(fun _ _ => slots[0])``
-    otherwise:       ``(fun i j => match i, j with | 0, 0 => s0 | ...)``
+    1x1:       ``(fun _ _ => slots[0])``
+    otherwise: ``(fun i j => match i, j with | 0, 0 => s0 | ...)``
 
     Matched on the indices rather than built from nested ``Fin.cons``. The
     equivalence theorems in the scalar encoding prove `pack (unpack x) = x`
@@ -159,15 +149,10 @@ def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
     a `match` does. It is also the form `_tensor_to_lean_def` already emits
     for constants, whose side of those goals always reduced.
     """
-    if _is_scalar_shape(shape):
+    if shape.is_scalar:
         assert len(slots) == 1
         return f"(fun _ _ => {slots[0]})"
-    if len(shape) == 1:
-        m, n = 1, shape[0]
-    elif len(shape) == 2:
-        m, n = shape
-    else:
-        raise ValueError(f"Shape {shape} not supported for _mat_from_scalars")
+    m, n = shape.m, shape.n
     assert len(slots) == m * n, f"expected {m * n} slots, got {len(slots)}"
     arms = " ".join(
         f"| {i}, {j} => {slots[i * n + j]}" for i in range(m) for j in range(n)

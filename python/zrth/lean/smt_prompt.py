@@ -20,19 +20,15 @@ from dataclasses import dataclass
 import cvc5
 from cvc5 import Kind
 
-from .sorts import dtype_shape
+from .sorts import wire_shape
 from .smt_encode import wire_sort
 from .smt_module import ModuleSMT
 
 
 def _wire_rc(wire) -> tuple[int, int]:
-    """(rows, cols) of a wire's matrix shape (main shapes are always 2-D)."""
-    shape = dtype_shape(wire.dtype)
-    if len(shape) == 1:
-        return 1, shape[0]
-    if len(shape) == 2:
-        return shape[0], shape[1]
-    return 1, 1
+    """(rows, cols) of a wire's matrix shape (`sorts.wire_shape`)."""
+    shape = wire_shape(wire)
+    return shape.m, shape.n
 
 
 # ---------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from zrth import BitVec, Bool, Int, Real, Sort, Wire
 
 
@@ -15,6 +17,37 @@ def dtype_shape(dt) -> list:
     if isinstance(dt, BitVec):
         return list(dt._1)
     return list(dt._0)
+
+
+@dataclass(frozen=True)
+class MatShape:
+    """A wire's shape as the `(m, n)` of the `Mat` it is: the one reading
+    every encoding uses."""
+
+    m: int
+    n: int
+
+    @property
+    def total(self) -> int:
+        return self.m * self.n
+
+    @property
+    def is_scalar(self) -> bool:
+        return self.total == 1
+
+
+def sort_shape(sort) -> MatShape:
+    """`sort`'s shape as the `(m, n)` of the `Mat` it is. A Sort's shape is
+    always two-dimensional -- the constructor refuses any other -- so this
+    is the shape itself, and every encoding reads it here rather than
+    guessing at a 0-D or 1-D one that cannot occur."""
+    m, n = dtype_shape(sort)
+    return MatShape(m, n)
+
+
+def wire_shape(wire: Wire) -> MatShape:
+    """`sort_shape` of `wire`'s sort."""
+    return sort_shape(wire.dtype)
 
 
 def _is_scalar_shape(shape: list) -> bool:
@@ -41,16 +74,11 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     """Map a Wire's Sort to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
 
     dt = wire.dtype
-    shape = dtype_shape(dt)
     ty = lean_elem_type(dt)
-
-    if _is_scalar_shape(shape):
+    shape = sort_shape(dt)
+    if shape.is_scalar:
         return ty if simple_types else f"(Mat {ty} 1 1)"
-    if len(shape) == 1:
-        return f"(Mat {ty} 1 {shape[0]})"
-    if len(shape) == 2:
-        return f"(Mat {ty} {shape[0]} {shape[1]})"
-    raise ValueError(f"Unsupported Sort shape: {shape}")
+    return f"(Mat {ty} {shape.m} {shape.n})"
 
 
 def itype_name(itype) -> str:

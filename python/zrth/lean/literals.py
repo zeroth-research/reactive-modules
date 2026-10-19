@@ -161,7 +161,8 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     out_wire = term.write[0]
     A = term.itype._0
     B = term.itype._1
-    out_m = dtype_shape(out_wire.dtype)[0]
+    # Rows of `A`, which is what `Y` has whatever its wire's shape says.
+    out_m = int(A.shape[0])
     in_dim = int(A.shape[1])
     ty = lean_elem_type(out_wire.dtype)
     rows = [

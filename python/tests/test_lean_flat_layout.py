@@ -27,7 +27,7 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.sorts import _flat_element_type, dtype_shape
+from zrth.lean.sorts import _flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
 from zrth.lean.layout import (
     _accessor,
     _flat_indices,
@@ -37,7 +37,6 @@ from zrth.lean.layout import (
 )
 from zrth.lean.context import LeanContext
 from zrth.lean.native import _product_type_scalar
-from zrth.lean.smt_encode import wire_shape
 from zrth.lean.translate._shared import _scalar_bindings_with_recon
 from zrth.lean.translate.fbk import _slot_accessors
 from zrth.lean.translate.scalar import _pack_body, _unpack_body
@@ -194,7 +193,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
     for w in wires:
         offset, _ = layout.span(w)
         slots = [f"s{k}" for k in range(_flat_size(w))]
-        mat = _mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w))
+        mat = _mat_from_scalars(slots, wire_shape(w), _flat_element_type(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
         if placed:  # a 1x1 wire has no `match`, just `fun _ _ =>`
@@ -292,3 +291,21 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
     arms = re.findall(r"^  \| (?:_ \+ )?(\d+) => (.+)$", src, re.M)
     to_slots = [body for k, body in arms[:6]]
     assert to_slots == _tuple_parts(_unpack_body("s", ctx.ctrl_next), 6)
+
+
+def test_every_sort_is_two_dimensional_so_one_reading_suffices():
+    """`sorts.sort_shape` reads a shape as `(m, n)` and nothing else: the
+    Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is no other
+    case for an encoding to read differently. A 1xn wire's Lean type,
+    element order, rebuilt matrix and recon lemma all agree on it."""
+    from zrth.lean.translate.scalar import _recon_lemma_lines
+
+    for shape in ([], [3], [2, 3, 4]):
+        with pytest.raises(ValueError):
+            Int(shape)
+    row = Wire(Int([1, 3]))
+    assert (wire_shape(row).m, wire_shape(row).n) == (1, 3)
+    assert dtype_to_lean_type(row) == "(Mat Int 1 3)"
+    assert _flat_indices(row) == [(0, 0), (0, 1), (0, 2)]
+    lemma = "\n".join(_recon_lemma_lines(row))
+    assert "recon_int_1_3" in lemma and "(Mat Int 1 3)" in lemma

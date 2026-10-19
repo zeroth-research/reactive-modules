@@ -13,7 +13,7 @@ from cvc5 import Kind
 
 from zrth import Wire, Sort
 from .errors import Refused
-from .sorts import dtype_shape, _is_scalar_shape
+from .sorts import dtype_shape, _is_scalar_shape, wire_shape
 from .layout import _accessor
 from .smt.terms import state_dependent
 
@@ -381,14 +381,7 @@ def _walk(
         idx = _selector_index(sel)
         sname = obj.getSymbol()
         wire = var_wire[sname]
-        shape = dtype_shape(wire.dtype)
-        if len(shape) == 1:
-            m, n = 1, shape[0]
-        elif len(shape) == 2:
-            m, n = shape
-        else:
-            raise ValueError(f"tuple selector on unexpected shape: {shape}")
-        i, j = divmod(idx, n)
+        i, j = divmod(idx, wire_shape(wire).n)
         base = var_accessor[sname]
         return f"({base} {i} {j})"
 

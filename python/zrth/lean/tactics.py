@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from .sorts import dtype_shape, itype_name
+from .sorts import dtype_shape, itype_name, sort_shape
 from .layout import _accessor
 
 
@@ -250,11 +250,9 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
             # are not finite at all.
             return []
         acc = _accessor(i, n)
-        shape = dtype_shape(dt)
-        rows = shape[0] if shape else 1
-        cols = shape[1] if len(shape) > 1 else 1
-        for r in range(rows):
-            for c in range(cols):
+        shape = sort_shape(dt)
+        for r in range(shape.m):
+            for c in range(shape.n):
                 out.append((f"{acc} {r} {c}", lemma))
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 

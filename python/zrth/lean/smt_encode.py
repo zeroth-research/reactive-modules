@@ -24,42 +24,8 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
-from .sorts import itype_name, dtype_shape
+from .sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
 from .ops import smt_emitter
-
-
-@dataclass(frozen=True)
-class MatShape:
-    """Resolved (m, n) matrix dimensions for a wire."""
-
-    m: int
-    n: int
-
-    @property
-    def total(self) -> int:
-        return self.m * self.n
-
-    @property
-    def is_scalar(self) -> bool:
-        return self.total == 1
-
-
-def wire_shape(wire: Wire) -> MatShape:
-    """Resolve a `Wire`'s Python shape to (m, n) for the Mat encoding.
-
-    Scalars (`shape == [] or [1]`) → (1, 1).
-    Vectors (`shape == [n]`) → (1, n).
-    Matrices (`shape == [m, n]`) → (m, n).
-    Anything else raises.
-    """
-    shape = dtype_shape(wire.dtype)
-    if shape in ([], [1]):
-        return MatShape(1, 1)
-    if len(shape) == 1:
-        return MatShape(1, shape[0])
-    if len(shape) == 2:
-        return MatShape(shape[0], shape[1])
-    raise ValueError(f"Unsupported Sort shape for SMT encoding: {shape}")
 
 
 def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:

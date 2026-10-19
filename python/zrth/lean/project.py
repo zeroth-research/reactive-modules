@@ -4,7 +4,7 @@ copy template library files, and generate a diagram Lean file.
 """
 
 from zrth.lean.errors import Refused
-from zrth.lean.sorts import dtype_shape, _flat_element_type
+from zrth.lean.sorts import _flat_element_type, wire_shape
 from zrth.lean.context import LeanContext
 
 from zrth.lean.cert import (
@@ -312,14 +312,7 @@ def _token_count(wire: Wire) -> int:
     to read to get a single input value (which can be e.g., a matrix).
     This function computes this.
     """
-    shape = dtype_shape(wire.dtype)
-    if shape == []:
-        return 1
-    if len(shape) == 1:
-        return shape[0]
-    if len(shape) == 2:  # matrix
-        return shape[0] * shape[1]
-    raise ValueError("Unsupported DType for token count")
+    return wire_shape(wire).total
 
 
 def _unsupported_io_sort(elem: str, wire: Wire) -> Refused:
@@ -412,9 +405,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     for i, w in enumerate(extl_next):
         elem = _flat_element_type(w)
         var = f"e{i}"
-        shape = dtype_shape(w.dtype)
-        m = shape[0]
-        n = shape[1] if len(shape) == 2 else 1
+        m, n = wire_shape(w).m, wire_shape(w).n
         # Every wire is a matrix here, so parse m*n tokens into an array of
         # the wire's own element type -- reading them all as Int made the
         # body disagree with the ascribed return type for every other sort.
@@ -453,9 +444,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     for i, w in enumerate(ctrl_next):
         elem = _flat_element_type(w)
         var = f"v{i}"
-        shape = dtype_shape(w.dtype)
-        m = shape[0]
-        n = shape[1] if len(shape) == 2 else 1
+        m, n = wire_shape(w).m, wire_shape(w).n
         show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")
 
     if len(show_parts) == 1:
