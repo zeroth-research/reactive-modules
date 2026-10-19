@@ -7,7 +7,7 @@ Python semantics:
 
 The property holds only of runs that start at 0 <= n, so `0 <= x` fails
 initiation from every state the init block can produce and holds from the
-ones `--pre "(>= e0 0)"` admits. That is the whole difference a precondition
+ones `--pre "(>= (X @extl.0) 0)"` admits. That is the whole difference a precondition
 makes, in the smallest module that can show it.
 
 `n` is never written, so it is an external input; `x` starts at it *bare*,

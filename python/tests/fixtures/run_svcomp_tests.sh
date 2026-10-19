@@ -40,52 +40,52 @@ echo ""
 # 1. Simple countdown
 run_test "countdown" \
     python/tests/fixtures/svcomp_countdown.py \
-    --buchi "(= s0 0)" \
-    --invariant "(and (>= s0 0) (<= s0 100))" \
-    --ranking "(ite (= s0 0) 0 s0)"
+    --buchi "(= (X @intf.0) 0)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))" \
+    --ranking "(ite (= (X @intf.0) 0) 0 (X @intf.0))"
 
 # 2. Two variables
 run_test "twovars" \
     python/tests/fixtures/svcomp_twovars.py \
-    --buchi "(= s0 s1)" \
-    --invariant "(and (>= s0 0) (<= s0 s1) (= s1 10))" \
-    --ranking "(ite (= s0 s1) 0 (- s1 s0))"
+    --buchi "(= (X @intf.0) (X @intf.1))" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) (X @intf.1)) (= (X @intf.1) 10))" \
+    --ranking "(ite (= (X @intf.0) (X @intf.1)) 0 (- (X @intf.1) (X @intf.0)))"
 
 # 3. Nested loops (harder)
 run_test "nested" \
     python/tests/fixtures/svcomp_nested.py \
-    --buchi "(and (= s0 0) (= s1 0))" \
-    --invariant "(and (>= s0 0) (<= s0 3) (>= s1 0) (<= s1 3))" \
-    --ranking "(ite (and (= s0 0) (= s1 0)) 0 (+ (* (- 3 s0) 4) (- 3 s1)))"
+    --buchi "(and (= (X @intf.0) 0) (= (X @intf.1) 0))" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 3) (>= (X @intf.1) 0) (<= (X @intf.1) 3))" \
+    --ranking "(ite (and (= (X @intf.0) 0) (= (X @intf.1) 0)) 0 (+ (* (- 3 (X @intf.0)) 4) (- 3 (X @intf.1))))"
 
 # 4. Bounded Collatz
 run_test "collatz" \
     python/tests/fixtures/svcomp_collatz_bounded.py \
-    --buchi "(= s0 1)" \
-    --invariant "(and (>= s0 1) (<= s0 8))" \
-    --ranking "(ite (= s0 1) 0 (- s0 1))"
+    --buchi "(= (X @intf.0) 1)" \
+    --invariant "(and (>= (X @intf.0) 1) (<= (X @intf.0) 8))" \
+    --ranking "(ite (= (X @intf.0) 1) 0 (- (X @intf.0) 1))"
 
 # 5. GCD
 run_test "gcd" \
     python/tests/fixtures/svcomp_gcd.py \
-    --buchi "(= s0 s1)" \
-    --invariant "(and (>= s0 1) (>= s1 1))" \
-    --ranking "(ite (= s0 s1) 0 (+ (- s0 1) (- s1 1)))"
+    --buchi "(= (X @intf.0) (X @intf.1))" \
+    --invariant "(and (>= (X @intf.0) 1) (>= (X @intf.1) 1))" \
+    --ranking "(ite (= (X @intf.0) (X @intf.1)) 0 (+ (- (X @intf.0) 1) (- (X @intf.1) 1)))"
 
 # 6. Original counter (regression)
 run_test "counter" \
     python/tests/fixtures/counter.py \
-    --buchi "(= s0 0)" \
-    --invariant "(and (>= s0 0) (<= s0 9))" \
-    --ranking "(ite (= s0 0) 0 (- 10 s0))"
+    --buchi "(= (X @intf.0) 0)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))" \
+    --ranking "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))"
 
 # 7. Original twobit (regression)
 run_test "twobit" \
     python/tests/fixtures/twobit.py \
-    --buchi "(and (= s0 false) (= s1 false))" \
-    --pre "(= e0 true)" \
+    --buchi "(and (= (X @intf.0) false) (= (X @intf.1) false))" \
+    --pre "(= (X @extl.0) true)" \
     --invariant "true" \
-    --ranking "(ite s0 (ite s1 1 3) (ite s1 2 0))"
+    --ranking "(ite (X @intf.0) (ite (X @intf.1) 1 3) (ite (X @intf.1) 2 0))"
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"

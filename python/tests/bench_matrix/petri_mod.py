@@ -6,7 +6,8 @@ named by `$PETRI_NET`, so a single checked-in adapter serves the whole suite
 and the command that measures a case is still a command that can be pasted:
 
     PETRI_NET=mutex uv run verith tests/bench_matrix/petri_mod.py \
-        --safety '(<= (+ s2 s5) 1)' --pre '(and (>= e0 0) (<= e0 5))' ...
+        --safety '(<= (+ (X @intf.2) (X @intf.5)) 1)' \
+        --pre '(and (>= (X @extl.0) 0) (<= (X @extl.0) 5))' ...
 
 The module is built with `zrth.expr`'s `collecting()` rather than the
 `sugar.Module` DSL, because the DSL binds variables to *named* parameters of
@@ -17,15 +18,15 @@ The module is built with `zrth.expr`'s `collecting()` rather than the
 One tick is one attempted firing.
 
     marking    one 1x1 variable per place, in `Net.places` order -- so a
-               property over `s0..sN-1` reads off the place list, and the
+               property over `(X @intf.0)..(X @intf.N-1)` reads off the place list, and the
                round-robin counter (when there is one) is the last component,
                after every place, so the place indices do not move between a
                net and its `-rr` variant.
-    selection  `e0`: which transition to try. Integer markings select by
-               equality (`e0 == k`), the continuous net by interval
-               (`k <= e0 < k+1`), so that every real the precondition admits
+    selection  `@extl.0`: which transition to try. Integer markings select by
+               equality (`@extl.0 == k`), the continuous net by interval
+               (`k <= @extl.0 < k+1`), so that every real the precondition admits
                selects a transition rather than stalling on a non-integer.
-    amount     `e1`, continuous nets only: how much of the transition to fire.
+    amount     `@extl.1`, continuous nets only: how much of the transition to fire.
                `--pre` keeps it in (0, 1]; a transition is enabled only for an
                amount its input places can pay.
     dead       a selection whose transition is not enabled leaves the marking
@@ -142,7 +143,7 @@ def build(net) -> Module:
 
     places = [Var(sort) for _ in net.places]
     rr = net.sched == "rr"
-    # The counter goes after every place, so `s0..s_{P-1}` mean the same thing
+    # The counter goes after every place, so `@intf.0..@intf.{P-1}` mean the same thing
     # in a net and in its `-rr` variant.
     ctrl = places + ([Var(sort)] if rr else [])
     extl = [] if rr else [Var(sort)] + ([Var(Real([1, 1]))] if net.real else [])

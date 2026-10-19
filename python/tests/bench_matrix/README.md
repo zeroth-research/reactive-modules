@@ -105,7 +105,7 @@ wants a file with a no-argument `module()` and a one-state predicate, so:
 
 A column's z3 symbol is its name and `verith` indexes state by ctrl
 declaration order, which `Bench.state` already is, so the rename onto
-`s0..sN-1` is positional. All 57 check out.
+`s0..sN-1` (`(X @intf.0)..` on the command line) is positional. All 57 check out.
 
 #### hybrid — continuous state, discrete time
 

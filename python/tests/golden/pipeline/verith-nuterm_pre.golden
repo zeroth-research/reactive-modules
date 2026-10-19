@@ -18,6 +18,8 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --safety, in internal names: (>= s0 0)
+.. --pre, in internal names: (>= e0 0)
    wrote artifact property.smt (encoded)
 .. Generating lean code
 Created project directory: `<OUT>/G`

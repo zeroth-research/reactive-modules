@@ -10,6 +10,7 @@ from typing import Any
 from zrth import Module
 
 from ..options import Opt
+from .names import Names
 
 
 @dataclass(frozen=True)
@@ -28,10 +29,12 @@ class SourceText:
 @dataclass(frozen=True)
 class Problem:
     """What an adapter makes of its input: the module the run is about,
-    and the text it was read from."""
+    the text it was read from, and the names a claim may call its
+    variables by (positional only when the input gives none)."""
 
     module: Module
     source: SourceText
+    names: Names
 
 
 @dataclass(frozen=True)

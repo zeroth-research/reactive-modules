@@ -18,6 +18,8 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --buchi, in internal names: (= s0 0)
+.. --invariant, in internal names: (and (>= s0 0) (<= s0 100))
    wrote artifact property.smt (encoded)
    wrote artifact inv.smt (encoded)
 .. Generating lean code

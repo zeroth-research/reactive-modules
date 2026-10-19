@@ -62,21 +62,21 @@ def _cases(out: Path) -> list[list[str]]:
 
     counter = str(FIXTURES / "counter.py")
     countdown = str(FIXTURES / "svcomp_countdown.py")
-    safe = ["--safety", "(<= s0 100)"]
+    safe = ["--safety", "(<= (X @intf.0) 100)"]
     runs = [
-        (counter, ["--buchi", "(= s0 0)", "--invariant",
-                   "(and (>= s0 0) (<= s0 9))", "--ranking",
-                   "(ite (= s0 0) 0 (- 10 s0))", *PRE]),
-        (countdown, ["--buchi", "(= s0 0)", "--invariant",
-                     "(and (>= s0 0) (<= s0 100))", "--infer", "smt-linear",
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                   "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))", "--ranking",
+                   "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))", *PRE]),
+        (countdown, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                     "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--infer", "smt-linear",
                      *PRE]),
         (countdown, [*safe, "--infer", "sygus", *PRE]),
         (countdown, [*safe, "--infer", "houdini", *PRE]),
-        (countdown, ["--buchi", "(= s0 0)", "--infer", "nuterm", *PRE]),
-        (counter, ["--buchi", "(= s0 0)", "--invariant",
-                   "(and (>= s0 0) (<= s0 9))", "--ranking",
-                   "(ite (= s0 0) 0 (- 10 s0))", "--infer", "ai-cegis", *PRE]),
-        (counter, ["--buchi", "(= s0 0)", "--infer", "ai", *PRE]),
+        (countdown, ["--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm", *PRE]),
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                   "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))", "--ranking",
+                   "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))", "--infer", "ai-cegis", *PRE]),
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--infer", "ai", *PRE]),
     ]
     try:
         resolve_vampire(None)

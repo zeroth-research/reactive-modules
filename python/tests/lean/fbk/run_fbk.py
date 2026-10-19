@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from probes import PROBES, REJECTED  # noqa: E402
+from zrth.lean.inputs import to_surface  # noqa: E402
 
 
 def _run(cmd, timeout):
@@ -82,7 +83,7 @@ def probe(name, mod, prop, expect, opts) -> dict:
 
     cmd = [
         "uv", "run", "verith", str(module_path(mod, opts.mods)),
-        "--safety", prop, "-o", str(out_dir), "-p", name,
+        "--safety", to_surface(prop), "-o", str(out_dir), "-p", name,
         "--fbk-proveit", str(opts.ltl),
     ]
     if opts.ic3ia:

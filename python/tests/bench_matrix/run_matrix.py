@@ -49,6 +49,7 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from zrth.lean.project import without_cascades  # noqa: E402
+from zrth.lean.inputs import to_surface  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -127,8 +128,8 @@ def write_manifest(proj: Path, route_name: str) -> None:
 def command(row, route, out: Path) -> list[str]:
     """The `uv run verith` this pair is, as a list. Also what the page shows."""
     cmd = ["uv", "run", "verith", rel(row.module),
-           f"--{row.kind}", row.prop,
-           *(["--pre", row.pre] if row.pre else []), *route.args,
+           f"--{row.kind}", to_surface(row.prop),
+           *(["--pre", to_surface(row.pre)] if row.pre else []), *route.args,
            "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
     if route.needs_llm and MODEL:
         cmd += ["--model", MODEL]

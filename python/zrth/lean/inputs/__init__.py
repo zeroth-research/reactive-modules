@@ -2,7 +2,8 @@
 
 A row is an `InputAdapter`: the format's name, the file suffixes that
 select it, and `load`, which makes a `Problem` -- the module the run is
-about, and the text it was read from -- out of the input. Everything after
+about, the text it was read from, and the names claims may use (`names`)
+-- out of the input. Everything after
 loading reads the `Problem`, not the file, so a new format is a new row
 rather than a branch in the pipeline.
 
@@ -21,10 +22,13 @@ from typing import Any
 
 from . import python
 from .api import InputAdapter, Problem, SourceText
+from .names import ClaimError, Names, to_internal, to_surface
+from .python import Named
 
 __all__ = [
-    "ADAPTERS", "InputAdapter", "Problem", "SourceText", "adapter_by_name",
-    "adapter_for", "load",
+    "ADAPTERS", "ClaimError", "InputAdapter", "Named", "Names", "Problem",
+    "SourceText", "adapter_by_name", "adapter_for", "load", "to_internal",
+    "to_surface",
 ]
 
 # The order is the order `--format` lists them in.

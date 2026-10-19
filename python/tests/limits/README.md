@@ -117,7 +117,9 @@ A case is
 file in `mods/`, or `TESTS/x` for `python/tests/fixtures/x.py`. `expect` is
 `ok` / `fail` / `?` — what the case is *meant* to show, so a surprise is
 visible. `P`, `inv`, `rank` and `pre` are SMT-LIB 2 expressions over `s0..sN-1`
-(state) and `e0…` / `el0…` (inputs).
+(state) and `e0…` / `el0…` (inputs), in internal names; `run_limits.py` turns
+them into `(X @intf.N)` / `(X @extl.N)` / `@extl.N` with `to_surface` when it
+builds the verith command line.
 
 `check_obl.py` is the independent oracle: it evaluates the obligations
 numerically over a bounded domain, in plain Python, with no `verith` in the
@@ -130,8 +132,8 @@ code with the thing under test.
 ## Before calling anything a tool limit
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py -P '(= s0 0)' \
-    --invariant '(and (>= s0 0) (<= s0 100))' --ranking '(- 100 s0)' \
+uv run verith tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' --ranking '(- 100 (X @intf.0))' \
     --pre-check cvc5 -o /tmp/out -p Rea
 ```
 ```
@@ -176,7 +178,7 @@ difference `y − x`; a lexicographic order on two counters folded into one
 translator has no `max`, so it must be written as an `Ite`); as a ReLU-shaped
 *invariant* (`x = ite(x≥0, x, 0)`); in a `Linear → ReLU → Linear` net, the
 shape a small Q-network compiles to; and combined with an external input under
-`--pre "(>= e0 1)"`. It works because `Core/Mat.lean` gives `ReLu` a `@[simp]
+`--pre "(>= (X @extl.0) 1)"`. It works because `Core/Mat.lean` gives `ReLu` a `@[simp]
 relu_apply` and `omega` understands `max` over `Int` — which is exactly what
 `Min`/`Max` lack (`KNOWN_ISSUES.md` #26).
 

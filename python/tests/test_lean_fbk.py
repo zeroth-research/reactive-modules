@@ -1036,12 +1036,12 @@ def _verith(*args) -> subprocess.CompletedProcess:
     [
         ([], "--infer fbk-proveit requires --safety"),
         # ic3ia decides `G P`; a Buchi property is a different question.
-        (["--buchi", "(= s0 0)"], "incompatible with --buchi"),
+        (["--buchi", "(= (X @intf.0) 0)"], "incompatible with --buchi"),
         # The route *is* an `--infer` value, so a second one is not a
         # conflicting flag, it is a second route for one run.
-        (["--safety", "(= s0 0)", "--infer"], "a run takes one route"),
-        (["--safety", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
-        (["--safety", "(= s0 0)", "--ranking", "s0"], "is meaningless with --safety"),
+        (["--safety", "(= (X @intf.0) 0)", "--infer"], "a run takes one route"),
+        (["--safety", "(= (X @intf.0) 0)", "--invariant", "(= (X @intf.0) 0)"], "incompatible with --invariant"),
+        (["--safety", "(= (X @intf.0) 0)", "--ranking", "(X @intf.0)"], "is meaningless with --safety"),
         # `--pre` is *not* here: it is an assumption about the module's
         # inputs rather than a piece of the certificate ic3ia produces, and
         # the NA model carries it. What it refuses is a precondition its
@@ -1079,7 +1079,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path),
         flag, "",
     )
@@ -1091,7 +1091,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
 def test_ic3ia_alone_is_an_error(tmp_path):
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(tmp_path), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(tmp_path), "-p", "P",
         "--ic3ia", "/bin/true",
     )
     assert r.returncode != 0
@@ -1151,7 +1151,7 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path / "nowhere"),
     )
     assert r.returncode != 0

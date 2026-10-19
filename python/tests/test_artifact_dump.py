@@ -84,8 +84,8 @@ def test_a_candidate_accumulates_and_a_question_does_not(tmp_path):
 
 def _verith(out: Path, *args) -> str:
     r = subprocess.run(
-        ["uv", "run", "verith", str(MODULE), "--buchi", "(= s0 0)",
-         "--invariant", "(and (>= s0 0) (<= s0 100))", "--ranking", "s0",
+        ["uv", "run", "verith", str(MODULE), "--buchi", "(= (X @intf.0) 0)",
+         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--ranking", "(X @intf.0)",
          *args, "-o", str(out), "-p", "Rea"],
         cwd=PY_DIR, capture_output=True, text=True,
     )

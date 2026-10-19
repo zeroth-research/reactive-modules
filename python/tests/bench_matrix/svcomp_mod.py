@@ -12,7 +12,7 @@ This is that file, for every benchmark at once: which one is named by
 that measures a case is a command that can be pasted into a terminal.
 
     SVCOMP_BENCH=AliasDarteFeautrierGonnord-SAS2010-easy1 \
-        uv run verith tests/bench_matrix/svcomp_mod.py --buchi '(<= 40 s0)' ...
+        uv run verith tests/bench_matrix/svcomp_mod.py --buchi '(<= 40 (X @intf.0))' ...
 
 The benchmark's own name is the key (`Bench.name`, matching the `.c` stem),
 not the Python module's, because that is what the corpus and the results

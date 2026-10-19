@@ -18,6 +18,9 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --buchi, in internal names: (= s0 0)
+.. --invariant, in internal names: (and (>= s0 0) (<= s0 9))
+.. --ranking, in internal names: (ite (= s0 0) 0 (- 10 s0))
 Wrote standalone certificate: <OUT>/Cert.lean
 Wrote matrix-domain relational encoding: <OUT>/CertRel.lean
 Wrote scalar encoding: <OUT>/CertScalar.lean

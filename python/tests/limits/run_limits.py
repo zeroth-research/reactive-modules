@@ -62,6 +62,7 @@ WORK.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
+from zrth.lean.inputs import to_surface  # noqa: E402
 
 DEFAULT_TIMEOUT = 900
 
@@ -116,9 +117,9 @@ def run_verith(case) -> dict:
     cmd = ["uv", "run", "verith", str(module_path(case["mod"]))]
     if case.get("P"):
         # A limit-matrix property is a Buchi one: `P` comes with a ranking.
-        cmd += ["--buchi", case["P"]]
+        cmd += ["--buchi", to_surface(case["P"])]
     if case.get("S"):
-        cmd += ["--safety", case["S"]]
+        cmd += ["--safety", to_surface(case["S"])]
     if ROUTE == "nuterm":
         # The route computes the whole certificate and refuses a supplied
         # predicate or a precondition, so this is the case stripped to its
@@ -126,11 +127,11 @@ def run_verith(case) -> dict:
         cmd += ["--infer", "nuterm"]
     else:
         if case.get("inv"):
-            cmd += ["--invariant", case["inv"]]
+            cmd += ["--invariant", to_surface(case["inv"])]
         if case.get("rank"):
-            cmd += ["--ranking", case["rank"]]
+            cmd += ["--ranking", to_surface(case["rank"])]
         if case.get("pre"):
-            cmd += ["--pre", case["pre"]]
+            cmd += ["--pre", to_surface(case["pre"])]
     cmd += ["-o", str(out), "-p", "Rea"]
     cmd += os.environ.get("VERITH_EXTRA", "").split()
     t0 = time.time()

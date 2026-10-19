@@ -141,25 +141,28 @@ Since we passed no property, `Certificate/Data.lean` is a skeleton: `inv` is
 ## Step 3 — Find your state variable names
 
 Properties are written in SMT-LIB 2 over the module's **controlled wires**,
-named `s0, s1, …` in declaration order; external inputs are `e0, …` (next
-value) and `el0, …` (latched value). For an extracted gym environment the
+which the command line names by position: `(X @intf.0)`, `(X @intf.1)`, … in
+declaration order. External inputs are `(X @extl.0)`, … (the input read in the
+round) and `@extl.0`, … (the one read in the round before). Internally, in
+certificates, SMT queries and Lean, the same wires are `s0, s1, …`, `e0, …`
+and `el0, …`; the tables below give both. For an extracted gym environment the
 order is: interface wires first (observation, reward, terminated,
 truncated), then private wires. For `ChainEnv`:
 
-| SMT var | Wire | Lean type |
-|---------|------|-----------|
-| `s0` | observation | `Mat Real 1 1` |
-| `s1` | reward | `Mat Real 1 1` |
-| `s2` | terminated | `Mat Bool 1 1` |
-| `s3` | truncated | `Mat Bool 1 1` |
-| `s4` | `self.state` (private) | `Mat Real 1 1` |
-| `e0` / `el0` | action (one-hot, width 2) | `Mat Real 1 2` |
+| On the command line | Internal | Wire | Lean type |
+|---------|------|------|-----------|
+| `(X @intf.0)` | `s0` | observation | `Mat Real 1 1` |
+| `(X @intf.1)` | `s1` | reward | `Mat Real 1 1` |
+| `(X @intf.2)` | `s2` | terminated | `Mat Bool 1 1` |
+| `(X @intf.3)` | `s3` | truncated | `Mat Bool 1 1` |
+| `(X @intf.4)` | `s4` | `self.state` (private) | `Mat Real 1 1` |
+| `(X @extl.0)` / `@extl.0` | `e0` / `el0` | action (one-hot, width 2) | `Mat Real 1 2` |
 
 When in doubt, read `dbg/system.txt`: the `interface` and `private` sections
 list the wire pairs in exactly this order, and the state tuple in
 `System/System.lean`'s `update` signature matches it component by component.
-Elements of vector wires like `e0` are addressed with SMT-LIB tuple
-selectors: `((_ tuple.select 1) e0)` is the second component of the action.
+Elements of vector wires like the action are addressed with SMT-LIB tuple
+selectors: `((_ tuple.select 1) (X @extl.0))` is the second component of the action.
 
 ## Step 4 — Generate the certificate
 
@@ -181,8 +184,8 @@ invariant is the whole certificate:
 
 ```bash
 uv run verith chain_env.py \
-    --safety    "(and (>= s4 0.0) (<= s4 2.0))" \
-    --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety    "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
+    --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     -o out/ -p ChainCert
 ```
 
@@ -291,32 +294,32 @@ def module() -> Module:
 The wire layout is the same as before — `s0` observation, `s1` reward,
 `s2` terminated, `s3` truncated, `s4` the private `self.state` — except that
 every numeric wire is now `Mat Int 1 1`, and the action is a plain integer
-external (`e0`/`el0`, no tuple selectors).
+external (`(X @extl.0)`/`@extl.0`, no tuple selectors).
 
 This time we prove a genuine **liveness** property: *the state returns to 0
 infinitely often*. Unlike the safety-style certificate of Step 4, all three
 ingredients now pull real weight — and the property is simply false without
 a precondition, since a zero action freezes the state forever:
 
-- `--pre "(>= el0 1)"` restricts runs to those where the action is always
-  positive. Note it constrains `el0`, the *latched* input: `update` computes
+- `--pre "(>= @extl.0 1)"` restricts runs to those where the action is always
+  positive. Note it constrains `@extl.0`, the *latched* input (`el0` internally): `update` computes
   the step from the input latched at the previous step, so that is the copy
-  the precondition must speak about (`e0`, the next value, is what will be
+  the precondition must speak about (`(X @extl.0)`, the next value, is what will be
   latched for the following step).
-- `--invariant "(and (>= s4 0) (<= s4 3))"` — inductive as before, but now
+- `--invariant "(and (>= (X @intf.4) 0) (<= (X @intf.4) 3))"` — inductive as before, but now
   load-bearing: from an unreachable state above 3 the counter would never
   wrap, and the ranking argument below would collapse.
-- `--ranking "(ite (= s4 0) 0 (- 4 s4))"` counts the steps left until the
+- `--ranking "(ite (= (X @intf.4) 0) 0 (- 4 (X @intf.4)))"` counts the steps left until the
   wrap: it strictly decreases on every step from a state with `s4 ≠ 0`
   (3, 2, 1 as the state advances 1 → 2 → 3, then dropping to 0 on the wrap
   to `s4 = 0`, where `P` holds and no further decrease is required).
 
 ```bash
 uv run verith cycle_env.py \
-    --buchi          "(= s4 0)" \
-    --pre       "(>= el0 1)" \
-    --invariant "(and (>= s4 0) (<= s4 3))" \
-    --ranking   "(ite (= s4 0) 0 (- 4 s4))" \
+    --buchi          "(= (X @intf.4) 0)" \
+    --pre       "(>= @extl.0 1)" \
+    --invariant "(and (>= (X @intf.4) 0) (<= (X @intf.4) 3))" \
+    --ranking   "(ite (= (X @intf.4) 0) 0 (- 4 (X @intf.4)))" \
     -o out/ -p CycleCert
 
 cd out/CycleCert
@@ -383,7 +386,7 @@ Two encoding constraints shape the Python:
 
 The state tuple now contains real matrices: `s0` (observation) and `s4`
 (`self.state`) are `Mat Int 4 1`. In SMT-LIB, their components are
-addressed with tuple selectors — `((_ tuple.select k) s4)` is row `k` (in
+addressed with tuple selectors — `((_ tuple.select k) (X @intf.4))` is row `k` (in
 Lean: `s.2.2.2.2 k 0`). The liveness certificate is the same "returns to
 position 0" statement, but the invariant now says *the state vector is
 one-hot*, and the ranking is a linear functional over the components —
@@ -391,15 +394,15 @@ weights 3, 2, 1 count the steps remaining until the wrap:
 
 ```bash
 uv run verith matcycle_env.py \
-    --buchi   '(= ((_ tuple.select 0) s4) 1)' \
-    --pre '(>= el0 1)' \
-    --invariant '(and (>= ((_ tuple.select 0) s4) 0) (<= ((_ tuple.select 0) s4) 1)
-                      (>= ((_ tuple.select 1) s4) 0) (<= ((_ tuple.select 1) s4) 1)
-                      (>= ((_ tuple.select 2) s4) 0) (<= ((_ tuple.select 2) s4) 1)
-                      (>= ((_ tuple.select 3) s4) 0) (<= ((_ tuple.select 3) s4) 1)
-                      (= (+ ((_ tuple.select 0) s4) ((_ tuple.select 1) s4)
-                            ((_ tuple.select 2) s4) ((_ tuple.select 3) s4)) 1))' \
-    --ranking '(+ (* 3 ((_ tuple.select 1) s4)) (* 2 ((_ tuple.select 2) s4)) ((_ tuple.select 3) s4))' \
+    --buchi   '(= ((_ tuple.select 0) (X @intf.4)) 1)' \
+    --pre '(>= @extl.0 1)' \
+    --invariant '(and (>= ((_ tuple.select 0) (X @intf.4)) 0) (<= ((_ tuple.select 0) (X @intf.4)) 1)
+                      (>= ((_ tuple.select 1) (X @intf.4)) 0) (<= ((_ tuple.select 1) (X @intf.4)) 1)
+                      (>= ((_ tuple.select 2) (X @intf.4)) 0) (<= ((_ tuple.select 2) (X @intf.4)) 1)
+                      (>= ((_ tuple.select 3) (X @intf.4)) 0) (<= ((_ tuple.select 3) (X @intf.4)) 1)
+                      (= (+ ((_ tuple.select 0) (X @intf.4)) ((_ tuple.select 1) (X @intf.4))
+                            ((_ tuple.select 2) (X @intf.4)) ((_ tuple.select 3) (X @intf.4))) 1))' \
+    --ranking '(+ (* 3 ((_ tuple.select 1) (X @intf.4))) (* 2 ((_ tuple.select 2) (X @intf.4))) ((_ tuple.select 3) (X @intf.4)))' \
     -o out/ -p MatCycleCert
 
 cd out/MatCycleCert
@@ -423,8 +426,8 @@ Dropping `--invariant` and `--ranking` from the Step 6 liveness example:
 
 ```bash
 uv run verith cycle_env.py \
-    --buchi    "(= s4 0)" \
-    --pre "(>= el0 1)" \
+    --buchi    "(= (X @intf.4) 0)" \
+    --pre "(>= @extl.0 1)" \
     --infer -o out/ -p CycleCert
 ```
 
@@ -492,7 +495,7 @@ vendors under one key:
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 
-uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model anthropic/claude-haiku-4.5 \
     --base-url https://openrouter.ai/api/v1 -o out/ -p CycleCert
 ```
@@ -503,7 +506,7 @@ once the daemon is running):
 ```bash
 ollama pull qwen3-coder         # once
 
-uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p CycleCert
 ```
 
@@ -513,7 +516,7 @@ default):
 ```bash
 vllm serve Qwen/Qwen2.5-Coder-32B-Instruct   # in another terminal
 
-uv run verith cycle_env.py --buchi "(= s4 0)" --pre "(>= el0 1)" --infer \
+uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model Qwen/Qwen2.5-Coder-32B-Instruct \
     --base-url http://localhost:8000/v1 -o out/ -p CycleCert
 ```
@@ -539,9 +542,9 @@ action always prefers "right":
 
 ```bash
 uv run verith chain_env.py \
-    --safety "(and (>= s4 0.0) (<= s4 2.0))" \
-    --pre "(> ((_ tuple.select 1) e0) ((_ tuple.select 0) e0))" \
-    --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
+    --pre "(> ((_ tuple.select 1) (X @extl.0)) ((_ tuple.select 0) (X @extl.0)))" \
+    --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     -o out/ -p ChainCert
 ```
 
@@ -552,8 +555,8 @@ Instead of a full project scaffold, emit self-contained `.lean` files
 
 ```bash
 uv run verith chain_env.py \
-    --safety    "(and (>= s4 0.0) (<= s4 2.0))" \
-    --invariant "(and (>= s4 0.0) (<= s4 2.0))" \
+    --safety    "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
+    --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     --cert-file out/ChainCert.lean
 ```
 
@@ -572,9 +575,9 @@ entries in a lake project that also contains the `Core` library and
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
 | `-d` / `--module-def` | `module` | Factory function name in the module file |
-| `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, true in every reachable state |
-| `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, true infinitely often |
-| `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
+| `--safety` | — | SMT-LIB 2 Bool over `(X @intf.N)`, true in every reachable state |
+| `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.N)`, true infinitely often |
+| `--pre` | — | SMT-LIB 2 Bool over `(X @extl.N)` / `@extl.N` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
 | `--infer [ai\|ai-cegis\|nuterm\|fbk-proveit]` | `ai-cegis` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |

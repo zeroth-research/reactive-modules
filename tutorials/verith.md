@@ -26,9 +26,14 @@ the flag you pass the formula under **is** the choice of rule:
 Properties, invariants, ranking functions and preconditions are all written as
 **SMT-LIB 2** expressions over the module's wires:
 
-* `s0, s1, …` — the controlled (state) wires, in the order the module declares them
-* `e0, e1, …` — the external inputs at the next step; `el0, el1, …` — the latched ones
-* components of a vector wire take a tuple selector: `((_ tuple.select 1) e0)`
+* `(X @intf.0)`, `(X @intf.1)`, … — the controlled (state) wires after the round, in the order the module declares them
+* `(X @extl.0)`, … — the external inputs read in the round; `@extl.0`, … — the ones read in the round before
+* components of a vector wire take a tuple selector: `((_ tuple.select 1) (X @extl.0))`
+* a module file that names its variables (`zrth.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
+
+Inside certificates, SMT queries, Lean and the artifacts the same wires are
+called `s0, s1, …`, `e0, …` and `el0, …`; the outputs below show that
+spelling. A bare `s0`, `e0` or `el0` is refused on the command line.
 
 **What this tutorial does.** Every command below is one you can paste into a
 shell, in order, and every output is what it printed here.
@@ -256,7 +261,7 @@ With no property the certificate is a skeleton. The safety property is that
 the counter never leaves `[0, 100]`:
 
 ```
---safety '(and (>= s0 0) (<= s0 100))'
+--safety '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))'
 ```
 
 `s0` is the module's one controlled wire. Under `rule_globally` the whole
@@ -272,8 +277,8 @@ too weak.
 
 ```bash
 uv run verith tests/limits/mods/m_countdown.py \
-    --safety    '(and (>= s0 0) (<= s0 100))' \
-    --invariant '(and (>= s0 0) (<= s0 100))' \
+    --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -382,9 +387,9 @@ where the property already holds.
 
 ```bash
 uv run verith tests/fixtures/counter.py \
-    --buchi     '(= s0 0)' \
-    --invariant '(and (>= s0 0) (<= s0 9))' \
-    --ranking   '(ite (= s0 0) 0 (- 10 s0))' \
+    --buchi     '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))' \
+    --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -484,9 +489,9 @@ attributes written by either (`self.state`) become **private** wires; the
 observation, reward, `terminated` and `truncated` returns become **interface**
 wires; the action becomes an **external** input.
 
-### Which wire is `s0`?
+### Which wire is `(X @intf.0)`?
 
-`s0 … sN-1` are the module's controlled wires in order, and `verith` prints
+`(X @intf.0) … (X @intf.N-1)` (`s0 … sN-1` internally) are the module's controlled wires in order, and `verith` prints
 that order — the `controls` line of the module dump. Generate the project
 bare, with no property, and read it (the same dump is written to
 `dbg/system.txt`, so a later run need not reprint it):
@@ -546,8 +551,8 @@ since `step` clamps with `min` and `max`:
 
 ```bash
 uv run verith tests/fixtures/simple_env.py \
-    --safety    '(and (>= s0 0.0) (<= s0 2.0))' \
-    --invariant '(and (>= s0 0.0) (<= s0 2.0))' \
+    --safety    '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
+    --invariant '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
 grep -E 'def (inv|P)' "$OUT/$PROJ"/*/Data.lean
@@ -598,9 +603,9 @@ inductive, because the counter runs to 9:
 
 ```bash
 uv run verith tests/fixtures/counter.py \
-    --buchi     '(= s0 0)' \
-    --invariant '(and (>= s0 0) (<= s0 5))' \
-    --ranking   '(ite (= s0 0) 0 (- 10 s0))' \
+    --buchi     '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
+    --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -628,9 +633,9 @@ round leaves it where it is:
 
 ```bash
 uv run verith tests/limits/mods/m_relu_input.py \
-    --buchi     '(= s0 0)' \
-    --invariant '(and (>= s0 0) (<= s0 5))' \
-    --ranking   's0' \
+    --buchi     '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
+    --ranking   '(X @intf.0)' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -649,10 +654,10 @@ may then assume it:
 
 ```bash
 uv run verith tests/limits/mods/m_relu_input.py \
-    --buchi     '(= s0 0)' \
-    --invariant '(and (>= s0 0) (<= s0 5))' \
-    --ranking   's0' \
-    --pre       '(>= e0 1)' \
+    --buchi     '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
+    --ranking   '(X @intf.0)' \
+    --pre       '(>= (X @extl.0) 1)' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
 grep -E 'def (init_pre|update_pre)' "$OUT/$PROJ"/*/Data.lean
@@ -689,7 +694,7 @@ It needs `ANTHROPIC_API_KEY` and `uv sync --extra ai` for the default backend.
 
 ```bash
 uv run verith tests/limits/mods/m_countdown.py \
-    --buchi '(= s0 0)' \
+    --buchi '(= (X @intf.0) 0)' \
     --infer -o "$OUT" -p "$PROJ" | says            # no --invariant, no --ranking
 
 grep -E 'def (inv|ranking)' "$OUT/$PROJ"/*/Data.lean
@@ -729,7 +734,7 @@ For a local model or another provider, add `--base-url` (and `--model`); the
 only extra dependency is the `openai` client, `uv sync --extra ai-local`:
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py --buchi '(= s0 0)' --infer \
+uv run verith tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o "$OUT" -p "$PROJ"
 ```
@@ -761,7 +766,7 @@ refuses by name rather than approximating.
 
 ```bash
 uv run verith tests/limits/mods/m_countdown.py \
-    --buchi '(= s0 0)' \
+    --buchi '(= (X @intf.0) 0)' \
     --infer nuterm \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
@@ -812,7 +817,7 @@ guessing:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --buchi '(= s0 0)' --infer nuterm -o "$OUT" -p "$PROJ" | says
+    --buchi '(= (X @intf.0) 0)' --infer nuterm -o "$OUT" -p "$PROJ" | says
 ```
 
 ```
@@ -828,7 +833,7 @@ The LLM has no lattice, so a congruence costs it nothing to propose:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --buchi '(= s0 0)' --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
+    --buchi '(= (X @intf.0) 0)' --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
 ```
@@ -883,7 +888,7 @@ which is 8b.
 
 ```bash
 uv run verith tests/limits/mods/m_countdown.py \
-    --safety '(<= s0 100)' \
+    --safety '(<= (X @intf.0) 100)' \
     --infer smt-linear \
     --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -929,8 +934,8 @@ sides, so a rank has to *branch* — and no linear function branches:
 
 ```bash
 uv run verith tests/limits/mods/m_toward5.py \
-    --buchi     '(= s0 5)' \
-    --invariant '(and (>= s0 0) (<= s0 10))' \
+    --buchi     '(= (X @intf.0) 5)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -967,7 +972,7 @@ none, at every width up to `--linear-rows`:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --safety '(not (= s0 1))' \
+    --safety '(not (= (X @intf.0) 1))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -986,7 +991,7 @@ route proved it did not have:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --safety '(not (= s0 1))' \
+    --safety '(not (= (X @intf.0) 1))' \
     --infer sygus --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
 lake_cert
@@ -1036,7 +1041,7 @@ below closes it without an LLM call even though `ai-cegis` is an LLM route:
 
 ```bash
 uv run verith tests/limits/mods/m_step2.py \
-    --safety '(not (= s0 1))' \
+    --safety '(not (= (X @intf.0) 1))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -1069,13 +1074,13 @@ ranking function goes somewhere else instead:
 
 ```bash
 uv run verith tests/limits/mods/m_toward5.py \
-    --buchi     '(= s0 5)' \
-    --invariant '(and (>= s0 0) (<= s0 10))' \
+    --buchi     '(= (X @intf.0) 5)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 
 uv run verith tests/limits/mods/m_toward5.py \
-    --buchi     '(= s0 5)' \
-    --invariant '(and (>= s0 0) (<= s0 10))' \
+    --buchi     '(= (X @intf.0) 5)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -1118,7 +1123,7 @@ walks up or down:
 
 ```bash
 uv run verith tests/limits/mods/m_boolint.py \
-    --safety '(and (>= s1 0) (<= s1 5))' \
+    --safety '(and (>= (X @intf.1) 0) (<= (X @intf.1) 5))' \
     --infer smt-linear --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
@@ -1168,7 +1173,7 @@ def module() -> Module:
 PY
 
 uv run verith "$OUT/m_bvcount.py" \
-    --safety '(<= (ubv_to_int s0) 10)' \
+    --safety '(<= (ubv_to_int (X @intf.0)) 10)' \
     --infer smt-linear --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
@@ -1229,7 +1234,7 @@ It needs `ic3ia`, MathSAT's Python bindings and the checkout (section 1):
 
 ```bash
 uv run verith tests/limits/mods/m_countdown.py \
-    --safety '(and (>= s0 0) (<= s0 100))' \
+    --safety '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --fbk-proveit "$PROVEIT" --ic3ia "$IC3IA" -o "$OUT" -p "$PROJ" | says
 
 ls "$OUT/$PROJ/Certificate" "$OUT/$PROJ/ProveIt"
@@ -1291,9 +1296,9 @@ Build completed successfully (3473 jobs).
 | `-x` / `--executable` | off | also emit `Main.lean` and a `lean_exe` target |
 | `--safety FORMULA` | — | `G FORMULA`, proved by an invariant alone |
 | `--buchi FORMULA` | — | `G (F FORMULA)`, proved by invariant + ranking |
-| `--invariant` | — | SMT-LIB 2 Bool over `s0…` |
-| `--ranking` | — | SMT-LIB 2 Int over `s0…`; `--buchi` only |
-| `--pre` | — | SMT-LIB 2 Bool over `e0…` / `el0…`, added to `init_pre` and `update_pre` |
+| `--invariant` | — | SMT-LIB 2 Bool over `(X @intf.N)` … |
+| `--ranking` | — | SMT-LIB 2 Int over `(X @intf.N)` …; `--buchi` only |
+| `--pre` | — | SMT-LIB 2 Bool over `(X @extl.N)` / `@extl.N`, added to `init_pre` and `update_pre` |
 | `--pre-check cvc5` | `none` | ask cvc5 whether the obligations hold, before generating |
 | `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions and hint `nlinarith` |
 | `--smt-timeout`, `--smt-budget` | 5000, 20000 ms | per-query and per-phase limits for both of the above |

@@ -86,8 +86,8 @@ raised `TypeError: <lambda>() missing 1 required positional argument` and took
 down every cvc5 query about that module — `--infer ai-cegis` included.
 
 ```
-$ verith m.py --buchi '(= s0 0)' --invariant '(and (>= s0 0) (<= s0 100))' \
-      --ranking '(- 100 s0)' --pre-check cvc5 -o out -p Rea
+$ verith m.py --buchi '(= (X @intf.0) 0)' --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
+      --ranking '(- 100 (X @intf.0))' --pre-check cvc5 -o out -p Rea
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         1 ms
    step_inv  holds         1 ms

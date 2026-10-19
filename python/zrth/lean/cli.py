@@ -37,56 +37,56 @@ examples:
   # bare project — no property, so `P` and `ranking` are sorry
   uv run verith mymodule.py -o out/ -p MyProject
 
-  # a Buchi property, `G (F (= s0 0))` (certificate stub with known P)
-  uv run verith mymodule.py --buchi "(= s0 0)" -o out/ -p MyProject
+  # a Buchi property, `G (F (= (X @intf.0) 0))` (certificate stub with known P)
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
 
-  # a safety property, `G (<= s0 100)`: invariant only, no ranking function
-  uv run verith mymodule.py --safety "(<= s0 100)" -o out/ -p MyProject
+  # a safety property, `G (<= (X @intf.0) 100)`: invariant only, no ranking function
+  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" -o out/ -p MyProject
 
   # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer -o out/ -p MyProject
 
   # ... and the same loop for a safety property (cvc5-checked route only)
-  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegis -o out/ -p MyProject
+  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" --infer ai-cegis -o out/ -p MyProject
 
   # no LLM: learn a ranking function and certify it before it is offered
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
 
   # no LLM: synthesise the invariant, congruences included (`x` even), and
   # leave it in artifacts/ for the next run to take as given
-  uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
+  uv run verith mymodule.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out/ -p MyProject
 
   # no LLM: one query per shape -- and a refuted shape is a *proof* that no
   # certificate of that shape exists, which --infer ai-cegis reads next run
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer smt-linear -o out/ -p MyProject
 
   # no LLM: Houdini and a ranking search, each candidate decided by cvc5 --
   # a candidate it cannot prove comes back with the counterexample that kills it
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini -o out/ -p MyProject
 
   # ... the same search, refuted by the Vampire prover instead
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini \\
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini \\
       --houdini-solver vampire --vampire ~/vampire/vampire -o out/ -p MyProject
 
   # no LLM, and nothing proposed: the obligations are stated with the invariant
   # left open and Vampire's answer literals return its coefficients
-  uv run verith mymodule.py --safety "(<= s0 100)" --infer vampire \\
+  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" --infer vampire \\
       --vampire ~/vampire/vampire -o out/ -p MyProject
 
   # AI inference with Ollama (requires pip install zrth[ai-local])
-  uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer \\
       --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
 
   # ask cvc5 whether the obligations are true before spending a lake build on them
-  uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
       --pre-check cvc5 -o out/ -p MyProject
 
   # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
-  uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p MyProject \\
+  uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p MyProject \\
       --infer fbk-proveit --proveit-dir ~/lean-ltl-certifying --ic3ia ~/ic3ia/build/ic3ia
 
   # build the certificate of any route that fills it: `lake build Certificate`
-  uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
       --build-cert -o out/ -p MyProject
 """
 
@@ -245,11 +245,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FORMULA",
         help=(
-            "Safety property `G FORMULA`: an SMT-LIB 2 Bool expression over "
-            "state vars `s0..sN-1` (ctrl-next components) that must hold in "
-            "*every* reachable state. Certified with `rule_globally`, which "
+            "Safety property `G FORMULA`: an SMT-LIB 2 Bool expression that "
+            "must hold in *every* reachable state, over the state after each "
+            "round: `(X x)` for a variable the input names `x`, `(X @intf.N)` "
+            "for interface variable N. Certified with `rule_globally`, which "
             "needs an invariant implying FORMULA and no ranking function at "
-            "all. Example: '(not (= s0 15))'."
+            "all. Example: '(not (= (X @intf.0) 15))'."
         ),
     )
     parser.add_argument(
@@ -258,40 +259,44 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FORMULA",
         help=(
             "Buchi property `G (F FORMULA)`: an SMT-LIB 2 Bool expression "
-            "over state vars `s0..sN-1` that must hold infinitely often. "
+            "over the state after each round (`(X x)`, `(X @intf.N)`) that "
+            "must hold infinitely often. "
             "Certified with `rule_buchi`, which needs an invariant *and* a "
             "ranking function that decreases in every state where FORMULA "
-            "is false. Example: '(= s0 0)'."
+            "is false. Example: '(= (X @intf.0) 0)'."
         ),
     )
     parser.add_argument(
         "--pre",
         default=None,
         help=(
-            "Precondition as an SMT-LIB 2 Bool expression over input vars "
-            "`e0..eM-1` (extl-next) and `el0..elM-1` (extl-latched). "
-            "Tuple (matrix) elements use '((_ tuple.select k) eK)'. "
+            "Precondition as an SMT-LIB 2 Bool expression over the inputs "
+            "of a round: `(X u)` / `(X @extl.N)` for the input read in it, "
+            "`u` / `@extl.N` for the one read in the round before. Tuple "
+            "(matrix) elements use '((_ tuple.select k) (X u))'. "
             "Applied to both init_pre and update_pre. "
-            "Example: '(>= ((_ tuple.select 0) e0) 1.0)'."
+            "Example: '(>= ((_ tuple.select 0) (X @extl.0)) 1.0)'."
         ),
     )
     parser.add_argument(
         "--invariant",
         default=None,
         help=(
-            "Invariant as an SMT-LIB 2 Bool expression over state vars "
-            "`s0..sN-1`. With a route that seeds from it, only what is left "
-            "of the certificate is inferred. Example: '(= s0 s5)'."
+            "Invariant as an SMT-LIB 2 Bool expression over the state, "
+            "named as --safety names it. With a route that seeds from it, "
+            "only what is left of the certificate is inferred. Example: "
+            "'(= (X @intf.0) (X @intf.5))'."
         ),
     )
     parser.add_argument(
         "--ranking",
         default=None,
         help=(
-            "Ranking as an SMT-LIB 2 Int expression over state vars "
-            "`s0..sN-1`, for --buchi only. With a route that seeds from it, "
-            "only the invariant is inferred. Must satisfy `ranking >= 0` "
-            "under the invariant. Example: '(ite s5 (ite s4 1 2) 0)'."
+            "Ranking as an SMT-LIB 2 Int expression over the state, named "
+            "as --buchi names it, for --buchi only. With a route that seeds "
+            "from it, only the invariant is inferred. Must satisfy `ranking "
+            ">= 0` under the invariant. Example: "
+            "'(ite (X @intf.5) (ite (X @intf.4) 1 2) 0)'."
         ),
     )
     parser.add_argument(

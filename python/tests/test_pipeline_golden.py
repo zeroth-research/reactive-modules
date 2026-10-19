@@ -200,57 +200,57 @@ _AI_REPLIES = {
 RUNS = [
     ("bare", COUNTER, []),
     ("supplied", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("supplied_pre", BOUNDED, [
-        "--safety", "(>= s0 0)", "--pre", "(>= e0 0)",
-        "--invariant", "(>= s0 0)",
+        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)",
+        "--invariant", "(>= (X @intf.0) 0)",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("cert_file", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
         "--cert-file", "{out}/Cert.lean",
     ]),
-    ("unreadable_property", COUNTER, ["--buchi", "(= s0"]),
+    ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
     ("smt_linear", COUNTDOWN, [
-        "--buchi", "(= s0 0)", "--invariant", "(and (>= s0 0) (<= s0 100))",
+        "--buchi", "(= (X @intf.0) 0)", "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))",
         "--infer", "smt-linear", "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("houdini", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "houdini",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "houdini",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("nuterm", COUNTDOWN, [
-        "--buchi", "(= s0 0)", "--infer", "nuterm",
+        "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("nuterm_pre", BOUNDED, [
-        "--safety", "(>= s0 0)", "--pre", "(>= e0 0)", "--infer", "nuterm",
+        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)", "--infer", "nuterm",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("ai_cegis_fixed", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
         "--infer", "ai-cegis", "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("ai", COUNTER, [
-        "--buchi", "(= s0 0)", "--infer", "ai",
+        "--buchi", "(= (X @intf.0) 0)", "--infer", "ai",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("sygus", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "sygus",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "sygus",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     # A short declared limit: Vampire answers this one in about a second
     # under 10 and in about six under the default 120.
     ("vampire", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "vampire",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "vampire",
         "--vampire-timeout", "10",
         "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),

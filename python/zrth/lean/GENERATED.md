@@ -102,12 +102,13 @@ The whole package comes from one command:
 
 ```bash
 uv run verith tests/fixtures/twobit.py \
-    --buchi "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))" \
+    --buchi "(and (= (X @intf.0) (_ bv0 1)) (= (X @intf.1) (_ bv0 1)))" \
     -o out/ -p TwoBit
 ```
 
-`--buchi` is the property, written in SMT-LIB. State variables are called `s0`,
-`s1`, ... in the order they were listed when creating the module (omitted here).
+`--buchi` is the property, written in SMT-LIB. State variables are `(X @intf.0)`,
+`(X @intf.1)`, ... on the command line (`s0`, `s1`, ... in the generated Lean),
+in the order they were listed when creating the module (omitted here).
 
 ---
 
@@ -455,7 +456,7 @@ def ranking (s : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1)) : Nat := sorry
 - `init_pre` / `update_pre` — assumptions on the external inputs. `True` unless
   you pass `--pre`.
 - `inv` — the invariant. `True` unless you pass `--invariant` or `--infer`.
-- `P` — the property. This is where the `--buchi "(and (= s0 ...) (= s1 ...))"`
+- `P` — the property. This is where the `--buchi "(and (= (X @intf.0) ...) (= (X @intf.1) ...))"`
   argument ended up. The `DecidablePred` instance next to it is needed by the
   proof rule.
 - `ranking` — the ranking function, a `Nat` that must strictly decrease while
@@ -466,7 +467,7 @@ nothing is really proved. So a bare run gives you a well-typed skeleton, and
 filling in `inv` and `ranking` is the actual work — by hand, or by an LLM with
 `--infer`.
 
-With `--ranking "(ite (= s1 (_ bv0 1)) 1 2)"`, for instance, the last line
+With `--ranking "(ite (= (X @intf.1) (_ bv0 1)) 1 2)"`, for instance, the last line
 becomes:
 
 ```lean
