@@ -188,7 +188,6 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 
 def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (s 0 0) else (999 : Int)) : Int)).toNat
 
-
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2

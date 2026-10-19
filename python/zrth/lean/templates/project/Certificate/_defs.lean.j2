@@ -1,0 +1,37 @@
+{#- The certificate's five definitions. `Data.lean.j2` puts them in their
+    own file; a `--cert-file` certificate inlines them. -#}
+{% if init_pre_expr %}
+def init_pre : {{ extl_type }} → Prop := {{ init_pre_expr }}
+{% else %}
+def init_pre (e : {{ extl_type }}) : Prop := True
+{% endif %}
+
+{% if update_pre_expr %}
+def update_pre : {{ extl_type }} → Prop := {{ update_pre_expr }}
+{% else %}
+def update_pre (e : {{ extl_type }}) : Prop := True
+{% endif %}
+
+{% if inv_expr %}
+def inv : {{ ctrl_type }} → Prop := {{ inv_expr }}
+{% else %}
+def inv (s : {{ ctrl_type }}) : Prop := True
+{% endif %}
+
+{% if p_expr %}
+def P : {{ ctrl_type }} → Prop := {{ p_expr }}
+
+{{ noncomp }}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+{% else %}
+def P (s : {{ ctrl_type }}) : Prop := sorry
+
+{{ noncomp }}instance : DecidablePred P := sorry
+{% endif %}
+
+{% if not is_safety %}
+{% if ranking_expr %}
+{{ noncomp }}def ranking : {{ ctrl_type }} → Nat := {{ ranking_expr }}
+{% else %}
+{{ noncomp }}def ranking (s : {{ ctrl_type }}) : Nat := sorry
+{% endif %}
+{% endif %}

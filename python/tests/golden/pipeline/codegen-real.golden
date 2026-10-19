@@ -185,7 +185,6 @@ noncomputable instance : DecidablePred P := fun s => by unfold P; first | infer_
 
 noncomputable def ranking : (Mat Real 1 1) → Nat := fun s => ((⌊(s 0 0)⌋ : Int)).toNat
 
-
 noncomputable def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Real 1 1)) := {
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2

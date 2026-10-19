@@ -186,7 +186,6 @@ instance : DecidablePred P := sorry
 
 def ranking (s : (Mat Int 1 1)) : Nat := sorry
 
-
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2
@@ -196,12 +195,12 @@ def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
 
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
 
 -- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
 -- Gives omega/decide access to invariant and property conditions in hypotheses
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P] at *; try dsimp at *))
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
 
 -- Canonicalise the goal: only the steps this module's shapes call for.
 macro "cert_prep" : tactic =>

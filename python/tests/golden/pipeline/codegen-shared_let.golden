@@ -208,7 +208,6 @@ def ranking : (Mat Int 1 1) → Nat := fun s =>
   let u9 := (u5 + (- u7))
   ((((max u8 (0 : Int)) + (max u9 (0 : Int))) : Int)).toNat
 
-
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2
