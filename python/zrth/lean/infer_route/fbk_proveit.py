@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from ..common import Refused
+from ..errors import Refused
 from ..lean_names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
 from .api import Alias, InferInput, InferResult, InferRoute, Opt
 

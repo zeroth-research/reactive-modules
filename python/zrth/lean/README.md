@@ -41,7 +41,12 @@ topologically-sorted dataflow graph.
 
 | File | Role |
 |------|------|
-| `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers, `flat_layout` (the row-major element order every scalar encoding shares) |
+| `errors.py` | `Refused`, the error a run is refused with |
+| `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
+| `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
+| `literals.py` | Constants as Lean text, `ConstantRegistry` |
+| `context.py` | `LeanContext`, what every encoding of one module shares |
+| `common.py` | Re-exports the five above, for importers not migrated yet |
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
@@ -55,7 +60,7 @@ topologically-sorted dataflow graph.
 
 ---
 
-## Type Mapping (`common.py`)
+## Type Mapping (`sorts.py`)
 
 `dtype_to_lean_type(wire, simple_types=False)` maps wire types to Lean:
 
@@ -78,7 +83,7 @@ scalar.  This keeps the algebra uniform.  Float-typed modules require
 
 ---
 
-## `LeanContext` (`common.py`)
+## `LeanContext` (`context.py`)
 
 Created once per module; shared across all code generators.  It extracts:
 

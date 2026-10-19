@@ -45,7 +45,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-from .common import LeanContext
+from .context import LeanContext
 from .lean_names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
@@ -368,7 +368,7 @@ def property_to_bool_lean(
     `n_state` is ignored; the layout comes from the module's own wires.
     `encoding` is the run's `ModuleEncoding`, which the property is read on.
     """
-    from .common import LeanContext
+    from .context import LeanContext
     from .smt_to_lean import smt_to_lean_bool
     from .translate.fbk import _slot_accessors
 

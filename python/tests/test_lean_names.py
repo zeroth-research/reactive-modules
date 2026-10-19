@@ -5,7 +5,7 @@ included, is a file the project has."""
 import re
 from pathlib import Path
 
-from zrth.lean.common import LeanContext
+from zrth.lean.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.lean_names import CERT_LIB, SYSTEM_LAYOUT
 from zrth.lean.project import create_project

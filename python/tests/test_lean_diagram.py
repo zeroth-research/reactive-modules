@@ -4,7 +4,8 @@ import pytest
 import torch
 from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.sorts import itype_name
+from zrth.lean.context import LeanContext
 from zrth.lean.cert import generate_certificate_lean
 from zrth.lean.project import generate_main_lean
 
@@ -549,7 +550,7 @@ def test_stateless_module_defines_init_and_update_as_unit():
 
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
-    from zrth.lean.common import ConstantRegistry
+    from zrth.lean.literals import ConstantRegistry
     from zrth.lean.native import _translate_terms, _translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]

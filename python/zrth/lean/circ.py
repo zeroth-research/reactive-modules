@@ -8,16 +8,14 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import (
+from zrth.lean.sorts import (
     dtype_shape,
-    ConstantRegistry,
-    _accessor,
-    _constant_expr,
     dtype_to_lean_type,
-    linear_list_literals,
     itype_name,
     is_constant_name,
 )
+from zrth.lean.layout import _accessor
+from zrth.lean.literals import ConstantRegistry, _constant_expr, linear_list_literals
 
 from zrth.lean.native import _check_argmax_output
 from zrth.lean.ops import box_for

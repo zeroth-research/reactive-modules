@@ -109,7 +109,8 @@ from .cert import (
 )
 from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
-from .common import LeanContext, Refused
+from .errors import Refused
+from .context import LeanContext
 from .native import lean_gaps
 from . import inputs
 from .infer_route import (

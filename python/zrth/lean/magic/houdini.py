@@ -119,7 +119,7 @@ from fractions import Fraction
 from itertools import product
 
 from ..certificate import Certificate, Claim
-from ..common import Refused
+from ..errors import Refused
 from ..houdini_solver import (
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,

@@ -47,7 +47,8 @@ from typing import TYPE_CHECKING, Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import Refused, itype_name
+from .errors import Refused
+from .sorts import itype_name
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
@@ -380,7 +381,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             theories,
-            mat=Inline("common._constant_expr"),
+            mat=Inline("literals._constant_expr"),
             scalar=Inline("native._constant_expr_scalar"),
             box=Inline("circ: @Box.const"),
             smt=_smt_const,
@@ -778,7 +779,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Tensor",
         NONE,
-        mat=Inline("common._constant_expr"),
+        mat=Inline("literals._constant_expr"),
         scalar=Inline("native._constant_expr_scalar"),
         box=Inline("circ: @Box.const"),
         smt=_smt_tensor,

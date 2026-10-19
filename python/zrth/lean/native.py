@@ -8,21 +8,22 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import (
+from zrth.lean.sorts import (
     dtype_shape,
     _is_scalar_shape,
-    ConstantRegistry,
-    _constant_expr,
     itype_name,
     is_constant_name,
     dtype_to_lean_type,
-    linear_list_literals,
     _is_scalar_wire,
+    _flat_element_type,
+)
+from zrth.lean.layout import _flat_indices, flat_layout
+from zrth.lean.literals import (
+    ConstantRegistry,
+    _constant_expr,
+    linear_list_literals,
     _tensor_to_lean_scalar,
     _tensor_to_lean_inline,
-    _flat_element_type,
-    _flat_indices,
-    flat_layout,
 )
 from zrth.lean.ops import lean_gap, mat_emitter, scalar_emitter
 

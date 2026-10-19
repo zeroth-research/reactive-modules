@@ -8,7 +8,7 @@ from zrth.lean.circ import (
     _natives_to_vt,
     _translate_terms_circ,
 )
-from zrth.lean.common import LeanContext
+from zrth.lean.context import LeanContext
 
 # Simp lemmas for reducing a single circuit layer
 _LAYER_SIMP = [

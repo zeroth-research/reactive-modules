@@ -452,7 +452,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
     from zrth.lean.cert import generate_data_lean
-    from zrth.lean.common import LeanContext
+    from zrth.lean.context import LeanContext
     from zrth.lean.fbk_proveit import property_to_bool_lean
     from zrth.lean.translate.fbk import atom_to_lean_na
     from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge

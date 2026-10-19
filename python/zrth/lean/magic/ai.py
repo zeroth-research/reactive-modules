@@ -6,7 +6,7 @@ The model is reached through :mod:`.llm`.
 import re
 
 from ..certificate import Claim, LeanAnswer
-from ..common import Refused
+from ..errors import Refused
 from . import TA2Magic
 from .llm import DEFAULT_MODEL, describe_preconditions, make_client
 

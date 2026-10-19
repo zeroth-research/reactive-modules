@@ -223,7 +223,7 @@ def test_a_model_without_words_is_lia():
 
 
 def test_mod10_has_a_lean_form():
-    from zrth.lean.common import LeanContext
+    from zrth.lean.context import LeanContext
     from zrth.lean.native import lean_gaps
 
     module, _ = parse_smv((FIXTURES / "mod10.smv").read_text(), strict=True)

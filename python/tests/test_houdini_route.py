@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.certificate import Claim
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.houdini_solver import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"

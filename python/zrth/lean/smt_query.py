@@ -30,7 +30,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from .certificate import Certificate, Claim, LeanAnswer
-from .common import Refused
+from .errors import Refused
 from .smt import obligations as ob
 from .smt.limits import call_ms
 from .smt.run import encoding_of

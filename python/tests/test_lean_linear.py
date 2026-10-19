@@ -10,7 +10,7 @@ affine map — here we guard the *generator* that feeds it.
 import torch
 
 from zrth import Wire, Term, LIA, LRA, Int, Real
-from zrth.lean.common import linear_list_literals
+from zrth.lean.literals import linear_list_literals
 from zrth.lean.native import _linear_expr
 
 
@@ -105,7 +105,7 @@ def test_is_scalar_tensor_respects_shape_for_bool():
     """Bool skipped the shape check that Int/BitVec get, so a Bool matrix
     was treated as a scalar and inlined via `tensor.item()`."""
     from zrth import Wire, Bool, Int, BitVec
-    from zrth.lean.common import _is_scalar_tensor
+    from zrth.lean.sorts import _is_scalar_tensor
 
     assert _is_scalar_tensor(Wire(Bool([1, 1]))) is True
     assert _is_scalar_tensor(Wire(Bool([2, 3]))) is False
@@ -147,7 +147,7 @@ def test_bitvec_literal_uses_of_int():
     tests/lean/Playground.lean.
     """
     from zrth import Wire, BitVec
-    from zrth.lean.common import _get_dtype_item
+    from zrth.lean.literals import _get_dtype_item
 
     dt = Wire(BitVec(8, [1, 1])).dtype
     assert _get_dtype_item(dt, -3) == "(BitVec.ofInt 8 (-3))"

@@ -12,7 +12,9 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort
-from .common import Refused, _accessor, dtype_shape, _is_scalar_shape
+from .errors import Refused
+from .sorts import dtype_shape, _is_scalar_shape
+from .layout import _accessor
 from .smt.terms import state_dependent
 
 

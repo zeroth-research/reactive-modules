@@ -1,14 +1,7 @@
 """Shared helpers used by multiple translate sub-modules."""
 
-from zrth.lean.common import (
-    FlatLayout,
-    dtype_shape,
-    _accessor,
-    _flat_element_type,
-    dtype_to_lean_type,
-    _mat_from_scalars,
-    flat_layout,
-)
+from zrth.lean.sorts import dtype_shape, _flat_element_type, dtype_to_lean_type
+from zrth.lean.layout import FlatLayout, _accessor, _mat_from_scalars, flat_layout
 from zrth.lean.native import _build_tuple, _product_type_scalar
 
 

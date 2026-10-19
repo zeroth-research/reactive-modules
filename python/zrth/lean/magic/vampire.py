@@ -164,7 +164,7 @@ from dataclasses import dataclass
 from itertools import combinations, product
 
 from ..certificate import Certificate, Claim
-from ..common import Refused
+from ..errors import Refused
 from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from ..smt import obligations as obl

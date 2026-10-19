@@ -22,7 +22,7 @@ import pytest
 
 from zrth.lean.artifacts import ArtifactStore, module_digest
 from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 
 MODS = Path(__file__).parent / "limits" / "mods"
 

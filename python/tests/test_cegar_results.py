@@ -257,7 +257,7 @@ def _always_wrong(monkeypatch, clock, step):
 
 def test_without_a_budget_the_count_is_the_leash(monkeypatch):
     import pytest
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 1.0)
     with pytest.raises(Refused, match="after 5 attempts"):
         TA2MagicCEGAR("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
@@ -268,7 +268,7 @@ def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch
     """10 s attempts in a 95 s budget: the ninth ends at 90 s, and a tenth
     would end at 100 s, past the budget, so it is never started."""
     import pytest
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
         TA2MagicCEGAR("", _counter(), budget_s=95).infer(
@@ -278,7 +278,7 @@ def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch
 
 def test_a_budget_always_allows_the_first_attempt(monkeypatch):
     import pytest
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 1 attempt in "):
         TA2MagicCEGAR("", _counter(), budget_s=1).infer(

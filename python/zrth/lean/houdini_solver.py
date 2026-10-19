@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from .common import Refused
+from .errors import Refused
 from .smt.obligations import Query
 from .smt.limits import bounded_solver
 from .smt.script import decimals, script

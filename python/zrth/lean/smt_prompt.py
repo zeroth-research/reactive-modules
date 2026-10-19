@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import cvc5
 from cvc5 import Kind
 
-from .common import dtype_shape
+from .sorts import dtype_shape
 from .smt_encode import wire_sort
 from .smt_module import ModuleSMT
 

@@ -172,7 +172,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
 
     def said(route) -> str:
         return m._refused(SimpleNamespace(route=route), Refused("why")).code

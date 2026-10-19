@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.certificate import Claim
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"

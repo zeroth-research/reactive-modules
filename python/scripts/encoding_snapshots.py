@@ -46,7 +46,7 @@ def _write(out: Path, name: str, produce) -> None:
 
 def snapshot(path: Path, out: Path) -> None:
     from zrth.lean import inputs
-    from zrth.lean.common import LeanContext
+    from zrth.lean.context import LeanContext
     from zrth.lean.native import lean_gaps
     from zrth.lean.project import ENCODINGS, generate_standalone_cert_lean
     from zrth.lean.translate import ModuleToLean4

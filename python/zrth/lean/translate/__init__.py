@@ -5,7 +5,8 @@ Public API: ``ModuleToLean4``; one submodule per encoding.
 
 from functools import cached_property
 
-from zrth.lean.common import LeanContext, dtype_shape
+from zrth.lean.sorts import dtype_shape
+from zrth.lean.context import LeanContext
 from zrth import Module
 
 from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon

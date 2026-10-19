@@ -51,7 +51,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from .certificate import Claim
-from .common import Refused
+from .errors import Refused
 from .smt.record import found, note
 from .smt.script import decimals, smt_int, smt_lit
 from .smt.terms import free_constants, literals, nodes

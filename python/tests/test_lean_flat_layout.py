@@ -6,7 +6,7 @@ elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 cvc5's own tuple in `smt_encode`. Those were seven independent walks over the
 same row-major order, agreeing by construction and by comment;
 `KNOWN_ISSUES` #20 and #22 are what that was worth. They now all go through
-`common.flat_layout`, and this is the test that says so.
+`layout.flat_layout`, and this is the test that says so.
 
 The shapes here are synthetic on purpose. Mutating `_flat_indices` to
 column-major and running the fast suite fails exactly one existing test:
@@ -27,16 +27,15 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.common import (
-    LeanContext,
+from zrth.lean.sorts import _flat_element_type, dtype_shape
+from zrth.lean.layout import (
     _accessor,
-    _flat_element_type,
     _flat_indices,
     _flat_size,
     _mat_from_scalars,
-    dtype_shape,
     flat_layout,
 )
+from zrth.lean.context import LeanContext
 from zrth.lean.native import _product_type_scalar
 from zrth.lean.smt_encode import wire_shape
 from zrth.lean.translate._shared import _scalar_bindings_with_recon

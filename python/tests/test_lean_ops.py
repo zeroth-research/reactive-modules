@@ -22,7 +22,8 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.sorts import itype_name
+from zrth.lean.context import LeanContext
 from zrth.lean.native import lean_gaps
 from zrth.lean import ops
 from zrth.lean.ops import (

@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from zrth.lean.cli import build_parser, parse_args
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.infer_route import (
     ROUTES,
     InferResult,

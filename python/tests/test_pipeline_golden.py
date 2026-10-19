@@ -31,7 +31,7 @@ from zrth.lean.cert import (
     render_certificate,
 )
 from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.common import LeanContext
+from zrth.lean.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project import generate_standalone_cert_lean
 
@@ -266,7 +266,7 @@ ENCODINGS = {
 
 
 def _has_vampire() -> bool:
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
     from zrth.lean.smt.vampire import resolve_vampire
 
     try:

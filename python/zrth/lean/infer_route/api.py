@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from ..certificate import Certificate, Claim, LeanAnswer
-from ..common import Refused
+from ..errors import Refused
 from ..options import Opt
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from zrth import Module
 
     from ..cert import LeanCertificate
-    from ..common import LeanContext
+    from ..context import LeanContext
     from ..smt.run import ModuleEncoding
 
 

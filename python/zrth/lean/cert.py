@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.common import LeanContext, Refused
+from zrth.lean.errors import Refused
+from zrth.lean.context import LeanContext
 from zrth.lean.lean_names import MAT_SIMP, rm_def
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render

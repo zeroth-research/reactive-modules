@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
-from ..common import Refused
+from ..errors import Refused
 from .limits import bounded_solver
 
 

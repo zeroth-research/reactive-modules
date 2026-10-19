@@ -24,7 +24,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
-from .common import itype_name, dtype_shape
+from .sorts import itype_name, dtype_shape
 from .ops import smt_emitter
 
 

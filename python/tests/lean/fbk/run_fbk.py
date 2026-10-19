@@ -116,7 +116,7 @@ def screen(opts) -> int:
     """Which modules the NA encoding refuses, and whether it is still the
     same set.  Needs no Lean, no ic3ia and no lean-ltl-certifying."""
     sys.path.insert(0, str(Path(opts.mods).resolve()))
-    from zrth.lean.common import LeanContext
+    from zrth.lean.context import LeanContext
     from zrth.lean.inputs.python import load_module
     from zrth.lean.translate.fbk import NAUnsupported, check_na_supported
 

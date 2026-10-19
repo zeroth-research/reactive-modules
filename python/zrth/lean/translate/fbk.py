@@ -129,11 +129,9 @@ discover.
 import re
 from typing import NamedTuple
 
-from zrth.lean.common import (
-    LeanContext,
-    _flat_element_type,
-    flat_layout,
-)
+from zrth.lean.sorts import _flat_element_type
+from zrth.lean.layout import flat_layout
+from zrth.lean.context import LeanContext
 from zrth.lean.native import _reachable_terms
 from zrth.lean.translate._shared import has_block
 from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block

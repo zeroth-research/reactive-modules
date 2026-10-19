@@ -39,10 +39,8 @@ it rebuilds the `Mat` and calls `matVecAffine`.
 
 import re
 
-from zrth.lean.common import (
-    LeanContext,
-    flat_layout,
-)
+from zrth.lean.layout import flat_layout
+from zrth.lean.context import LeanContext
 from zrth.lean.native import _product_type, _product_type_scalar
 from zrth.lean.lean_names import DATA, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def
 from zrth.lean.translate._shared import scalar_eq_name
@@ -189,7 +187,7 @@ def atom_to_lean_fbk_bridge(
         f"abbrev CtrlNative := {ctrl_native}",
         "",
         "/-- A module state, read as the model's slots. The arms are the flat",
-        "    element order `common.flat_layout` fixes, which is the order",
+        "    element order `layout.flat_layout` fixes, which is the order",
         "    `Scalar.unpack_ctrl` unpacks in -- the same call, not a matching",
         "    one. The last arm is `_ + n` rather",
         "    than `_`: at a variable index `TypeMap` is stuck, and only the",

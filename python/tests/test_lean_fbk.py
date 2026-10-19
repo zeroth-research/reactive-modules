@@ -15,7 +15,8 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from zrth.lean.common import LeanContext, dtype_shape
+from zrth.lean.sorts import dtype_shape
+from zrth.lean.context import LeanContext
 from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.translate.fbk import NAUnsupported, atom_to_lean_na, check_na_supported
 

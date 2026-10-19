@@ -18,7 +18,7 @@ from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from zrth.analyzer import convert_method
 from zrth.sugar import ite
 from zrth.lean.certificate import Claim
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.magic.learn import (
     TA2MagicLearn,
     _parse_property,

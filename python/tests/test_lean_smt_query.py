@@ -14,7 +14,7 @@ import torch
 from zrth import Module, Term, Var, Wire, X, LIA, Int
 from zrth.analyzer import convert_method
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.smt.limits import SmtBudget
 from zrth.lean.smt_query import (
     ModuleQueries,
