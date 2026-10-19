@@ -3,6 +3,7 @@
 - Prune selectively -- if Vampire proves inv but not ranking, try preserving that inv
 - [later] Cooperative infer through artifacts: smt + vampire in parallel for 4 seconds; then one after another (with known artifacts) and nuterm; then ai-cegis; then ai-fix
 - [later] Try vampire instead of lean-smt in hammer
+- fbk-proveit: `_REVERT` / `_SMT_CLOSER` (`python/zrth/lean/fbk_proveit.py`) regex-patch the Lean proveit.py generates, and do nothing, silently, when its output changes. Revisit: fix it upstream in lean-ltl-certifying's template, or at least warn when a patch matches nothing (kept as is in phase 6, 2026-10-19)
 - In Sygus, Houdini, ... (all that uses templates), allow generating the templates from the system -- simple way is to look at the definition of the system and guess the right template from that (linear, quadratic, using max/min, ...). More complex would be to unroll the transition relation (as SMT formula) several times and see what expressions we get and classify then what kind of template we might need.
 
 ## From the matrix
