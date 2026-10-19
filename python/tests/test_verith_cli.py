@@ -247,7 +247,6 @@ CEGAR_FIXED = (
 
 def test_pre_check_checks_the_inferred_certificate():
     """`--pre-check` has to wait for `--infer`, or it checks nothing."""
-    pytest.importorskip("anthropic")  # the CEGAR route builds a client either way
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE), *CEGAR_FIXED, "--pre-check", "cvc5",
@@ -483,7 +482,6 @@ def test_cegar_infers_a_safety_certificate():
     """The CEGAR loop with the invariant fixed makes no LLM call: it states
     the safety obligations (init, inductive, `inv -> P`) and verifies them,
     which is the whole route minus the prompting."""
-    pytest.importorskip("anthropic")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
             str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",

@@ -237,6 +237,21 @@ def test_a_given_invariant_is_kept_and_only_the_ranking_is_asked_for(monkeypatch
     assert cert == Certificate(inv, "(ite (= s0 0) 0 (- 10 s0))")
 
 
+def test_a_certificate_given_whole_builds_no_client(monkeypatch):
+    """Both predicates fixed: the loop verifies them once and asks nothing,
+    so it builds no client either, and the run needs neither the LLM
+    package nor a key."""
+
+    def no_client(base_url, model):
+        raise AssertionError("a client was built for a run that asks nothing")
+
+    monkeypatch.setattr(cegar, "make_client", no_client)
+    given = Certificate("(and (>= s0 0) (<= s0 9))", "(ite (= s0 0) 0 (- 10 s0))")
+    cert = TA2MagicCEGAR("", _counter(), log=lambda *_: None).infer(
+        Claim(prp="(= s0 0)"), given)
+    assert cert == given
+
+
 # ── how long the loop keeps asking ───────────────────────────────────────
 
 
