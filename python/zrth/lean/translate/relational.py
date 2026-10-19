@@ -312,7 +312,6 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
                     [w],
                     ctx.constants,
                     flat_slots=flat,
-                    flatten_outputs=True,
                 ),
             )
             for w in ctx.ctrl_next

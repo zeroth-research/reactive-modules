@@ -287,7 +287,6 @@ def _translate_terms_scalar(
     block_outputs: list[Wire],
     constants: ConstantRegistry,
     flat_slots: "dict[int, list[str]] | None" = None,
-    flatten_outputs: bool = False,
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
@@ -366,13 +365,13 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    # `flatten_outputs` says which codomain the caller declared: one
-    # component per element (`_product_type_scalar`, what `scalar.py` and
-    # `ScalarRel` declare) wants the flat slots; one `Mat` per wire wants
-    # the matrix the terms built.
+    # The codomain every caller declares has one component per element
+    # (`_product_type_scalar`): an output with flat slots contributes them;
+    # one without (no element was bound) contributes the matrix the terms
+    # built.
     out_exprs: list[str] = []
     for w in block_outputs:
-        if flatten_outputs and w.id in flat_slots:
+        if w.id in flat_slots:
             out_exprs.extend(flat_slots[w.id])
         else:
             out_exprs.append(_output_expr(wire_expr, w))

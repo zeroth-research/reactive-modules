@@ -213,15 +213,21 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
 | Method | Returns |
 |--------|---------|
-| `to_lean_functional()` | Constants block + `init`/`update` defs |
-| `to_lean_circ()` | Circuit namespace + equivalence theorems |
-| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems |
-| `to_lean(circuit=True, scalar=True)` | All three encodings combined |
+| `to_lean_functional()` | Constants block + `init`/`update` defs (`System.lean`) |
+| `to_lean_circ()` | Circuit namespace + equivalence theorems (`SystemCirc.lean`) |
+| `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`SystemRel.lean`) |
+| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`SystemScalar.lean`) |
+| `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`SystemScalarRel.lean`) |
+| `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
 | `atom_to_lean_functional()` | Just `init`/`update` bodies |
 | `atom_to_lean_circuit()` | Just `namespace Circ` block |
 | `atom_to_lean_scalar()` | Just `namespace Scalar` block |
+| `atom_to_lean_mat_rel()` / `atom_to_lean_rel()` | Just the `Rel` / `ScalarRel` namespace |
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
+
+The project writes one file per row of `project.ENCODINGS`, each from its
+`to_lean_*` producer.
 
 ---
 

@@ -446,20 +446,6 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
 # ──────────────────────────────────────────────────────────────
 
 
-def test_scalar_translator_flattening_is_opt_in():
-    """Without the flag, each output is its wire's own `Mat`.
-
-    The flat-tuple callers (`scalar.py`, `ScalarRel`) ask for it explicitly.
-    """
-    from zrth.lean.native import _translate_terms_scalar
-    import inspect
-
-    sig = inspect.signature(_translate_terms_scalar)
-    assert sig.parameters["flatten_outputs"].default is False, (
-        "flattening must be opt-in so the matrix-typed callers keep working"
-    )
-
-
 # ──────────────────────────────────────────────────────────────
 # Reconstruction lets follow what the body uses
 # ──────────────────────────────────────────────────────────────
@@ -571,5 +557,5 @@ def test_unbound_block_output_raises():
         _translate_terms([], {}, out, ConstantRegistry())
     with pytest.raises(ValueError, match="written by no term"):
         _translate_terms_scalar(
-            [], {}, out, ConstantRegistry(), flatten_outputs=True
+            [], {}, out, ConstantRegistry()
         )

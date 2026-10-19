@@ -196,7 +196,6 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         ctx.ctrl_next,
         ctx.constants,
         flat_slots=init_flat,
-        flatten_outputs=True,
     )
     lines.append(
         f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
@@ -217,7 +216,6 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         ctx.ctrl_next,
         ctx.constants,
         flat_slots=update_flat,
-        flatten_outputs=True,
     )
     upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
