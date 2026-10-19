@@ -260,7 +260,8 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
 _BRANCHING_OPS = frozenset({"Ite", "ReLU", "Min", "Max"})
 
 
-def features_for(ctx, pred_text: str, facts=None, verbatim: str = "") -> Features:
+def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
+                 floors: tuple = ()) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
     `facts` is `smt_query.PredicateFacts` when the predicates came from
@@ -294,8 +295,14 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "") -> Feature
     f.has_and = " ∧ " in pred_text
     f.has_or = " ∨ " in pred_text
     f.has_eq = " = " in pred_text
-    f.has_floor = "⌊" in pred_text
-    f.floor_args = floor_arguments(pred_text)
+    # Floors come printed from the terms (`floors`, over `($v)` already)
+    # when there are facts; text with no term behind it is scanned.
+    scanned = verbatim if facts is not None else pred_text
+    f.floor_args = tuple(dict.fromkeys(
+        (*(floors if facts is not None else ()),
+         *(_rebind(a) for a in floor_arguments(scanned)))
+    ))
+    f.has_floor = bool(f.floor_args)
     f.nonlinear = is_nonlinear(pred_text)
     text_branch = (
         pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
@@ -401,8 +408,7 @@ class TacticPlan:
         if not self.features.floor_args:
             return "skip"
         steps = []
-        for k, arg in enumerate(self.features.floor_args):
-            a = _rebind(arg)
+        for k, a in enumerate(self.features.floor_args):
             steps.append(
                 f"by_cases hs{k} : (0:Real) ≤ ({a}) <;> "
                 f"[(have hfl{k} : (0:Int) ≤ ⌊{a}⌋ := Int.floor_nonneg.mpr hs{k}); "
@@ -520,9 +526,9 @@ def floor_arguments(pred_text: str) -> tuple[str, ...]:
 
 
 def plan_for(ctx, pred_text: str, facts=None, hints=None,
-             verbatim: str = "") -> TacticPlan:
+             verbatim: str = "", floors: tuple = ()) -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
-    f = features_for(ctx, pred_text, facts, verbatim)
+    f = features_for(ctx, pred_text, facts, verbatim, floors)
 
     # ── prep: canonicalise the goal before anything tries to close it ──
     prep: list[str] = []

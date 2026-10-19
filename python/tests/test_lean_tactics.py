@@ -565,7 +565,7 @@ def test_a_floored_rank_gets_the_bridge_to_the_real_under_it():
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊(s 0 0)⌋ : Int)).toNat")
     assert plan.features.has_floor
-    assert plan.features.floor_args == ("(s 0 0)",)
+    assert plan.features.floor_args == ("(($v) 0 0)",)
     body = plan.floor_tactic
     assert "Int.floor_nonneg" in body
     assert "($v)" in body, "the macro's own binder, not the printer's `s`"
@@ -592,7 +592,7 @@ def test_a_scaled_floor_distributes_before_the_closers():
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊((2 : Real) * (s 0 0))⌋ : Int)).toNat")
     assert "simp only [mul_sub]" in plan.prep
-    assert plan.features.floor_args == ("((2 : Real) * (s 0 0))",)
+    assert plan.features.floor_args == ("((2 : Real) * (($v) 0 0))",)
 
 
 def test_an_integer_module_pays_nothing_for_floors():

@@ -485,6 +485,10 @@ class PredicateFacts:
     has_eq: bool = False
     has_ite: bool = False
     mentioned: frozenset = frozenset()
+    # The argument of each outermost `to_int` (printed `⌊x⌋`), distinct,
+    # in the order the predicates are printed: what the plan bridges from
+    # the floor's `Int` to the `Real` it was taken of.
+    floors: tuple = ()
 
     def why(self) -> str:
         bits = [f"{self.n_branch} branch point(s)"]
@@ -524,6 +528,21 @@ def _facts_walk(t, acc: dict) -> None:
         elif k == Kind.MULT:
             if sum(1 for c in node if state_dependent(c)) > 1:
                 acc["nonlinear"] = True
+
+
+def _floor_args(t, out: list) -> None:
+    """Append the argument of each outermost `to_int` in `t`, left to
+    right, skipping one already in `out`."""
+    from cvc5 import Kind
+
+    stack = [t]
+    while stack:
+        node = stack.pop()
+        if node.getKind() == Kind.TO_INTEGER:
+            if all(node[0] != seen for seen in out):
+                out.append(node[0])
+            continue
+        stack.extend(reversed(list(node)))
 
 
 def _tree_branch_points(t) -> int:
@@ -582,11 +601,15 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         "conds": set(),
         "mentioned": set(),
     }
+    floors: list = []
     try:
         for t in (q.prp, q.inv, q.ranking, q.init_pre, q.update_pre):
             if t is not None:
                 _facts_walk(t, acc)
                 acc["branch"] += _tree_branch_points(t)
+        for t in (q.init_pre, q.update_pre, q.inv, q.prp, q.ranking):
+            if t is not None:
+                _floor_args(t, floors)
     except Exception:
         return None
     return PredicateFacts(
@@ -598,6 +621,7 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         has_eq=acc["eq"],
         has_ite=acc["ite"],
         mentioned=frozenset(acc["mentioned"]),
+        floors=tuple(floors),
     )
 
 

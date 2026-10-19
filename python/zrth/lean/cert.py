@@ -55,6 +55,8 @@ class PlanInputs:
     # no term stands behind them, so the facts cannot speak for them and
     # the plan reads their text instead.
     verbatim: str = ""
+    # `facts.floors` printed over a macro's binder `($v)`.
+    floors: tuple = ()
 
 
 @dataclass
@@ -236,12 +238,20 @@ def prepare(
     """
     from .smt_query import predicate_facts
 
+    from .smt_to_lean import smt_to_lean_body
+
     printed = print_hints(hints, q.msmt.ctrl_next) if hints is not None else None
+    facts = predicate_facts(q)
+    floors: list[str] = []
+    for arg in facts.floors if facts is not None else ():
+        text = smt_to_lean_body(arg, q.msmt.ctrl_next, param_name="($v)")
+        if text not in floors:
+            floors.append(text)
     return LeanCertificate(
         render_certificate(q, share=not (printed and printed.determined),
                            verbatim=verbatim),
         PlanInputs(
-            predicate_facts(q), printed,
+            facts, printed, floors=tuple(floors),
             verbatim="\n".join(t for t in (verbatim.inv, verbatim.ranking) if t)
             if verbatim is not None else "",
         ),
@@ -363,6 +373,7 @@ def generate_certificate_lean(
         facts=lean_cert.plan.facts,
         hints=lean_cert.plan.hints,
         verbatim=lean_cert.plan.verbatim,
+        floors=lean_cert.plan.floors,
     )
 
     return render(
