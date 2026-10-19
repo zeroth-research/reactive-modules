@@ -164,3 +164,6 @@ pipeline.py      load -> generate -> infer -> regenerate certificate -> check/bu
    0e6b45b3..07012f9d. Plan, answers and how it was checked:
    [`PHASE5_HANDOFF.md`](PHASE5_HANDOFF.md).
 6. **Codegen cleanup** -- CG-1, CG-2, CG-4..CG-6, CG-8, CG-9, CG-11, RT-8.
+7. **A README for the pipeline** -- last, once the code has its final shape:
+   the stages from input to built certificate, with a picture the user
+   supplies.
