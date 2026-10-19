@@ -75,9 +75,13 @@ Paths are relative to `python/zrth/lean/`.
   `magic/cegar.py` builds an LLM client even when every predicate is fixed,
   and its names (`cegar.py`, `TA2MagicCEGAR`, `CegarPromptEnv`) say CEGAR for
   what the CLI calls `ai-cegis`.
-- **nuterm's answer is not resumable.** It is recorded only as `inv.smt`
-  (`smt-src`, encoded), not as a resumable `inv` artifact, so a following
-  `--infer ai-cegis` asks the model again instead of resuming.
+- **An artifact does not record the precondition it was found under.**
+  `ArtifactStore._stale` drops an artifact written for another module,
+  property or proof rule, but not one found under another `--pre`. An
+  invariant houdini or nuterm proved under `--pre` holds only from the
+  states that admits, so a later `--infer ai-cegis --safety` without it
+  resumes it as the whole certificate, and fails `init_inv` instead of
+  asking the model.
 - **No layering test for Lean codegen.** `tests/test_layering.py` checks
   that private names do not cross modules in the SMT layer; nothing checks
   it for codegen.

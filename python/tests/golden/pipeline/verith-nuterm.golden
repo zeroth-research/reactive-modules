@@ -50,6 +50,8 @@ DONE: Project created at: <OUT>/G
 [nuterm] invariant: 2 of 3 conjuncts after pruning
 [nuterm] inv: (and (>= s0 0) (<= s0 100))
 [nuterm] ranking: (+ (* 2 (ite (> (+ 2 s0) 0) (+ 2 s0) 0)) (* 2 (ite (> (* 2 s0) 0) (* 2 s0) 0)) (* 2 (ite (> (* (- 2) s0) 0) (* (- 2) s0) 0)) (* 2 (ite (> (+ (- 1) (- s0)) 0) (+ (- 1) (- s0)) 0)) (* 2 (ite (> (- s0) 0) (- s0) 0)) (* 2 (ite (> (+ (- 1) s0) 0) (+ (- 1) s0) 0)) (* 2 (ite (> (- 1) 0) (- 1) 0)))
+   wrote artifact inv-0002-nuterm.smt2 (proved)
+   wrote artifact ranking-0003-nuterm.smt2 (proved)
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    wrote artifact system.smt2 (encoded)
    wrote artifact obligation-init_inv.smt2 (encoded)
@@ -251,11 +253,39 @@ end TS
     "kind": "buchi",
     "language": "smt",
     "module_digest": "<digest>",
+    "name": "inv-0002-nuterm.smt2",
+    "producer": "nuterm",
+    "prp": "(= s0 0)",
+    "role": "inv",
+    "seq": 2,
+    "status": "proved",
+    "what": "The invariant this run found: Houdini kept it, and the Farkas procedure certified the claim over it.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
+    "name": "ranking-0003-nuterm.smt2",
+    "producer": "nuterm",
+    "prp": "(= s0 0)",
+    "role": "ranking",
+    "seq": 3,
+    "status": "proved",
+    "what": "The ranking function this run learned, certified by the Farkas procedure over the invariant beside it.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
     "name": "system.smt2",
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "system",
-    "seq": 2,
+    "seq": 4,
     "status": "encoded",
     "what": "The whole problem as cvc5 encoded it. `init<i>` is state component `i` after tick 0 and `next<i>` the same component after one round, over the latched state `s*` and the inputs `el*` / `en*` latched and awaited; `P`, `inv` and `ranking` are the certificate's predicates over that state. No assertion -- this file is what the obligations beside it are stated against, and what to apply to a state by hand.",
     "why": ""
@@ -269,7 +299,7 @@ end TS
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "obligation",
-    "seq": 3,
+    "seq": 5,
     "status": "proved",
     "what": "`init_pre e -> inv (init e)`: the invariant holds in the state the module starts in.",
     "why": ""
@@ -283,7 +313,7 @@ end TS
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "obligation",
-    "seq": 4,
+    "seq": 6,
     "status": "proved",
     "what": "`inv s /\\ update_pre e -> inv (update s e)`: every round preserves the invariant.",
     "why": ""
@@ -297,7 +327,7 @@ end TS
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "obligation",
-    "seq": 5,
+    "seq": 7,
     "status": "proved",
     "what": "`inv s /\\ ~P s /\\ update_pre e -> ranking (update s e) < ranking s`: the ranking function drops on every round the property does not hold.",
     "why": ""
@@ -311,7 +341,7 @@ end TS
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "inv",
-    "seq": 6,
+    "seq": 8,
     "status": "encoded",
     "what": "The invariant the certificate is generated from. Inferred by this run's route.",
     "why": ""
@@ -325,13 +355,15 @@ end TS
     "producer": "nuterm",
     "prp": "(= s0 0)",
     "role": "ranking",
-    "seq": 7,
+    "seq": 9,
     "status": "encoded",
     "what": "The ranking function the certificate is generated from. Inferred by this run's route.",
     "why": ""
   }
 ]
 
+=== artifacts/inv-0002-nuterm.smt2
+(and (>= s0 0) (<= s0 100))
 === artifacts/inv.smt
 (and (>= s0 0) (<= s0 100))
 === artifacts/obligation-hrank.smt2
@@ -361,6 +393,8 @@ end TS
 
 === artifacts/property.smt
 (= s0 0)
+=== artifacts/ranking-0003-nuterm.smt2
+(+ (* 2 (ite (> (+ 2 s0) 0) (+ 2 s0) 0)) (* 2 (ite (> (* 2 s0) 0) (* 2 s0) 0)) (* 2 (ite (> (* (- 2) s0) 0) (* (- 2) s0) 0)) (* 2 (ite (> (+ (- 1) (- s0)) 0) (+ (- 1) (- s0)) 0)) (* 2 (ite (> (- s0) 0) (- s0) 0)) (* 2 (ite (> (+ (- 1) s0) 0) (+ (- 1) s0) 0)) (* 2 (ite (> (- 1) 0) (- 1) 0)))
 === artifacts/ranking.smt
 (+ (* 2 (ite (> (+ 2 s0) 0) (+ 2 s0) 0)) (* 2 (ite (> (* 2 s0) 0) (* 2 s0) 0)) (* 2 (ite (> (* (- 2) s0) 0) (* (- 2) s0) 0)) (* 2 (ite (> (+ (- 1) (- s0)) 0) (+ (- 1) (- s0)) 0)) (* 2 (ite (> (- s0) 0) (- s0) 0)) (* 2 (ite (> (+ (- 1) s0) 0) (+ (- 1) s0) 0)) (* 2 (ite (> (- 1) 0) (- 1) 0)))
 === artifacts/system.smt2
