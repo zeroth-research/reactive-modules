@@ -195,7 +195,7 @@ def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
     The check used to demand `ranking >= 0` wherever the invariant holds,
     which `1 + y` breaks at `y = -5` -- a state where the property already
     holds -- so a certificate Lean accepts came back as a counterexample."""
-    from benchmarks.svcomp import discover
+    from nuterm.tests.benchmarks.svcomp import discover
 
     prompts = []
     pending = ["INVARIANT: true\nRANKING: (+ 1 s0)"]

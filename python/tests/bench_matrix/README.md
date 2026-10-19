@@ -70,7 +70,7 @@ a `lake update` would re-resolve the other thirteen packages).
 | `limits` | 30 | [`../limits/cases.py`](../limits/cases.py) | `--buchi`, the matrix's own reachability target |
 | `fbk` | 39 | [`../lean/fbk/probes.py`](../lean/fbk/probes.py) | `--safety` |
 | `tests` | 6 | [`../fixtures/`](../fixtures/) | `--buchi`, from each fixture's docstring |
-| `svcomp` | 80 | [`../../benchmarks/svcomp/dsl/`](../../benchmarks/svcomp/dsl/) | both, derived — see below |
+| `svcomp` | 80 | [`../../nuterm/tests/benchmarks/svcomp/dsl/`](../../nuterm/tests/benchmarks/svcomp/dsl/) | both, derived — see below |
 | `hybrid` | 26 | [`hybrid/cases.py`](hybrid/cases.py) | both, over 8 sampled hybrid systems |
 | `petri` | 35 | [`petri/cases.py`](petri/cases.py) | both, over 13 nets and 2 extensions |
 

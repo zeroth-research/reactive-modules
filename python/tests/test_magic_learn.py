@@ -430,8 +430,8 @@ def test_the_witness_carries_the_pruned_invariant(monkeypatch):
     Houdini\'s ten conjuncts, and takes half a second carrying the four the
     rest do not imply. So what matters is which set reaches `certify`, and
     that is what this reads off rather than the clock."""
-    import benchmarks.svcomp._farkas as farkas
-    import benchmarks.svcomp._invariants as invariants
+    import nuterm._farkas as farkas
+    import nuterm._invariants as invariants
 
     found, carried = [], []
     real_infer, real_certify = invariants.infer_invariants, farkas.certify
@@ -519,8 +519,8 @@ def test_the_bound_in_the_guard_is_offered_to_houdini():
     constant only the guard mentions -- and only after `x + 1 == 10` has been
     normalised onto `x`. Neither the sign candidates nor the constant-coordinate
     ones carry it."""
-    import benchmarks.svcomp._farkas as farkas
-    from benchmarks.svcomp._invariants import infer_invariants
+    import nuterm._farkas as farkas
+    from nuterm._invariants import infer_invariants
 
     module = _counter(9)
     system = farkas.read_system(module, {v: f"s{i}" for i, v in enumerate(module.ctrl)})

@@ -14,7 +14,7 @@ restated here that one of them already says.
     tests    `tests/fixtures/svcomp_*.py` and `counter.py` -- the CLI's own
              fixtures, whose `--buchi` property is stated in their docstrings
              ("Property: x == 0 holds infinitely often") and transcribed here.
-    svcomp   `benchmarks/svcomp/dsl/` -- 57 SV-COMP termination benchmarks,
+    svcomp   `nuterm/tests/benchmarks/svcomp/dsl/` -- 57 SV-COMP termination benchmarks,
              one or two properties each, *derived* rather than written down:
              see `svcomp_rows`.
     hybrid   `hybrid/` -- 8 sampled hybrid systems (thermostat, water tanks,
@@ -218,10 +218,10 @@ def svcomp_rows() -> list[Row]:
     """
     import z3                                               # noqa: PLC0415
 
-    from benchmarks.svcomp import discover                   # noqa: PLC0415
-    from benchmarks.svcomp._farkas import resolve_domain     # noqa: PLC0415
-    from benchmarks.svcomp._invariants import infer_invariants  # noqa: PLC0415
-    from benchmarks.svcomp._termination import system_of, terminates  # noqa: PLC0415
+    from nuterm._farkas import resolve_domain                # noqa: PLC0415
+    from nuterm._invariants import infer_invariants          # noqa: PLC0415
+    from nuterm._termination import system_of, terminates    # noqa: PLC0415
+    from nuterm.tests.benchmarks.svcomp import discover      # noqa: PLC0415
 
     def smt(e, state) -> str:
         """`e` as SMT-LIB over `s0..sN-1`.

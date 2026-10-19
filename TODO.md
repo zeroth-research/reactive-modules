@@ -65,7 +65,7 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 
     What would fill them is truth from upstream. For the svcomp rows that is
     the task definitions the benchmarks were converted from, which are not
-    in this tree: `benchmarks/svcomp/c` and `.../dsl` carry no `.yml`.
+    in this tree: `nuterm/tests/benchmarks/svcomp/dsl` carries no `.yml`.
 
 ## Pipeline shape
 
@@ -83,11 +83,11 @@ Paths are relative to `python/zrth/lean/`.
   `smt/obligations.py`; smt-linear uses `_bound_vars`/`_fresh_consts`
   instead of `ModuleEncoding.fresh`; houdini and vampire parse with
   `env.parse_expr` (their candidates may be Real) where the rest use
-  `ModuleEncoding.parse`; nuterm's z3 encoding and
-  `_farkas.Inductive`/`LexDecrease` wait for the nuterm move (next item).
-- **nuterm needs the editable install.** `magic/learn.py` imports
-  `benchmarks.svcomp`, which is not packaged. Left for the branch that moves
-  the engine, to be rebased onto `mch/verith-1`.
+  `ModuleEncoding.parse`; nuterm (`python/nuterm/`) encodes the module in
+  z3 on its own, with `_farkas.Inductive`/`LexDecrease` as its obligations.
+- **nuterm needs the editable install.** `magic/learn.py` imports `nuterm`,
+  which sits beside `zrth` in `python/` and is not in the wheel: maturin
+  packages `zrth` alone.
 - **Check the Lean encoding against the SMT one.** `pre_check` asks cvc5
   about the certificate (`init_inv`, `step_inv`, `hrank`); nothing asks
   whether `native.py`'s Lean and `smt_encode`'s cvc5 terms agree about the

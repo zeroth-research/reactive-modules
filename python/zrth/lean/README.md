@@ -754,7 +754,7 @@ SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 does, and proves it before offering it:
 
 1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
-   facts (`benchmarks/svcomp/_invariants.py`): seed the candidates, drop the
+   facts (`nuterm/_invariants.py`): seed the candidates, drop the
    ones that do not hold at entry or are not preserved by a step, and certify
    the survivors as one inductive `Safety` claim.  With `--safety`, the
    property itself is seeded as a candidate, so it is an invariant exactly
@@ -765,7 +765,7 @@ does, and proves it before offering it:
    into the module as two ordinary atoms, `V(s)` and `V(s')`.  The obligation
    `V(s) - V(s') >= 1` on that domain goes to a decision procedure over the
    composed module's wires: Farkas-certified linear regions, with CEGAR
-   finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
+   finding the regions (`nuterm/_farkas.py`).  Only a candidate it
    certifies is returned.
 
 So unlike the `ai` routes, what reaches the certificate has already been

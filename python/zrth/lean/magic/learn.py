@@ -5,7 +5,7 @@ the certificate, this route learns one. A small ReLU network is trained on
 rollouts of the module to drop on the rounds the property does not hold, its
 weights are rounded to integers, and the candidate is put to a decision
 procedure: Farkas-certified regions over the module's own wires, with CEGAR
-finding the regions (:mod:`benchmarks.svcomp._farkas`). Only a candidate the
+finding the regions (:mod:`nuterm._farkas`). Only a candidate the
 procedure certifies comes back, so what verith is handed is a certificate that
 has already been proved -- ``--pre-check`` and ``lake build`` confirm it rather
 than discovering it.
@@ -67,16 +67,16 @@ def _engine():
     rather than inside it, and a verith run that does not ask for this route
     should not need them present."""
     try:
-        from benchmarks.svcomp._bench import Bench
-        from benchmarks.svcomp._farkas import (certify, check_supported,
-                                               inductive, read_system)
-        from benchmarks.svcomp._invariants import as_predicates, infer_invariants
-        from benchmarks.svcomp._nodes import Unsupported
-        from benchmarks.svcomp._property import Liveness, Safety
-        from benchmarks.svcomp._train import learn_ranking
+        from nuterm._bench import Bench
+        from nuterm._farkas import (certify, check_supported, inductive,
+                                    read_system)
+        from nuterm._invariants import as_predicates, infer_invariants
+        from nuterm._nodes import Unsupported
+        from nuterm._property import Liveness, Safety
+        from nuterm._train import learn_ranking
     except ImportError as e:      # pragma: no cover - a broken checkout
         raise Refused(
-            f"--infer nuterm needs the `benchmarks.svcomp` package, which is not "
+            f"--infer nuterm needs the `nuterm` package, which is not "
             f"importable: {e}"
         ) from e
     return SimpleNamespace(

@@ -1,6 +1,6 @@
 """One SV-COMP termination benchmark, as a module `verith` can load.
 
-The corpus in `benchmarks/svcomp/dsl/` is written for the Farkas pipeline:
+The corpus in `nuterm/tests/benchmarks/svcomp/dsl/` is written for the Farkas pipeline:
 each file exposes a `BENCH` whose `build()` returns
 `(module, ctrl_by_name, extl_by_name)`, and the package is imported
 relatively, so `verith`'s python input adapter cannot read one of those
@@ -30,9 +30,9 @@ def module():
             "SVCOMP_BENCH is not set: it names the benchmark this adapter "
             "should load, e.g. SVCOMP_BENCH=ColonSipma-TACAS2001-Fig1"
         )
-    from benchmarks.svcomp import discover
+    from nuterm.tests.benchmarks.svcomp import discover
 
     for bench in discover():
         if bench.name == name:
             return bench.build()[0]
-    raise SystemExit(f"SVCOMP_BENCH={name!r}: no such benchmark in benchmarks/svcomp/dsl/")
+    raise SystemExit(f"SVCOMP_BENCH={name!r}: no such benchmark in nuterm/tests/benchmarks/svcomp/dsl/")

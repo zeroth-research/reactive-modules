@@ -293,7 +293,7 @@ program mentions, simplified first.
 ### What a lexicographic rank does and does not fix
 
 `lex_decrease` is available to the learner (`learn_ranking(ranks=N)`,
-`python -m benchmarks.svcomp --ranks N`) and is worth a lot where it applies:
+`python -m nuterm FILE.py --ranks N`) and is worth a lot where it applies:
 on the SV-COMP termination corpus it takes **38/57 to 45/57**, losing nothing,
 and what it unlocks is the nested loops — `cousot9`, `speedpldi3`,
 `ChenFlurMukhopadhyay` Ex2.01, Ex2.08 and Fig1, both `Masse-VMCAI2014`.

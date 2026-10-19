@@ -85,7 +85,7 @@ def test_a_synthesised_invariant_that_prints_with_let_is_kept():
     definition cannot carry". It can: the source is parsed back before it is
     rendered, and `smt_to_lean` binds what is shared in Lean. This one --
     `(let ((_let_1 (* (- 1) s1))) ...)` -- was found and thrown away."""
-    from benchmarks.svcomp import discover
+    from nuterm.tests.benchmarks.svcomp import discover
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     bench = next(b for b in discover() if b.name == "AliasDarteFeautrierGonnord-SAS2010-easy2-2")
@@ -348,7 +348,7 @@ def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
     The route used to demand `rank >= 0` over every state as well. Where the
     property holds `y` runs to minus infinity, so no linear rank survived that,
     and the empty space was reported as a *proof* that none exists."""
-    from benchmarks.svcomp import discover
+    from nuterm.tests.benchmarks.svcomp import discover
     from zrth.lean.magic.linear import TA2MagicLinear
 
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
