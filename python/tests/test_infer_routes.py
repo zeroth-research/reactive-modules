@@ -704,7 +704,7 @@ def test_the_registry_rejects_two_rows_with_one_name():
 
 
 def test_an_unknown_route_name_says_where_to_add_one():
-    # `abduction` is `SMT_ASSIST.md` item 6, which is planned and not built;
+    # `abduction` is a TODO.md item, planned and not built;
     # it was `sygus` until that one became a row, which is the point -- the
     # name in this test has to be one the table really does not have.
     with pytest.raises(KeyError, match="infer_route.ROUTES"):

@@ -16,11 +16,8 @@ that was noticed, five cases had a verifying certificate inside a project
 whose `lake build` failed.
 
 This file is both the operational one and the record of what the matrix
-found: how to run it, what verifies, what does not, and why. The defects
-behind the failures are catalogued in
-[`../../zrth/lean/KNOWN_ISSUES.md`](../../zrth/lean/KNOWN_ISSUES.md), and what
-cvc5 is used for is in
-[`../../zrth/lean/SMT_ASSIST.md`](../../zrth/lean/SMT_ASSIST.md).
+found: how to run it, what verifies, what does not, and why. What is still
+to do about the failures is in [`TODO.md`](../../../TODO.md).
 
 ---
 
@@ -57,7 +54,8 @@ finds nothing verdicts `NO-CERT` rather than `GEN-FAIL` — that is the
 measurement, not a defect.
 
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
-`python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt): every
+`python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
+`(cd tests/lean && lake build)` takes about an hour cold): every
 generated project symlinks its `.lake` to one shared build dir whose
 `packages` the runner points there, so Core / LeanAI / ZerothHammer are
 compiled once and only `System/*` and `Certificate/*` recompile per case.
@@ -109,7 +107,7 @@ run_limits.py    generate + build every case, print and record verdicts
 run_regress.py   run only the names in a baseline, diff verdicts, flag both directions
 baseline.json    the verdicts this README's numbers were measured at
 check_obl.py     numeric oracle: exhaustively evaluate the obligations in Python
-probes/          runnable evidence for the cvc5 work (see SMT_ASSIST.md)
+probes/          runnable evidence for the cvc5 work (abduction, SyGuS)
 ```
 
 A case is
@@ -317,8 +315,7 @@ expression. `--ranks` is for the Farkas side, which has `lexDec` end to end.
 
 ## What the fixes taught
 
-What the matrix's fixes showed about the proofs, compressed; the ones with
-more to say have a section in `SMT_ASSIST.md`.
+What the matrix's fixes showed about the proofs, compressed.
 
 - **A ReLU arrives as `ite (>= e 0) e 0`** because there is no `max` kind to
   translate from. Left as an `ite` each unit costs a `split_ifs` branch, and
@@ -374,39 +371,3 @@ more to say have a section in `SMT_ASSIST.md`.
   line, and took NN2Deep4 from 22.4 s to 1077.5 s and NN2RealWide4 to a 2027 s
   timeout. Unfolding a net-shaped invariant at a net-shaped successor doubles
   everything downstream.
-
----
-
-## Where to pick up
-
-1. **`Uninterpreted` has no Lean form** (`KNOWN_ISSUES.md` #23, #27) — the
-   one generation failure.
-2. **`--smt-tactics=cvc5` does not pay yet.** `NN2RealAllPos4` exists to
-   give it the best case there is — a Real net whose every ReLU is
-   non-negative under the invariant, so cvc5 settles all four branch
-   conditions. Timing the `Certificate.Certificate` job alone, alternating
-   and deleting the olean each time: 77 s / 76 s off against 75 s / 71 s on.
-   A first suspect was that `ranking`'s conditions read `u3 ≥ 0` (shared)
-   while `cert_facts` stated the expanded `1 * s 0 0 + 3 ≥ 0`, so
-   `simp only [if_pos hf0]` had nothing to match. Printed unshared, so that
-   the two match exactly, the numbers did not move: 68 / 69 s off against
-   68 / 70 s on. The 3-7% before was noise. (The rewrite matches through the
-   `let`s anyway, because `simp` zeta-reduces first, so the certificate is
-   printed shared again since `6a68153d`.) Rebuilt with the inner `try`
-   stripped, so a no-op `simp only` would be an error, it builds clean —
-   the rewrite *is* firing and all four branches really are collapsed.
-
-   Profiled, the cost is somewhere else entirely. `hrank` is **70 s of the
-   75** (the whole rest of the file, `sorry`ing it out, is 5.2 s), and
-   inside it **typeclass inference is 17.7 s**, simp 12.2 s, norm_num
-   6.2 s, ring 2.6 s. That is `Real`'s algebraic hierarchy: every `≥`, `+`,
-   `⌊·⌋` and `Int.toNat` starts an instance search, and `norm_num`, `ring`
-   and `linarith` each redo them per branch. Pruning branches divides that;
-   it does not touch the per-branch constant, which is the bill. So
-   `n_branch` and `n_conditions` are the wrong cost model in kind — they
-   count branches, and what is paid for is instances per branch.
-3. **cvc5 abduction** — the plan and its runnable evidence are in
-   `SMT_ASSIST.md` §6 and `probes/abduction.py`.
-4. **Nothing in CI builds a generated project** (`KNOWN_ISSUES.md` #29):
-   a slow-marked test that runs a handful of these cases the way
-   `just test-lean` does.

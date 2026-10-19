@@ -1315,6 +1315,5 @@ Build completed successfully (3473 jobs).
 | `--hammer-file PATH` | — | regenerate `ZerothHammer.lean` alone |
 
 Related reading: [`verith_gym.md`](verith_gym.md) for a gymnasium environment
-worked through in integer arithmetic, `python/zrth/lean/README.md` for the
-pipeline's own documentation, and `python/zrth/lean/SMT_ASSIST.md` for what
-cvc5 is used for and what was measured.
+worked through in integer arithmetic, and `python/zrth/lean/README.md` for
+the pipeline's own documentation.

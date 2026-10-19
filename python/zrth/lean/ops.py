@@ -111,9 +111,9 @@ THEORIES = ("LIA", "LRA", "BV")
 ALL = THEORIES
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
-# No theory defines these any more; the emitters are kept because removal is
-# the open half of KNOWN_ISSUES #23. Dispatch goes through `itype_name`, so
-# nothing can reach them.
+# No theory defines these any more; the emitters are kept until it is
+# decided whether to drop them (TODO.md). Dispatch goes through `itype_name`,
+# so nothing can reach them.
 NONE: tuple[str, ...] = ()
 
 
@@ -344,8 +344,8 @@ _NONDET = Unsupported(
 _UNINTERPRETED = Unsupported(
     "an uninterpreted symbol has no obvious translation — emit an `opaque` "
     "nothing can prove anything about, or reject it at the front end. "
-    "KNOWN_ISSUES #27 holds the open decision; `--fbk-proveit` already "
-    "takes the second option."
+    "Which of the two is an open decision; `--fbk-proveit` already takes "
+    "the second option."
 )
 
 _ZEROGRAD = Unsupported(
@@ -773,9 +773,9 @@ OPS: tuple[Op, ...] = (
         )
     ),
     # ── dead ──────────────────────────────────────────────────────────
-    # `IType`-era names no theory defines any more. Kept because removing
-    # them is the decision KNOWN_ISSUES #23 asks for; unreachable either
-    # way, since dispatch goes through `itype_name`.
+    # `IType`-era names no theory defines any more. Kept until it is
+    # decided whether to remove them (TODO.md); unreachable either way,
+    # since dispatch goes through `itype_name`.
     Op(
         "Tensor",
         NONE,

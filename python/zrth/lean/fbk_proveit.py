@@ -569,8 +569,7 @@ def equivalence_lean(
     """The proof that the model is the module, as the text of its file.
 
     The certificate `proveit.py` installs is about the NA model. This is the
-    file that carries it back to the module -- see `translate/fbk_bridge.py`
-    and `FBK_EQUIVALENCE.md`.
+    file that carries it back to the module -- see `translate/fbk_bridge.py`.
 
     Lake reaches it through the `Certificate` lean_lib's glob, not through
     the root `Certificate.lean`'s import list, and that is not a detail:

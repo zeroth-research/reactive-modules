@@ -1,4 +1,7 @@
-"""Proof of concept for SMT_ASSIST.md item 7: synthesise the ranking function.
+"""Proof of concept for synthesising the ranking function with SyGuS.
+
+What came of it is `--infer sygus` (an invariant, not a ranking function) and
+`--infer smt-linear`; these are the numbers that steered them there.
 
 No LLM, no API key, deterministic. The constraints are the two `magic.cegar`
 already builds -- `inv s → rank s ≥ 0` and
@@ -6,7 +9,7 @@ already builds -- `inv s → rank s ≥ 0` and
 instead of a parsed term.
 
 Note the times: unrestricted LIA is fine for one variable and already 10 s
-for two, which is why step 3 of the plan is "give it a grammar".
+for two, which is why the next step was to give it a grammar.
 
     uv run python tests/limits/probes/sygus.py
 """

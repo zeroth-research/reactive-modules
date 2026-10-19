@@ -73,7 +73,7 @@ MATHLIB_NOTE = (
     "not compiled here &mdash; <code>tests/lean/.lake/packages</code> is already "
     "populated, and Mathlib arrives from the mathlib4 olean cache "
     "(<code>lake exe cache get</code>, an Azure blob store) rather than from a "
-    "local build. <code>tests/BENCHMARKS.md</code> records that first "
+    "local build. <code>tests/limits/README.md</code> records that first "
     "<code>(cd tests/lean &amp;&amp; lake build)</code> at <b>~1 hour</b> cold, which is "
     "mostly download and decompression of ~8,000 oleans; the "
     "<code>lean-ltl-certifying</code> checkout that <code>fbk-proveit</code> needs "

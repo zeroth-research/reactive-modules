@@ -150,17 +150,31 @@ a `sorry` left in `Certificate/` also fails the run. Without `--build-cert`
 the run stops at the project, which can then be built by hand. See [Building
 the certificate](#building-the-certificate---build-cert).
 
+## Checking a change to the pipeline
+
+Record each of these at the commit before the change and after it, and
+compare; every difference must be one the change means.
+
+- **Route transcripts**: `uv run python scripts/route_transcripts.py OUTDIR`
+  from `python/`, then `diff -r`. 42 cases over all eight routes, with the
+  LLM replies scripted; the docstring names the variables that find the
+  external tools. Record on a quiet machine, and re-run a `vampire_*` case
+  alone before reading a difference in it as a change: under load its
+  templates run out of their shared deadline.
+- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
+  the transcripts do not cover: the `System/*.lean` encodings, the bare
+  `--cert-file` certificate, and the NA model and bridge, per fixture.
+- **Goldens**: `tests/test_pipeline_golden.py`; `ZRTH_UPDATE_GOLDEN=1`
+  rewrites them.
+- **Suites**: `uv run pytest -m 'not slow' -q` from `python/` (set `VAMPIRE`
+  to the binary for the Vampire tests), and `just test-lean` for the lake
+  builds after any change to the generated Lean.
+
 ## Further reading
 
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md): the pipeline's known defects.
-- [PIPELINE_REVIEW.md](PIPELINE_REVIEW.md): what is still open in the
-  pipeline's shape, and how to check a refactor of it.
-- [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md): how the `fbk-proveit`
-  certificate is tied back to the module.
-- [SMT_ASSIST.md](SMT_ASSIST.md): what cvc5 does for the pipeline (the
-  obligation pre-check, sharing in the printer, the solver-informed
-  tactics), and what the synthesis routes were measured against.
-- [`tests/limits/`](../../tests/limits/README.md): the limit matrix those
+- [`TODO.md`](../../../TODO.md): what is still to do, known defects
+  included.
+- [`tests/limits/`](../../tests/limits/README.md): the limit matrix the
   routes are measured on, with its runners and baseline.
 - [`tutorials/verith.md`](../../../tutorials/verith.md): a walk through
   every route on worked examples.

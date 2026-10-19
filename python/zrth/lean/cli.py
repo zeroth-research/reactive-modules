@@ -555,8 +555,8 @@ def parse_args(argv: "list[str] | None" = None, *,
 def _check_blanks(parser: argparse.ArgumentParser, args) -> None:
     """An option given an empty string is the error, not "not passed".
 
-    `--proveit-dir "$LTL"` with `LTL` unset -- which is how the
-    BENCHMARKS.md invocations are written -- reads as "not passed" to every
+    `--proveit-dir "$LTL"` with `LTL` unset -- which is how a copied
+    benchmark command reads -- reads as "not passed" to every
     truthiness test below.  The route behind the flag would be dropped and
     the run would *succeed*, having quietly generated an ordinary project
     instead.  No option here has a meaningful empty value.
