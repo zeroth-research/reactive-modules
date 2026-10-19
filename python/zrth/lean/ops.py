@@ -5,9 +5,9 @@ and four backends turn that name into something they can emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
-| `mat`    | `native._translate_terms`        | args -> Lean expr (on `Mat`) |
-| `scalar` | `native._translate_terms_scalar` | args -> Lean expr (bare)     |
-| `box`    | `circ._translate_terms_circ`     | a `Box` combinator name      |
+| `mat`    | `native.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
+| `scalar` | `native.translate_terms_scalar` | args -> Lean expr (bare)     |
+| `box`    | `circ.translate_terms_circ`     | a `Box` combinator name      |
 | `smt`    | `smt_encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
 
 These were six dicts and an if/elif chain — one per backend, doubled for the
@@ -88,7 +88,7 @@ class Inline:
 class ViaMat:
     """Scalar column only: there is no scalar form, the matrix one serves.
 
-    `_translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
+    `translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
     and projects `0 0` off the result, which is right whenever the matrix
     form is elementwise or folds to a 1x1.
     """
@@ -381,7 +381,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             theories,
-            mat=Inline("literals._constant_expr"),
+            mat=Inline("literals.constant_expr"),
             scalar=Inline("native._constant_expr_scalar"),
             box=Inline("circ: @Box.const"),
             smt=_smt_const,
@@ -779,7 +779,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Tensor",
         NONE,
-        mat=Inline("literals._constant_expr"),
+        mat=Inline("literals.constant_expr"),
         scalar=Inline("native._constant_expr_scalar"),
         box=Inline("circ: @Box.const"),
         smt=_smt_tensor,

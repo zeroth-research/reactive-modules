@@ -174,13 +174,13 @@ def test_codegen_guard_still_states_the_one_index_contract():
     Kept so the contract is stated where the Lean is emitted: both variants
     produce a `Mat _ 1 1`, so a wider wire cannot be served.
     """
-    from zrth.lean.native import _check_argmax_output
+    from zrth.lean.native import check_argmax_output
 
-    _check_argmax_output([1, 1])  # the only shape argmax can fill
-    _check_argmax_output(None)  # opt out
+    check_argmax_output([1, 1])  # the only shape argmax can fill
+    check_argmax_output(None)  # opt out
     for bad in ([1, 4], [4, 1], [3, 4]):
         with pytest.raises(ValueError, match="single flat index"):
-            _check_argmax_output(bad)
+            check_argmax_output(bad)
 
 
 def test_scalar_argmax_variants_are_named_per_element_type():
@@ -189,16 +189,16 @@ def test_scalar_argmax_variants_are_named_per_element_type():
     Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
     theorems into one file for an Int and a Real Argmax of equal width.
     """
-    from zrth.lean.native import _argmax_scalar_name
+    from zrth.lean.native import argmax_scalar_name
 
     names = {
-        _argmax_scalar_name(ety, 4)
+        argmax_scalar_name(ety, 4)
         for ety in ("Int", "Real", "Bool", "(BitVec 8)")
     }
     assert len(names) == 4, f"variant names collide: {sorted(names)}"
-    assert _argmax_scalar_name("Int", 4) != _argmax_scalar_name("Real", 4)
+    assert argmax_scalar_name("Int", 4) != argmax_scalar_name("Real", 4)
     # widths stay distinguished too
-    assert _argmax_scalar_name("Int", 4) != _argmax_scalar_name("Int", 8)
+    assert argmax_scalar_name("Int", 4) != argmax_scalar_name("Int", 8)
     # and the names are Lean identifiers
     assert all(n.replace("_", "").isalnum() for n in names), sorted(names)
 

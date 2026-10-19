@@ -9,10 +9,10 @@ conjunction over them (`TransRel` / `INIT`).
 They vary on three axes, and this module is parameterised on exactly those:
 
 1. **type builder** — what a state value is: a product of `Mat`s
-   (`_product_type`), one component per *element* (`_product_type_scalar`),
+   (`product_type`), one component per *element* (`product_type_scalar`),
    or the NA model's per-slot element type.  :attr:`RelSyntax.slot_ty` is the
    half of it a slot needs.
-2. **body producer** — `_translate_terms`, `_translate_terms_scalar`, or
+2. **body producer** — `translate_terms_lean`, `translate_terms_scalar`, or
    `smt_encode` + `smt_to_lean_bool`.  This is not a parameter: each emitter
    hands :func:`emit_rel_block` the body text it produced.  That is also what
    lets the three disagree about what a *slot is* — one per wire for

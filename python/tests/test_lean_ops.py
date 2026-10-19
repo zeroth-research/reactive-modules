@@ -124,7 +124,7 @@ def test_every_cell_is_an_emitter_or_says_why(column):
 def test_the_scalar_column_falls_back_only_where_there_is_something_to_fall_back_to():
     """`ViaMat` is a claim about the matrix cell, and `Unsupported` too.
 
-    `_translate_terms_scalar` reaches for the matrix form whenever the
+    `translate_terms_scalar` reaches for the matrix form whenever the
     scalar cell is not an emitter, so a scalar cell that gives up while the
     matrix one does not would be a lie: the matrix form would be used
     anyway. Either the matrix column has an emitter (`ViaMat`) or neither

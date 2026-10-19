@@ -4,7 +4,7 @@ copy template library files, and generate a diagram Lean file.
 """
 
 from zrth.lean.errors import Refused
-from zrth.lean.sorts import _flat_element_type, wire_shape
+from zrth.lean.sorts import flat_element_type, wire_shape
 from zrth.lean.context import LeanContext
 
 from zrth.lean.cert import (
@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING
 
 from zrth import Module, Wire, X
 from .native import (
-    _product_type,
-    _build_tuple,
+    product_type,
+    build_tuple,
 )
 
 from .translate import ModuleToLean4
@@ -390,7 +390,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
 
     # parseExtl
     lines.append(
-        f"def parseExtl (tokens : Array String) : IO ({_product_type(extl_next)}) := do"
+        f"def parseExtl (tokens : Array String) : IO ({product_type(extl_next)}) := do"
     )
     lines.append(
         f'  if tokens.size < {total_extl_tokens} then throw (.userError "Expected {total_extl_tokens} input values")'
@@ -399,7 +399,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     offset = 0
     parse_vars: list[str] = []
     for i, w in enumerate(extl_next):
-        elem = _flat_element_type(w)
+        elem = flat_element_type(w)
         var = f"e{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
         # Every wire is a matrix here, so parse m*n tokens into an array of
@@ -417,28 +417,28 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         offset += m * n
         parse_vars.append(var)
 
-    # `_product_type` orders components as the wires are declared, and
-    # `_accessor` projects them the same way, so the literal follows suit.
+    # `product_type` orders components as the wires are declared, and
+    # `product_accessor` projects them the same way, so the literal follows suit.
     # (An earlier right-nested `ValTuple` encoding needed the reverse.)
-    lines.append(f"  pure {_build_tuple(parse_vars)}")
+    lines.append(f"  pure {build_tuple(parse_vars)}")
     lines.append("")
 
     # showCtrl
-    lines.append(f"def showCtrl (v : {_product_type(ctrl_next)}) : String :=")
+    lines.append(f"def showCtrl (v : {product_type(ctrl_next)}) : String :=")
     # Destructure
     destr_vars: list[str] = []
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
     # Same order here: v{i} must bind ctrl_next[i], since the formatters
     # below pick showBool/toString/showMat from that wire's type.
-    lines.append(f"  let {_build_tuple(destr_vars)} := v")
+    lines.append(f"  let {build_tuple(destr_vars)} := v")
 
     # Format each variable. `dtype_to_lean_type` always returns a `Mat ...`
     # here, so dispatch on the element sort instead: comparing that string
     # against "Bool"/"Int" never matched and pinned every element to Int.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        elem = _flat_element_type(w)
+        elem = flat_element_type(w)
         var = f"v{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
         show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")

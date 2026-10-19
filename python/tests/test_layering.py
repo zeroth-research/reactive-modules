@@ -3,9 +3,9 @@
 A route is a module of `zrth.lean.magic` that defines a `TA2Magic`: what two
 routes share lives under `zrth.lean.smt` or in `smt_synth`, never in one of
 them. And a name with a leading underscore is its module's own: no module of
-the SMT layer imports one from another, nor reads one off an imported
-module. The Lean code generators are not held to the second rule yet
-(review item CG-9).
+`zrth.lean` imports one from another, nor reads one off an imported module.
+A name another module needs is part of its module's interface, and is
+spelled without the underscore.
 """
 
 from __future__ import annotations
@@ -18,14 +18,9 @@ import pytest
 LEAN = Path(__file__).parent.parent / "zrth" / "lean"
 MAGIC = LEAN / "magic"
 
-# The SMT layer: every module a decision procedure is built from.
-SMT_LAYER = sorted(
-    [*MAGIC.glob("*.py"), *(LEAN / "smt").glob("*.py"),
-     *(LEAN / "infer_route").glob("*.py")]
-    + [LEAN / f"{name}.py" for name in (
-        "houdini_solver", "smt_encode", "smt_module",
-        "smt_prompt", "smt_query", "smt_synth")]
-)
+# Every module of the package: the SMT layer the routes are built from, and
+# the Lean code generators.
+PACKAGE = sorted(LEAN.rglob("*.py"))
 
 
 def _tree(path: Path) -> ast.Module:
@@ -111,7 +106,7 @@ def test_no_route_row_imports_another(path):
     assert not bad, "\n".join(bad)
 
 
-@pytest.mark.parametrize("path", SMT_LAYER, ids=_name)
+@pytest.mark.parametrize("path", PACKAGE, ids=_name)
 def test_no_private_name_crosses_a_module(path):
     bad = []
     imported = set()

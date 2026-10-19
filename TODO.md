@@ -78,9 +78,6 @@ Paths are relative to `python/zrth/lean/`.
   states that admits, so a later `--infer ai-cegis --safety` without it
   resumes it as the whole certificate, and fails `init_inv` instead of
   asking the model.
-- **No layering test for Lean codegen.** `tests/test_layering.py` checks
-  that private names do not cross modules in the SMT layer; nothing checks
-  it for codegen.
 - **Not every SMT user is on `smt/`.** `sygus._pre`/`_trans` and their
   existential relations are not on the obligation builder
   `smt/obligations.py`; smt-linear uses `_bound_vars`/`_fresh_consts`

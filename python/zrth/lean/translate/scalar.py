@@ -1,24 +1,24 @@
 """Scalar encoding translation."""
 
 from zrth.lean.native import (
-    _elem_ty_slug,
-    _product_type,
-    _product_type_scalar,
-    _translate_terms_scalar,
-    _build_tuple,
-    _argmax_scalar_name,
+    elem_ty_slug,
+    product_type,
+    product_type_scalar,
+    translate_terms_scalar,
+    build_tuple,
+    argmax_scalar_name,
 )
 from zrth.lean.sorts import (
     dtype_to_lean_type,
-    _flat_element_type,
+    flat_element_type,
     itype_name,
     wire_shape,
 )
-from zrth.lean.layout import _flat_size, _mat_from_scalars, flat_layout
+from zrth.lean.layout import flat_size, mat_from_scalars, flat_layout
 from zrth.lean.context import LeanContext
 from zrth.lean.translate._shared import (
-    _prepend_recon,
-    _scalar_bindings_with_recon,
+    prepend_recon,
+    scalar_bindings_with_recon,
     has_block,
     scalar_eq_name,
 )
@@ -26,14 +26,14 @@ from zrth import Wire
 
 
 def _scalar_dom(param: str, wires: "list[Wire]") -> str:
-    ty = _product_type_scalar(wires) if wires else "Unit"
+    ty = product_type_scalar(wires) if wires else "Unit"
     return f"({param}: {ty})"
 
 
 def _unpack_body(param: str, wires: "list[Wire]") -> str:
     """Body of ``unpack_<param>``: extract all flat elements from the wire."""
     layout = flat_layout(wires)
-    return _build_tuple([layout.wire_accessor(param, s) for s in layout.slots])
+    return build_tuple([layout.wire_accessor(param, s) for s in layout.slots])
 
 
 def _pack_body(var: str, wires: "list[Wire]") -> str:
@@ -50,13 +50,13 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
     for w in wires:
         offset, size = layout.span(w)
         parts.append(
-            _mat_from_scalars(
+            mat_from_scalars(
                 flat_accrs[offset : offset + size],
                 wire_shape(w),
-                _flat_element_type(w),
+                flat_element_type(w),
             )
         )
-    return _build_tuple(parts)
+    return build_tuple(parts)
 
 
 def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
@@ -67,8 +67,8 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
         if itype_name(term.itype) != "Argmax":
             continue
         in_wire = term.read[0]
-        n = _flat_size(in_wire)
-        ety = _flat_element_type(in_wire)
+        n = flat_size(in_wire)
+        ety = flat_element_type(in_wire)
         key = (ety, n)
         if key not in seen:
             seen.add(key)
@@ -83,15 +83,15 @@ def _recon_lemma_lines(w) -> "list[str]":
     term needs the whole matrix (`matVecAffine`, say). In `update_scalar_eq`
     that reconstruction sits inside the argument, so the two sides differ by
     exactly `pack (unpack ctrl)` vs `ctrl` and `simp` cannot close the gap
-    without this. Built by the same `_mat_from_scalars` as the reconstruction
+    without this. Built by the same `mat_from_scalars` as the reconstruction
     itself, so the shapes match syntactically.
     """
     shape = wire_shape(w)
-    elem = _flat_element_type(w)
+    elem = flat_element_type(w)
     m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
-    lhs = _mat_from_scalars(slots, shape, elem)
-    name = f"recon_{_elem_ty_slug(elem)}_{m}_{n}"
+    lhs = mat_from_scalars(slots, shape, elem)
+    name = f"recon_{elem_ty_slug(elem)}_{m}_{n}"
     return [
         "set_option maxHeartbeats 2000000 in",
         "set_option maxRecDepth 100000 in",
@@ -112,7 +112,7 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     seed or a non-strict comparison here would either break that proof or,
     worse, keep it provable against an equally wrong matrix definition.
     """
-    name = _argmax_scalar_name(elem_ty, n)
+    name = argmax_scalar_name(elem_ty, n)
     noncomp = "noncomputable " if elem_ty == "Real" else ""
     params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
     body = [f"  let b0 : Nat × {elem_ty} := (0, s0)"]
@@ -141,7 +141,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     """
     atom = ctx.atom
     noncomp = "noncomputable " if ctx.uses_real else ""
-    cod = _product_type_scalar(ctx.ctrl_next)
+    cod = product_type_scalar(ctx.ctrl_next)
 
     all_terms = list(atom.init) + list(atom.update)
     argmax_variants = _collect_argmax_variants(all_terms)
@@ -156,9 +156,9 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     seen_recon: set[tuple] = set()
     for _, wires in input_groups:
         for w in wires:
-            if _flat_size(w) == 1:
+            if flat_size(w) == 1:
                 continue
-            key = (wire_shape(w), _flat_element_type(w))
+            key = (wire_shape(w), flat_element_type(w))
             if key in seen_recon:
                 continue
             seen_recon.add(key)
@@ -172,8 +172,8 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     for param, wires in input_groups:
         if not wires:
             continue
-        mat_ty = _product_type(wires)
-        scalar_ty = _product_type_scalar(wires)
+        mat_ty = product_type(wires)
+        scalar_ty = product_type_scalar(wires)
         body = _unpack_body(param, wires)
         lines.append(
             f"@[simp] {noncomp}def unpack_{param} ({param} : {mat_ty}) : {scalar_ty} :="
@@ -183,16 +183,16 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
 
     # 2. Pack function
     pack_body = _pack_body("r", ctx.ctrl_next)
-    out_mat_ty = _product_type(ctx.ctrl_next)
+    out_mat_ty = product_type(ctx.ctrl_next)
     lines.append(f"@[simp] {noncomp}def pack (r : {cod}) : {out_mat_ty} :=")
     lines.append(f"  {pack_body}")
     lines.append("")
 
     # 3. Scalar init / update
-    init_recon, init_bindings, init_flat = _scalar_bindings_with_recon(
+    init_recon, init_bindings, init_flat = scalar_bindings_with_recon(
         [("extl_n", ctx.extl_next)]
     )
-    init_body = _translate_terms_scalar(
+    init_body = translate_terms_scalar(
         atom.init,
         init_bindings,
         ctx.ctrl_next,
@@ -202,17 +202,17 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     lines.append(
         f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
     )
-    lines.append(_prepend_recon(init_recon, init_body))
+    lines.append(prepend_recon(init_recon, init_body))
     lines.append("")
 
-    update_recon, update_bindings_scalar, update_flat = _scalar_bindings_with_recon(
+    update_recon, update_bindings_scalar, update_flat = scalar_bindings_with_recon(
         [
             ("ctrl", ctx.ctrl_latched),
             ("extl_l", ctx.extl_latched),
             ("extl_n", ctx.extl_next),
         ]
     )
-    update_body = _translate_terms_scalar(
+    update_body = translate_terms_scalar(
         atom.update,
         update_bindings_scalar,
         ctx.ctrl_next,
@@ -221,7 +221,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     )
     upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
-    lines.append(_prepend_recon(update_recon, update_body))
+    lines.append(prepend_recon(update_recon, update_body))
     lines.append("")
 
     lines.append("end Scalar")
@@ -242,7 +242,7 @@ def to_lean_scalar_equiv(
         return f"(Scalar.unpack_{param} {param})" if wires else param
 
     argmax_eq_lemmas = [
-        f"{_argmax_scalar_name(ety, n)}_eq"
+        f"{argmax_scalar_name(ety, n)}_eq"
         for ety, n in argmax_variants
     ]
 
@@ -301,7 +301,7 @@ def to_lean_scalar_equiv(
     ]
 
     if has_block(ctx, "init"):
-        init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
+        init_binder = f"(extl_n : {product_type(ctx.extl_next)})"
         extl_n_arg = _call_arg("extl_n", ctx.extl_next)
         extras = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
         lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
@@ -309,7 +309,7 @@ def to_lean_scalar_equiv(
 
     if has_block(ctx, "update"):
         binders = [
-            f"({p} : {_product_type(w) if w else 'Unit'})" for p, w in input_groups
+            f"({p} : {product_type(w) if w else 'Unit'})" for p, w in input_groups
         ]
         scalar_args = [_call_arg(p, w) for p, w in input_groups]
         extras = [f"Scalar.unpack_{p}" for p, w in input_groups if w]

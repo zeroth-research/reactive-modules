@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from zrth import Wire
-from .sorts import _flat_element_type, MatShape, wire_shape
+from .sorts import flat_element_type, MatShape, wire_shape
 
 
-def _accessor(pos: int, total: int) -> str:
+def product_accessor(pos: int, total: int) -> str:
     """Accessor for position `pos` in a product (tuple) of `total` elements.
 
     total=1: '' (value itself)
@@ -25,16 +25,16 @@ def _accessor(pos: int, total: int) -> str:
     return ".2" * pos + ".1"
 
 
-def _flat_indices(wire: Wire) -> list[tuple[int, int]]:
+def flat_indices(wire: Wire) -> list[tuple[int, int]]:
     """Row-major (row, col) indices for all elements of the wire: for an
     m x n wire, `(i, j)` for `i` in `range(m)`, `j` in `range(n)`."""
     shape = wire_shape(wire)
     return [(i, j) for i in range(shape.m) for j in range(shape.n)]
 
 
-def _flat_size(wire: Wire) -> int:
+def flat_size(wire: Wire) -> int:
     """Total number of scalar elements in the wire."""
-    return len(_flat_indices(wire))
+    return len(flat_indices(wire))
 
 
 class Slot(NamedTuple):
@@ -95,7 +95,7 @@ class FlatLayout:
     def span(self, wire: Wire) -> "tuple[int, int]":
         """`(offset, size)`: where `wire`'s elements sit in the flat tuple."""
         i = self._position(wire)
-        return self._offsets[i], _flat_size(wire)
+        return self._offsets[i], flat_size(wire)
 
     def slots_of(self, wire: Wire) -> "tuple[Slot, ...]":
         """`wire`'s own slots, in flat order."""
@@ -104,7 +104,7 @@ class FlatLayout:
 
     def flat_accessors(self, base: str) -> "list[str]":
         """Read every slot out of a flat product named `base`: `base.2.1`, …"""
-        return [f"{base}{_accessor(k, self.total)}" for k in range(self.total)]
+        return [f"{base}{product_accessor(k, self.total)}" for k in range(self.total)]
 
     def wire_accessor(self, base: str, slot: Slot) -> str:
         """Read one slot out of a per-*wire* product of `Mat`s named `base`.
@@ -113,12 +113,12 @@ class FlatLayout:
         functional state, so the element is a projection to the wire followed
         by its `row col` application.
         """
-        acc = _accessor(slot.wire, len(self.wires))
+        acc = product_accessor(slot.wire, len(self.wires))
         return f"{base}{acc} {slot.row} {slot.col}"
 
     def element_types(self) -> "list[str]":
         """The Lean element type of each slot, in flat order."""
-        return [_flat_element_type(self.wires[s.wire]) for s in self.slots]
+        return [flat_element_type(self.wires[s.wire]) for s in self.slots]
 
 
 def flat_layout(wires: "list[Wire]") -> FlatLayout:
@@ -130,11 +130,11 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
     offsets: list[int] = []
     for i, w in enumerate(wires):
         offsets.append(len(slots))
-        slots.extend(Slot(i, r, c) for r, c in _flat_indices(w))
+        slots.extend(Slot(i, r, c) for r, c in flat_indices(w))
     return FlatLayout(tuple(wires), tuple(slots), tuple(offsets))
 
 
-def _mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
+def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
     1x1:       ``(fun _ _ => slots[0])``
@@ -146,7 +146,7 @@ def _mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     after `fin_cases`; a `Fin.cons` chain does not reduce there (a numeral
     index is not syntactically `Fin.succ`, and neither `Fin.cons_succ`,
     `Fin.cons` unfolding nor the `Matrix.cons_val_*` set rewrites it), while
-    a `match` does. It is also the form `_tensor_to_lean_def` already emits
+    a `match` does. It is also the form `tensor_to_lean_def` already emits
     for constants, whose side of those goals always reduced.
     """
     if shape.is_scalar:
@@ -157,6 +157,6 @@ def _mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     arms = " ".join(
         f"| {i}, {j} => {slots[i * n + j]}" for i in range(m) for j in range(n)
     )
-    # Catch-all for the same reason as `_tensor_to_lean_def`: Lean cannot see
+    # Catch-all for the same reason as `tensor_to_lean_def`: Lean cannot see
     # that `0..k-1` exhausts `Fin k` for larger k.
     return f"(fun i j => match i, j with {arms} | _, _ => {slots[0]})"

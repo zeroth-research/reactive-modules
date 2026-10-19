@@ -32,7 +32,7 @@ same body over honest scalar binders, tied to the model by `rfl`.
 The cascade is what it is because `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
-simp set because `_translate_terms_scalar` does not scalarise a `Linear` --
+simp set because `translate_terms_scalar` does not scalarise a `Linear` --
 it rebuilds the `Mat` and calls `matVecAffine`.
 """
 
@@ -40,7 +40,7 @@ import re
 
 from zrth.lean.layout import flat_layout
 from zrth.lean.context import LeanContext
-from zrth.lean.native import _product_type, _product_type_scalar
+from zrth.lean.native import product_type, product_type_scalar
 from zrth.lean.lean_names import (
     DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
 )
@@ -139,9 +139,9 @@ def atom_to_lean_fbk_bridge(
     args = " ".join(f"x{k}" for k in range(n))
     flat = ", ".join(f"x{k}" for k in range(n))
     slots_of_state = " ".join(f"(Definition.var_{k} state)" for k in range(n))
-    ctrl_native = _product_type(ctx.ctrl_next)
+    ctrl_native = product_type(ctx.ctrl_next)
     extl_native = (
-        f"({_product_type(ctx.extl_latched)}) × ({_product_type(ctx.extl_next)})"
+        f"({product_type(ctx.extl_latched)}) × ({product_type(ctx.extl_next)})"
     )
     # The transition reads no input -- `check_na_supported` refuses a module
     # whose does -- so `bridge_k` quantifies over them and `Scalar.update`
@@ -149,8 +149,8 @@ def atom_to_lean_fbk_bridge(
     # invented. With no inputs at all both sides are `Unit`, spelled `()`.
     if ctx.extl_next:
         extl_binders = (
-            f" (el : {_product_type_scalar(ctx.extl_latched)})"
-            f" (en : {_product_type_scalar(ctx.extl_next)})"
+            f" (el : {product_type_scalar(ctx.extl_latched)})"
+            f" (en : {product_type_scalar(ctx.extl_next)})"
         )
         extl_args = "el en"
     else:
@@ -224,7 +224,7 @@ def atom_to_lean_fbk_bridge(
         "-- ── semantic: two independent translators agree ──────────────────",
         "--",
         "-- The left side came through `smt_encode` and cvc5, the right",
-        "-- through `_translate_terms_scalar`. `rfl` closes the easy ones and",
+        "-- through `translate_terms_scalar`. `rfl` closes the easy ones and",
         "-- nothing else; the rest is what this file exists for.",
         "",
     ]

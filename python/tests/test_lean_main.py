@@ -74,7 +74,7 @@ def test_main_threads_the_previous_external_input(make):
 
 
 # ──────────────────────────────────────────────────────────────
-# Component order: the literals must match `_product_type`
+# Component order: the literals must match `product_type`
 # ──────────────────────────────────────────────────────────────
 
 
@@ -93,7 +93,7 @@ def _heterogeneous_module():
 def test_show_ctrl_destructures_in_declaration_order():
     """`v{i}` must bind ctrl[i]: the formatter per slot is chosen from its type.
 
-    `_product_type` and `_accessor` both order components as declared, but
+    `product_type` and `product_accessor` both order components as declared, but
     the pattern was built reversed, so every slot got the wrong formatter.
     """
     main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
@@ -118,7 +118,7 @@ def test_parse_extl_builds_the_tuple_in_declaration_order():
 
 
 def test_single_component_needs_no_tuple():
-    """One wire: the value itself, matching `_accessor`'s total==1 case."""
+    """One wire: the value itself, matching `product_accessor`'s total==1 case."""
     main = generate_main_lean("Rea", _module_without_extl(), "Rea")
     assert "let v0 := v" in main
     assert "let (v0) := v" not in main

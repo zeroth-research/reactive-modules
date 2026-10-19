@@ -2,8 +2,8 @@
 
 Both are the skeleton in `_skeleton.py` — a body def, a relation and a
 conjunction per slot — instantiated on the three axes it is parameterised on:
-the type builder (`_product_type` vs `_product_type_scalar`), the body
-producer (`_translate_terms` vs `_translate_terms_scalar`) and the projection
+the type builder (`product_type` vs `product_type_scalar`), the body
+producer (`translate_terms_lean` vs `translate_terms_scalar`) and the projection
 (a product accessor vs a re-tupled slice of the flattened element tuple).
 
 What the two do *not* share is the closing theorem. `Rel` relates its
@@ -16,22 +16,22 @@ types differ by.
 from dataclasses import dataclass
 
 from zrth.lean.native import (
-    _product_type,
-    _product_type_scalar,
-    _translate_terms,
-    _translate_terms_scalar,
-    _reachable_terms,
+    product_type,
+    product_type_scalar,
+    translate_terms_lean,
+    translate_terms_scalar,
+    reachable_terms,
 )
 from zrth.lean.sorts import dtype_to_lean_type
-from zrth.lean.layout import _accessor, flat_layout
-from zrth.lean.context import LeanContext, _bind_wires
+from zrth.lean.layout import product_accessor, flat_layout
+from zrth.lean.context import LeanContext, bind_wires
 from zrth.lean.translate._shared import (
     has_block,
     scalar_eq_name,
-    _scalar_bindings_with_recon,
-    _prepend_recon,
-    _flat_slice,
-    _effect_type,
+    scalar_bindings_with_recon,
+    prepend_recon,
+    flat_slice,
+    effect_type,
 )
 from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
@@ -52,7 +52,7 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
     """The binders of a relational encoding, in one type builder.
 
     `ty` is the only thing the matrix and scalar domains disagree about here:
-    `_product_type` gives each wire its own `Mat`, `_product_type_scalar` one
+    `product_type` gives each wire its own `Mat`, `product_type_scalar` one
     component per element. Both answer "Unit" for an empty group, so a module
     with no external inputs still gets the binder written out rather than
     dropped — the call sites are built from the same lists.
@@ -216,7 +216,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
     noncomp = "noncomputable " if ctx.uses_real else ""
 
     n_ctrl = len(ctx.ctrl_next)
-    dom = _domain(ctx, _product_type)
+    dom = _domain(ctx, product_type)
 
     syn = RelSyntax(
         body_decl=f"@[simp] {noncomp}def",
@@ -225,22 +225,22 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
         eq="=",
         conj="∧",
         slot_ty=lambda i: dtype_to_lean_type(ctx.ctrl_next[i]),
-        project=lambda e, i: f"{e}{_accessor(i, n_ctrl)}",
+        project=lambda e, i: f"{e}{product_accessor(i, n_ctrl)}",
     )
 
-    update_bindings = _bind_wires(
+    update_bindings = bind_wires(
         [
             ("ctrl", ctx.ctrl_latched),
             ("extl_l", ctx.extl_latched),
             ("extl_n", ctx.extl_next),
         ]
     )
-    init_bindings = _bind_wires([("extl_n", ctx.extl_next)])
+    init_bindings = bind_wires([("extl_n", ctx.extl_next)])
 
     def _bodies(terms, bindings) -> "list[str]":
         return [
-            _translate_terms(
-                _reachable_terms(terms, [w]), bindings, [w], ctx.constants
+            translate_terms_lean(
+                reachable_terms(terms, [w]), bindings, [w], ctx.constants
             )
             for w in ctx.ctrl_next
         ]
@@ -276,7 +276,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     # `i`'s data sits at its own span in it, not at position `i`.
     layout = flat_layout(ctx.ctrl_next)
     n_ctrl = len(ctx.ctrl_next)
-    dom = _domain(ctx, _product_type_scalar)
+    dom = _domain(ctx, product_type_scalar)
 
     syn = RelSyntax(
         body_decl=f"@[simp] {noncomp}def",
@@ -284,28 +284,28 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         prop="Prop",
         eq="=",
         conj="∧",
-        slot_ty=lambda i: _effect_type(ctx.ctrl_next[i]),
-        project=lambda e, i: _flat_slice(e, layout, ctx.ctrl_next[i]),
+        slot_ty=lambda i: effect_type(ctx.ctrl_next[i]),
+        project=lambda e, i: flat_slice(e, layout, ctx.ctrl_next[i]),
         eq_simp=("Fin.cons_zero", "Fin.cons_succ"),
     )
 
-    update_recon, update_bindings, update_flat = _scalar_bindings_with_recon(
+    update_recon, update_bindings, update_flat = scalar_bindings_with_recon(
         [
             ("ctrl", ctx.ctrl_latched),
             ("extl_l", ctx.extl_latched),
             ("extl_n", ctx.extl_next),
         ]
     )
-    init_recon, init_bindings, init_flat = _scalar_bindings_with_recon(
+    init_recon, init_bindings, init_flat = scalar_bindings_with_recon(
         [("extl_n", ctx.extl_next)]
     )
 
     def _bodies(terms, recon, bindings, flat) -> "list[str]":
         return [
-            _prepend_recon(
+            prepend_recon(
                 recon,
-                _translate_terms_scalar(
-                    _reachable_terms(terms, [w]),
+                translate_terms_scalar(
+                    reachable_terms(terms, [w]),
                     bindings,
                     [w],
                     ctx.constants,
@@ -319,7 +319,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
 
     # The matrix domain of the same module: what the two bridging theorems
     # quantify over, since they state the scalar relation in matrix terms.
-    mat = _domain(ctx, _product_type)
+    mat = _domain(ctx, product_type)
 
     has_update = has_block(ctx, "update")
     has_init = has_block(ctx, "init")
@@ -376,7 +376,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
 
         lines += _pack_bridge_theorem(
             "TransRel_func_eq",
-            f"(ctrl ctrl' : {_product_type(ctx.ctrl_latched)}) {mat.extl_binders}",
+            f"(ctrl ctrl' : {product_type(ctx.ctrl_latched)}) {mat.extl_binders}",
             f"ctrl ctrl' {mat.extl_args}",
             f"TransRel {old_unpack} {new_unpack} {extl_unpacks}",
             f"ctrl' = update ctrl {mat.extl_args}",

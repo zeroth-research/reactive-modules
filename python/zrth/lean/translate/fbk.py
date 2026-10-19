@@ -129,10 +129,10 @@ discover.
 import re
 from typing import NamedTuple
 
-from zrth.lean.sorts import _flat_element_type
+from zrth.lean.sorts import flat_element_type
 from zrth.lean.layout import flat_layout
 from zrth.lean.context import LeanContext
-from zrth.lean.native import _reachable_terms
+from zrth.lean.native import reachable_terms
 from zrth.lean.translate._shared import has_block
 from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
@@ -202,7 +202,7 @@ def check_na_shape(ctx: LeanContext) -> None:
     if not ctx.ctrl_next:
         raise NAUnsupported("the module has no controlled state to encode")
 
-    elem_types = {_flat_element_type(w) for w in ctx.ctrl_next + ctx.extl_next}
+    elem_types = {flat_element_type(w) for w in ctx.ctrl_next + ctx.extl_next}
     bad = elem_types - NA_ELEMENT_TYPES
     if bad:
         raise NAUnsupported(
@@ -223,7 +223,7 @@ def check_na_shape(ctx: LeanContext) -> None:
         loose = [
             f"#{i}"
             for i, w in enumerate(ctx.ctrl_next)
-            if not _reachable_terms(terms, [w])
+            if not reachable_terms(terms, [w])
         ]
         if loose:
             raise NAUnsupported(
@@ -291,7 +291,7 @@ def check_na_supported(
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _slot_accessors(
+def slot_accessors(
     wires,
     binder: str = "state",
     prefix: str = "s",
@@ -492,12 +492,12 @@ def _slot_bodies(
     # in this encoding, and what the caller does about one depends on where
     # it turned up. `_free_init_slots` reads the markers back.
     acc_upd = {
-        **_slot_accessors(ctx.ctrl_next),
+        **slot_accessors(ctx.ctrl_next),
         **_input_markers(ctx.extl_next, "el"),
         **_input_markers(ctx.extl_next, "en"),
     }
     acc_ini = {
-        **_slot_accessors(ctx.ctrl_next),
+        **slot_accessors(ctx.ctrl_next),
         **_input_markers(ctx.extl_next, "en"),
     }
     update, init = slot_terms(encoding_of(encoding or ctx.module),

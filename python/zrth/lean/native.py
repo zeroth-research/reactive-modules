@@ -10,20 +10,20 @@ IType operation to its Lean equivalent.
 from __future__ import annotations
 from zrth.lean.sorts import (
     dtype_shape,
-    _is_scalar_shape,
+    is_scalar_shape,
     itype_name,
     is_constant_name,
     dtype_to_lean_type,
-    _is_scalar_wire,
-    _flat_element_type,
+    is_scalar_wire,
+    flat_element_type,
 )
-from zrth.lean.layout import _flat_indices, flat_layout
+from zrth.lean.layout import flat_indices, flat_layout
 from zrth.lean.literals import (
     ConstantRegistry,
-    _constant_expr,
+    constant_expr,
     linear_list_literals,
-    _tensor_to_lean_scalar,
-    _tensor_to_lean_inline,
+    tensor_to_lean_scalar,
+    tensor_to_lean_inline,
 )
 from zrth.lean.ops import lean_gap, mat_emitter, scalar_emitter
 
@@ -49,7 +49,7 @@ def lean_gaps(ctx) -> list[str]:
         # Only what the next state is built from, which is what the encoders
         # walk: a term nothing reads is pruned before it is ever emitted, and
         # refusing a module over one would refuse a module that generates.
-        terms = _reachable_terms(getattr(ctx.atom, block), ctx.ctrl_next)
+        terms = reachable_terms(getattr(ctx.atom, block), ctx.ctrl_next)
         for term in terms:
             name = itype_name(term.itype)
             why = None if name in seen else lean_gap(term.itype)
@@ -63,7 +63,7 @@ def lean_gaps(ctx) -> list[str]:
     return out
 
 
-def _product_type(wires: list[Wire]) -> str:
+def product_type(wires: list[Wire]) -> str:
     """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
     if not wires:
         return "Unit"
@@ -73,7 +73,7 @@ def _product_type(wires: list[Wire]) -> str:
     return " × ".join(parts)
 
 
-def _build_tuple(exprs: list[str]) -> str:
+def build_tuple(exprs: list[str]) -> str:
     """Build a tuple literal: [] -> '()', ['a'] -> 'a', ['a','b'] -> '(a, b)'."""
     if not exprs:
         return "()"
@@ -91,7 +91,7 @@ def _argmax_expr(
     row, the row-major flat index otherwise -- so the two agree wherever
     they overlap. Wrap output as `Mat Int 1 _` to match the Python IR's Int
     output type."""
-    _check_argmax_output(output_shape)
+    check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
     if len(input_shape) == 2:
@@ -101,7 +101,7 @@ def _argmax_expr(
     )
 
 
-def _check_argmax_output(output_shape: "list[int] | None") -> None:
+def check_argmax_output(output_shape: "list[int] | None") -> None:
     """Reject an Argmax output wider than the single index we can emit.
 
     Argmax follows `torch.argmax`, which returns one row-major flat index,
@@ -113,7 +113,7 @@ def _check_argmax_output(output_shape: "list[int] | None") -> None:
     """
     if output_shape is None:
         return
-    if not _is_scalar_shape(output_shape):
+    if not is_scalar_shape(output_shape):
         raise ValueError(
             f"argmax: output shape {output_shape} holds more than one element, "
             "but argmax yields a single flat index (torch.argmax semantics); "
@@ -130,12 +130,12 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
     """
     lifted = dict(wire_expr)
     for w in term.read:
-        if _is_scalar_wire(w):
+        if is_scalar_wire(w):
             # The ascription is load-bearing: `matVecAffine`'s batch
             # dimension is not determined by `fun _ _ => x`, so an
             # un-ascribed lift leaves `n` unsolved ("don't know how to
             # synthesize implicit argument `n`").
-            ty = f"Mat {_flat_element_type(w)} 1 1"
+            ty = f"Mat {flat_element_type(w)} 1 1"
             lifted[w.id] = f"((fun _ _ => {wire_expr[w.id]} : {ty}))"
     return lifted
 
@@ -157,7 +157,7 @@ def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
 
 
-def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
+def reachable_terms(terms, output_wires: "list[Wire]") -> list:
     """Return the terms backward-reachable from output_wires, in original order.
 
     Traverses the term list in reverse: a term is kept if any wire it writes
@@ -172,7 +172,7 @@ def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
     return list(reversed(selected))
 
 
-def _translate_terms(
+def translate_terms_lean(
     terms,
     input_bindings: dict[int, str],
     block_outputs: list[Wire],
@@ -181,7 +181,7 @@ def _translate_terms(
     """Compile a block of terms into a Lean function body with let-bindings.
 
     `input_bindings` maps block-input wire IDs to their Lean accessor expressions
-    (e.g. ``{w.id: "ctrl.1"}``) — pre-built by the caller via `_bind_wires`.
+    (e.g. ``{w.id: "ctrl.1"}``) — pre-built by the caller via `bind_wires`.
 
     Returns the body string (let x0 := ...; ... ; (x1, x2)). A block with no
     terms has no outputs -- an atom writes every controlled next wire in both
@@ -194,7 +194,7 @@ def _translate_terms(
         name = itype_name(term.itype)
 
         if is_constant_name(name):
-            expr = _constant_expr(term, term.write[0], constants)
+            expr = constant_expr(term, term.write[0], constants)
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
             expr = _argmax_expr(
@@ -217,7 +217,7 @@ def _translate_terms(
 
     # Build output tuple
     out_exprs = [_output_expr(wire_expr, w) for w in block_outputs]
-    result_line = f"  {_build_tuple(out_exprs)}"
+    result_line = f"  {build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
 
@@ -235,7 +235,7 @@ def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
     return wire_expr[w.id]
 
 
-def _product_type_scalar(wires: list[Wire]) -> str:
+def product_type_scalar(wires: list[Wire]) -> str:
     """Build a flat scalar product type, expanding multi-element wires.
 
     One component per slot, in slot order: the type view of the same
@@ -252,18 +252,18 @@ def _product_type_scalar(wires: list[Wire]) -> str:
 
 
 def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
-    """Like _constant_expr but returns bare scalar values (no Mat wrapper)."""
-    if _is_scalar_wire(w):
+    """Like constant_expr but returns bare scalar values (no Mat wrapper)."""
+    if is_scalar_wire(w):
         # Element type (Bool/Int/Real) is taken from the wire's dtype.
-        return _tensor_to_lean_scalar(term.itype._0, w)
+        return tensor_to_lean_scalar(term.itype._0, w)
     # Non-scalar tensor: fall back to matrix constant from registry
     name = constants.lookup(w.id)
     if name is not None:
         return name
-    return _tensor_to_lean_inline(term.itype._0, w)
+    return tensor_to_lean_inline(term.itype._0, w)
 
 
-def _argmax_scalar_name(elem_ty: str, n: int) -> str:
+def argmax_scalar_name(elem_ty: str, n: int) -> str:
     """Name of the scalar axiom for 1-d argmax over n elements of `elem_ty`.
 
     The element type belongs in the name: variants are collected per
@@ -271,17 +271,17 @@ def _argmax_scalar_name(elem_ty: str, n: int) -> str:
     `Mat Int 1 4` and one over `Mat Real 1 4` emit two definitions and two
     `_eq` theorems under one name.
     """
-    return f"argmax1d_scalar_{_elem_ty_slug(elem_ty)}_{n}"
+    return f"argmax1d_scalar_{elem_ty_slug(elem_ty)}_{n}"
 
 
-def _elem_ty_slug(elem_ty: str) -> str:
+def elem_ty_slug(elem_ty: str) -> str:
     """Lean-identifier-safe form of an element type, e.g. `(BitVec 8)` -> `bv8`."""
     if elem_ty.startswith("(BitVec "):
         return f"bv{elem_ty[len('(BitVec '):-1].strip()}"
     return elem_ty.lower()
 
 
-def _translate_terms_scalar(
+def translate_terms_scalar(
     terms,
     input_bindings: dict[int, str],
     block_outputs: list[Wire],
@@ -310,11 +310,11 @@ def _translate_terms_scalar(
             expr = _constant_expr_scalar(term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
-            _check_argmax_output(dtype_shape(write_wire.dtype))
+            check_argmax_output(dtype_shape(write_wire.dtype))
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
-                axiom_name = _argmax_scalar_name(
-                    _flat_element_type(in_wire), len(slots)
+                axiom_name = argmax_scalar_name(
+                    flat_element_type(in_wire), len(slots)
                 )
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
@@ -323,16 +323,16 @@ def _translate_terms_scalar(
                     dtype_shape(in_wire.dtype),
                     dtype_shape(write_wire.dtype),
                 )
-                expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
+                expr = f"({mat_expr} 0 0)" if is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
             # `matVecAffine` consumes a `Mat t n batch` and yields a
             # `Mat t out batch`, but a 1x1 wire is bound to a bare scalar
             # here and ascribed one. Lift the operand and take `0 0` off
             # the result, as the Argmax branch above does.
             expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
-            if _is_scalar_wire(write_wire):
+            if is_scalar_wire(write_wire):
                 expr = f"({expr} 0 0)"
-        elif _is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
+        elif is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)
         else:
@@ -347,26 +347,26 @@ def _translate_terms_scalar(
             # the bare element type, so project it — the same step the
             # `Argmax` and `Linear` branches above already take. Without it
             # a 1x1 `Min`/`Max` emitted `let x : Int := matMax …`.
-            if _is_scalar_wire(write_wire):
+            if is_scalar_wire(write_wire):
                 expr = f"({expr} 0 0)"
 
         wire_expr[write_wire.id] = var
         # Track flat scalar slots for the written wire so downstream Argmax
         # terms can reference individual elements without matrix reconstruction.
-        if _is_scalar_wire(write_wire):
+        if is_scalar_wire(write_wire):
             flat_slots[write_wire.id] = [var]
         else:
             # Parenthesised: these are spliced into an application
             # (`argmax1d_scalar_int_3 <slots>`), where a bare `x0 0 0`
             # would be read as three separate arguments.
             flat_slots[write_wire.id] = [
-                f"({var} {r} {c})" for r, c in _flat_indices(write_wire)
+                f"({var} {r} {c})" for r, c in flat_indices(write_wire)
             ]
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
     # The codomain every caller declares has one component per element
-    # (`_product_type_scalar`): an output with flat slots contributes them;
+    # (`product_type_scalar`): an output with flat slots contributes them;
     # one without (no element was bound) contributes the matrix the terms
     # built.
     out_exprs: list[str] = []
@@ -375,6 +375,6 @@ def _translate_terms_scalar(
             out_exprs.extend(flat_slots[w.id])
         else:
             out_exprs.append(_output_expr(wire_expr, w))
-    result_line = f"  {_build_tuple(out_exprs)}"
+    result_line = f"  {build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])

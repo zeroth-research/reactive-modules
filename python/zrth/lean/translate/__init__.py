@@ -8,8 +8,8 @@ from functools import cached_property
 from zrth.lean.context import LeanContext
 from zrth import Module
 
-from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
-from zrth.lean.translate.functional import atom_to_lean_functional, _constants_block
+from zrth.lean.translate._shared import scalar_bindings_with_recon, prepend_recon
+from zrth.lean.translate.functional import atom_to_lean_functional, constants_block
 from zrth.lean.translate.circ import (
     atom_to_lean_circuit as _atom_to_lean_circuit,
     to_lean_equiv_theorems as _to_lean_equiv_theorems,
@@ -62,7 +62,7 @@ class ModuleToLean4:
     def to_lean_functional(self) -> str:
         """Generate the functional init/update definitions (plus constants)."""
         return "{}\n\n{}".format(
-            _constants_block(self.ctx), self.atom_to_lean_functional()
+            constants_block(self.ctx), self.atom_to_lean_functional()
         )
 
     # ------------------------------------------------------------------

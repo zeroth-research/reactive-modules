@@ -630,7 +630,7 @@ def test_a_non_scalar_ctrl_wire_becomes_one_slot_per_element():
 
 def test_an_element_of_a_wide_wire_reads_its_own_slot():
     """The property and the transition have to agree about which slot an
-    element lives in; both take the layout from `_slot_accessors`."""
+    element lives in; both take the layout from `slot_accessors`."""
     v = Var(Int([1, 3]))
     init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
     update = [Term(LIA.Id(), [X(v)], [v])]

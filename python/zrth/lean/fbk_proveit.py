@@ -386,7 +386,7 @@ def property_to_bool_lean(
     ``translate/fbk.py`` binds it -- one slot per *element*, so a wire wider
     than 1x1 is read through the tuple selectors the property already uses
     (`((_ tuple.select 2) s0)`), resolved to the slot that element lives in.
-    Both sides get that map from `na._slot_accessors`, which is what keeps
+    Both sides get that map from `na.slot_accessors`, which is what keeps
     the property and the transition talking about the same variables.
 
     `n_state` is ignored; the layout comes from the module's own wires.
@@ -394,11 +394,11 @@ def property_to_bool_lean(
     """
     from .context import LeanContext
     from .smt_to_lean import smt_to_lean_bool
-    from .translate.fbk import _slot_accessors
+    from .translate.fbk import slot_accessors
 
     term = _parse(module, property_smt, "--safety", encoding)
     try:
-        return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
+        return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 

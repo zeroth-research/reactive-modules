@@ -6,7 +6,7 @@ from __future__ import annotations
 from fractions import Fraction
 
 from zrth import BitVec, Bool, Int, Real, Sort, Term, Wire
-from .sorts import _is_scalar_shape, _is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
+from .sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
 
 
 # ======================================================================
@@ -31,12 +31,12 @@ class ConstantRegistry:
         if not is_constant_name(itype_name(term.itype)):
             return
         out_wire = term.write[0]
-        if _is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
+        if is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
             return
         name = f"c{self._counter}"
         self._counter += 1
         self._by_id[out_wire.id] = name
-        self._defs.append(_tensor_to_lean_def(name, term.itype._0, out_wire))
+        self._defs.append(tensor_to_lean_def(name, term.itype._0, out_wire))
 
     def lookup(self, wire_id: int) -> str | None:
         return self._by_id.get(wire_id)
@@ -48,13 +48,13 @@ class ConstantRegistry:
         return list(self._defs)
 
 
-def _constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
+def constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
     # Matrix constants are interned as top-level defs; scalars are inlined as
     # a 1x1 matrix literal driven by the wire's element type (Bool/Int/Real).
     name = constants.lookup(w.id)
     if name is not None:
         return name
-    return _tensor_to_lean_inline(term.itype._0, w)
+    return tensor_to_lean_inline(term.itype._0, w)
 
 
 def decimal_fraction(value) -> Fraction:
@@ -102,7 +102,7 @@ def lean_literal(sort: Sort, value) -> str:
     raise ValueError(f"no Lean literal for a value of sort {sort}")
 
 
-def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
+def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     """
     Generate a top-level Lean definition for a constant tensor.
 
@@ -114,7 +114,7 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     """
     shape = dtype_shape(wire.dtype)
 
-    if _is_scalar_shape(shape):
+    if is_scalar_shape(shape):
         val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
@@ -148,12 +148,12 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     )
 
 
-def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
+def tensor_to_lean_inline(tensor, wire: Wire) -> str:
     """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
     return f"(fun _ _ => {lean_literal(wire.dtype, tensor.item())})"
 
 
-def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
+def tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     """Return a bare scalar literal (no Mat wrapper) for a scalar tensor."""
     return lean_literal(wire.dtype, tensor.item())
 

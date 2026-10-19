@@ -8,7 +8,7 @@ same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
 all go through `layout.flat_layout`, and this is the test that says so.
 
-The shapes here are synthetic on purpose. Mutating `_flat_indices` to
+The shapes here are synthetic on purpose. Mutating `flat_indices` to
 column-major and running the fast suite fails exactly one existing test:
 `test_lean_fbk.py::test_the_emitted_transition_agrees_with_the_module`, whose
 `_wide_matrix` fixture carries a 2x2 state for precisely this reason and
@@ -16,7 +16,7 @@ covers the NA route end to end. The other 522 pass. `m_mixed` is the only
 module where the per-wire and per-element index spaces differ at all, and no
 *scalarized* fixture holds a wire wider than a vector — where row-major and
 column-major coincide — so `Scalar.pack`/`unpack_ctrl`, the `ScalarRel`
-slices, `_mat_from_scalars`' placement and the flat product type are all
+slices, `mat_from_scalars`' placement and the flat product type are all
 blind to a transposition. Hence `[2, 3]` and `[3, 2]` below: rectangular, so
 a swapped `m`/`n` cannot hide either.
 """
@@ -27,18 +27,18 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.sorts import _flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from zrth.lean.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
 from zrth.lean.layout import (
-    _accessor,
-    _flat_indices,
-    _flat_size,
-    _mat_from_scalars,
+    product_accessor,
+    flat_indices,
+    flat_size,
+    mat_from_scalars,
     flat_layout,
 )
 from zrth.lean.context import LeanContext
-from zrth.lean.native import _product_type_scalar
-from zrth.lean.translate._shared import _scalar_bindings_with_recon
-from zrth.lean.translate.fbk import _slot_accessors
+from zrth.lean.native import product_type_scalar
+from zrth.lean.translate._shared import scalar_bindings_with_recon
+from zrth.lean.translate.fbk import slot_accessors
 from zrth.lean.translate.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
@@ -93,11 +93,11 @@ def test_spans_tile_the_flat_tuple(wires):
     covered = []
     for w in wires:
         offset, size = layout.span(w)
-        assert size == _flat_size(w)
+        assert size == flat_size(w)
         covered += list(range(offset, offset + size))
         assert layout.slots_of(w) == layout.slots[offset : offset + size]
     assert covered == list(range(layout.total))
-    assert layout.total == sum(_flat_size(w) for w in wires)
+    assert layout.total == sum(flat_size(w) for w in wires)
 
 
 def test_span_needs_the_wire_not_a_position(wires):
@@ -113,7 +113,7 @@ def test_span_needs_the_wire_not_a_position(wires):
 def test_slot_order_is_the_smt_tuple_order(wires):
     """Slot `k` of a wire is element `i*n + j` of `smt_encode`'s cvc5 tuple.
 
-    `smt_to_lean_bool` resolves the NA model's reads through `_slot_accessors`
+    `smt_to_lean_bool` resolves the NA model's reads through `slot_accessors`
     while the term it prints selects with `mat_select`, so these two orders
     being one order is what makes the model describe *this* module. Nothing
     else checks it: for a vector (`m == 1` or `n == 1`) row-major and
@@ -122,7 +122,7 @@ def test_slot_order_is_the_smt_tuple_order(wires):
     layout = flat_layout(wires)
     for w in wires:
         shape = wire_shape(w)
-        assert shape.total == _flat_size(w)
+        assert shape.total == flat_size(w)
         for k, slot in enumerate(layout.slots_of(w)):
             assert (slot.row, slot.col) == (k // shape.n, k % shape.n)
             assert slot.row * shape.n + slot.col == k
@@ -133,14 +133,14 @@ def test_slot_order_is_the_smt_tuple_order(wires):
 
 def _flat_positions(exprs, base, total):
     """Which flat component each `base.2.1`-style accessor reads."""
-    by_acc = {f"{base}{_accessor(k, total)}": k for k in range(total)}
+    by_acc = {f"{base}{product_accessor(k, total)}": k for k in range(total)}
     return [by_acc[e] for e in exprs]
 
 
 def _tuple_parts(body: str, n: int) -> "list[str]":
-    """Split `_build_tuple`'s output back into its `n` components.
+    """Split `build_tuple`'s output back into its `n` components.
 
-    `n` has to be told, not inferred: `_build_tuple` of one element is that
+    `n` has to be told, not inferred: `build_tuple` of one element is that
     element, so a single `Mat` reconstruction is indistinguishable from a
     tuple by its parentheses alone. The split is depth-aware for the same
     reason — a reconstruction's `match i, j with` arms are full of commas.
@@ -177,7 +177,7 @@ def test_pack_rebuilds_each_wire_from_its_own_span(wires):
         offset, size = layout.span(w)
         read = _flat_positions(re.findall(r"s(?:\.[12])*", part), "s", layout.total)
         # A `Mat` arm per element, in the layout's order, over this wire's
-        # span alone -- plus `_mat_from_scalars`' catch-all, which repeats the
+        # span alone -- plus `mat_from_scalars`' catch-all, which repeats the
         # first slot.
         assert read[:size] == list(range(offset, offset + size))
         assert set(read) <= set(range(offset, offset + size))
@@ -186,27 +186,27 @@ def test_pack_rebuilds_each_wire_from_its_own_span(wires):
 def test_pack_places_each_slot_at_its_own_row_and_column(wires):
     """The `| i, j => s_k` arms agree with the slot `unpack` read at `(i, j)`.
 
-    `_mat_from_scalars` indexes its slots `i*n + j` while `_flat_indices`
+    `mat_from_scalars` indexes its slots `i*n + j` while `flat_indices`
     enumerates them; this is the one place those two meet.
     """
     layout = flat_layout(wires)
     for w in wires:
         offset, _ = layout.span(w)
-        slots = [f"s{k}" for k in range(_flat_size(w))]
-        mat = _mat_from_scalars(slots, wire_shape(w), _flat_element_type(w))
+        slots = [f"s{k}" for k in range(flat_size(w))]
+        mat = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
         if placed:  # a 1x1 wire has no `match`, just `fun _ _ =>`
-            for k, (r, c) in enumerate(_flat_indices(w)):
+            for k, (r, c) in enumerate(flat_indices(w)):
                 assert placed[(r, c)] == k, f"wire at offset {offset}"
         else:
-            assert _flat_size(w) == 1
+            assert flat_size(w) == 1
 
 
 def test_scalar_bindings_hand_each_wire_its_own_slots(wires):
-    """`_scalar_bindings_with_recon`'s `flat_slots` is the same tiling."""
+    """`scalar_bindings_with_recon`'s `flat_slots` is the same tiling."""
     layout = flat_layout(wires)
-    _lets, _bindings, flat_slots = _scalar_bindings_with_recon([("ctrl", wires)])
+    _lets, _bindings, flat_slots = scalar_bindings_with_recon([("ctrl", wires)])
     for w in wires:
         offset, size = layout.span(w)
         positions = _flat_positions(flat_slots[w.id], "ctrl", layout.total)
@@ -216,12 +216,12 @@ def test_scalar_bindings_hand_each_wire_its_own_slots(wires):
 def test_na_state_variables_are_numbered_in_slot_order(wires):
     """The NA model's `var_k` and the flat tuple are the same numbering."""
     layout = flat_layout(wires)
-    acc = _slot_accessors(wires)
+    acc = slot_accessors(wires)
     assert list(acc) == [f"s{i}" for i in range(len(wires))]
     seen = []
     for i, w in enumerate(wires):
         reads = acc[f"s{i}"]
-        assert len(reads) == _flat_size(w)
+        assert len(reads) == flat_size(w)
         seen += [int(re.match(r"\(var_(\d+) state\)", r).group(1)) for r in reads]
     assert seen == list(range(layout.total))
 
@@ -229,7 +229,7 @@ def test_na_state_variables_are_numbered_in_slot_order(wires):
 def test_scalar_product_type_is_the_slot_types(wires):
     """The type of the flat tuple has one component per slot, in order."""
     layout = flat_layout(wires)
-    assert _product_type_scalar(wires) == " × ".join(layout.element_types())
+    assert product_type_scalar(wires) == " × ".join(layout.element_types())
     assert len(layout.element_types()) == layout.total
 
 
@@ -306,6 +306,6 @@ def test_every_sort_is_two_dimensional_so_one_reading_suffices():
     row = Wire(Int([1, 3]))
     assert (wire_shape(row).m, wire_shape(row).n) == (1, 3)
     assert dtype_to_lean_type(row) == "(Mat Int 1 3)"
-    assert _flat_indices(row) == [(0, 0), (0, 1), (0, 2)]
+    assert flat_indices(row) == [(0, 0), (0, 1), (0, 2)]
     lemma = "\n".join(_recon_lemma_lines(row))
     assert "recon_int_1_3" in lemma and "(Mat Int 1 3)" in lemma

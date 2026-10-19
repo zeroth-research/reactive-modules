@@ -243,7 +243,7 @@ All intermediate values are `Mat T m n` (Lean: `Fin m → Fin n → T`) even whe
 scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
-**`_accessor(pos, total)`** builds right-nested product accessors:
+**`product_accessor(pos, total)`** builds right-nested product accessors:
 - `total=1` → `""` (value itself)
 - `total=2` → `.1`, `.2`
 - `total=3` → `.1`, `.2.1`, `.2.2`
@@ -262,14 +262,14 @@ Created once per module; shared across all code generators.  It extracts:
   mapping each input wire to its Lean expression (e.g. `"ctrl.1"`).
 - `uses_real` — True if any wire is Float-typed (triggers `noncomputable`).
 
-`_bind_wires(params)` builds the wire-id → accessor dict from a list of
+`bind_wires(params)` builds the wire-id → accessor dict from a list of
 `(param_name, [wire, ...])` pairs.
 
 ---
 
 ## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
 
-`_translate_terms(terms, input_bindings, block_outputs, constants)` produces a
+`translate_terms_lean(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
 
 ```lean
@@ -329,7 +329,7 @@ plumbing lemmas.
 
 ## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
 
-`_translate_terms_scalar` is like `_translate_terms` but uses bare scalar types
+`translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
 
 ```lean
@@ -351,7 +351,7 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`translate._shared._scalar_bindings_with_recon` builds the input bindings: a
+`translate._shared.scalar_bindings_with_recon` builds the input bindings: a
 one-element wire is bound to its bare accessor, so downstream ops receive bare
 values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
@@ -1489,7 +1489,7 @@ rather than gaining a second one.
 ## Adding a New Encoding
 
 1. Add a translation function in `native.py` (or a new file) analogous to
-   `_translate_terms`.  It receives `input_bindings: dict[wire_id, str]` and
+   `translate_terms_lean`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
 2. Add a module under `translate/` that wraps the result in the
    appropriate namespace / function signature, and a method on

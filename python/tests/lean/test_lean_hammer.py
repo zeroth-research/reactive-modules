@@ -226,7 +226,7 @@ def test_fbk_bridge_builds(generate_lean_files, name):
     The certificate that route installs is about the *model*; this is the
     file that carries it back. Two independent translators are on the two
     sides of `bridge_k` -- `smt_encode` + cvc5 against
-    `_translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
+    `translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
     a translation defect in either shows up as an unclosed goal.
     """
     r = _lake_build(f"Certs.Bridge{name}")
@@ -355,7 +355,7 @@ def test_generated_executable_builds_and_runs(
 def test_scalar_encoding_builds(generate_lean_files, name):
     """The scalar encoding elaborates alongside the functional one.
 
-    `_product_type_scalar` flattens a multi-element wire into one component
+    `product_type_scalar` flattens a multi-element wire into one component
     per element, and the body and the `_scalar_eq` proofs have to follow. No
     certificate in Certs/ carries a Scalar section, so without this the
     encoding was never compiled at all — it had four type errors per

@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from zrth import Bool, Int, Real, BitVec
 
 from .sorts import dtype_shape, itype_name, sort_shape
-from .layout import _accessor
+from .layout import product_accessor
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -249,7 +249,7 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
             # Wider BitVec has 2^w values and no two-way lemma; Int and Real
             # are not finite at all.
             return []
-        acc = _accessor(i, n)
+        acc = product_accessor(i, n)
         shape = sort_shape(dt)
         for r in range(shape.m):
             for c in range(shape.n):

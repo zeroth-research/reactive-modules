@@ -55,7 +55,7 @@ from z3.z3util import get_vars
 from zrth import Module
 
 from ..certificate import Certificate, Claim
-from ..common import Refused
+from ..errors import Refused
 from . import TA2Magic
 from ..smt.script import smt_int
 

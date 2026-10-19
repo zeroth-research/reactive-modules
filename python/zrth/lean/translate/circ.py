@@ -1,12 +1,12 @@
 """Circuit (Box algebra) translation."""
 
-from zrth.lean.native import _product_type
+from zrth.lean.native import product_type
 from zrth.lean.circ import (
     CircLayer,
-    _ty_list,
-    _native_to_vt,
-    _natives_to_vt,
-    _translate_terms_circ,
+    ty_list,
+    native_to_vt,
+    natives_to_vt,
+    translate_terms_circ,
 )
 from zrth.lean.context import LeanContext
 
@@ -141,7 +141,7 @@ def atom_to_lean_circuit(
 
     init_inputs = ctx.extl_next
     init_outputs = ctx.ctrl_next
-    init_layers = _translate_terms_circ(
+    init_layers = translate_terms_circ(
         atom.init,
         (init_inputs,),
         init_outputs,
@@ -150,7 +150,7 @@ def atom_to_lean_circuit(
 
     update_inputs = (ctx.ctrl_latched, ctx.extl_latched, ctx.extl_next)
     update_outputs = ctx.ctrl_next
-    update_layers = _translate_terms_circ(
+    update_layers = translate_terms_circ(
         atom.update,
         update_inputs,
         update_outputs,
@@ -162,8 +162,8 @@ def atom_to_lean_circuit(
     update_layer_names: list[str] = []
 
     if init_layers:
-        init_dom = _ty_list(init_inputs)
-        init_cod = _ty_list(init_outputs)
+        init_dom = ty_list(init_inputs)
+        init_cod = ty_list(init_outputs)
         layer_lines, init_layer_names = _emit_named_layers(
             ctx,
             "init",
@@ -174,8 +174,8 @@ def atom_to_lean_circuit(
         lines.extend(layer_lines)
 
     if update_layers:
-        upd_dom = _ty_list(ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next)
-        upd_cod = _ty_list(update_outputs)
+        upd_dom = ty_list(ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next)
+        upd_cod = ty_list(update_outputs)
         layer_lines, update_layer_names = _emit_named_layers(
             ctx,
             "update",
@@ -206,9 +206,9 @@ def to_lean_equiv_theorems(
 
     if init_layer_names:
         n_extl_n = len(ctx.extl_next)
-        init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
-        lhs_input = _natives_to_vt([("extl_n", n_extl_n)])
-        rhs_output = _native_to_vt("r", n_ctrl)
+        init_binder = f"(extl_n : {product_type(ctx.extl_next)})"
+        lhs_input = natives_to_vt([("extl_n", n_extl_n)])
+        rhs_output = native_to_vt("r", n_ctrl)
 
         # One `simp_circ` per layer, and a layer's width grows with the
         # number of output-to-input paths through the block, so the proof's
@@ -239,14 +239,14 @@ def to_lean_equiv_theorems(
         n_extl_l = len(ctx.extl_latched)
         n_extl_n = len(ctx.extl_next)
         update_binders = (
-            f"(ctrl : {_product_type(ctx.ctrl_latched)}) "
-            f"(extl_l : {_product_type(ctx.extl_latched)}) "
-            f"(extl_n : {_product_type(ctx.extl_next)})"
+            f"(ctrl : {product_type(ctx.ctrl_latched)}) "
+            f"(extl_l : {product_type(ctx.extl_latched)}) "
+            f"(extl_n : {product_type(ctx.extl_next)})"
         )
-        lhs_input = _natives_to_vt(
+        lhs_input = natives_to_vt(
             [("ctrl", n_ctrl_l), ("extl_l", n_extl_l), ("extl_n", n_extl_n)]
         )
-        rhs_output = _native_to_vt("r", n_ctrl)
+        rhs_output = native_to_vt("r", n_ctrl)
 
         lines.append("set_option maxHeartbeats 2000000 in")
         lines.append("set_option maxRecDepth 100000 in")

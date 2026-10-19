@@ -1,10 +1,10 @@
 """Functional (init/update def) translation."""
 
-from zrth.lean.native import _translate_terms, _product_type
+from zrth.lean.native import translate_terms_lean, product_type
 from zrth.lean.context import LeanContext
 
 
-def _constants_block(ctx: LeanContext) -> str:
+def constants_block(ctx: LeanContext) -> str:
     """Render the top-level ``@[simp] def c0 : ...`` constant definitions."""
     defs = ctx.constants.defs()
     if not defs:
@@ -18,13 +18,13 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
     """Generate the functional init/update definitions."""
     atom = ctx.atom
 
-    init_body = _translate_terms(
+    init_body = translate_terms_lean(
         atom.init,
         ctx.init_wire_names,
         ctx.ctrl_next,
         ctx.constants,
     )
-    update_body = _translate_terms(
+    update_body = translate_terms_lean(
         atom.update,
         ctx.update_wire_names,
         ctx.ctrl_next,
@@ -32,18 +32,18 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
     )
 
     lines = []
-    cod = _product_type(ctx.ctrl_next)
+    cod = product_type(ctx.ctrl_next)
     noncomp = "noncomputable " if ctx.uses_real else ""
 
-    init_dom = f"(extl_n: {_product_type(ctx.extl_next)})"
+    init_dom = f"(extl_n: {product_type(ctx.extl_next)})"
     lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
     lines.append(init_body)
     lines.append("")
 
     upd_dom = (
-        f"(ctrl: {_product_type(ctx.ctrl_latched)}) "
-        f"(extl_l: {_product_type(ctx.extl_latched)}) "
-        f"(extl_n: {_product_type(ctx.extl_next)})"
+        f"(ctrl: {product_type(ctx.ctrl_latched)}) "
+        f"(extl_l: {product_type(ctx.extl_latched)}) "
+        f"(extl_n: {product_type(ctx.extl_next)})"
     )
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
     lines.append(update_body)

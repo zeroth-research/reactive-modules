@@ -551,13 +551,13 @@ def test_stateless_module_defines_init_and_update_as_unit():
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
     from zrth.lean.literals import ConstantRegistry
-    from zrth.lean.native import _translate_terms, _translate_terms_scalar
+    from zrth.lean.native import translate_terms_lean, translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]
     with pytest.raises(ValueError, match="written by no term"):
-        _translate_terms([], {}, out, ConstantRegistry())
+        translate_terms_lean([], {}, out, ConstantRegistry())
     with pytest.raises(ValueError, match="written by no term"):
-        _translate_terms_scalar(
+        translate_terms_scalar(
             [], {}, out, ConstantRegistry()
         )
 
