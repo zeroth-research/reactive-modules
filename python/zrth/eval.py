@@ -29,6 +29,22 @@ def _wrap(t, sort):
     return t & ((1 << bw) - 1)
 
 
+def _signed(t, sort: Sort):
+    """`t`, the unsigned bits of a `sort` bit-vector, read as two's
+    complement. Values are stored unsigned (`_wrap`), so the signed ops have
+    to read them this way: at width 4, `9` is `-7`."""
+    bw = _bv_width(sort)
+    if bw is None or bw >= 64:
+        return t
+    return torch.where(t >= (1 << (bw - 1)), t - (1 << bw), t)
+
+
+def _nonzero(t):
+    """`t` with each 0 replaced by 1: a divisor torch can divide by, for an
+    op whose result at 0 is chosen separately."""
+    return torch.where(t == 0, torch.ones_like(t), t)
+
+
 def _shaped(t, sort: Sort):
     """`t` in `sort`'s shape. A reduction gives a 0-d tensor, and the wire it
     writes is `[1, 1]`: left 0-d, the next `Linear` reading it fails with
@@ -57,10 +73,17 @@ def _linear(weight, bias, x):
     return weight.to(dtype) @ x.to(dtype)
 
 
-def eval_itype(itype, read, out_sort=None):
+def eval_itype(itype, read, out_sort=None, in_sorts=None):
     """Evaluate a single op with the given input tensors.
 
     `out_sort` is the write wire's Sort; needed for BV width-masking.
+    `in_sorts` are the read wires' Sorts, which a signed BV comparison needs
+    to read its operands as two's complement: its own result is one bit
+    wide whatever they are.
+
+    BV division and modulo by zero are what SMT-LIB defines them as, and
+    the signed ops read their operands as two's complement, as `bvslt`,
+    `bvsdiv` and `bvsmod` do and Lean's `BitVec.smod` does.
     """
     r = read
     match itype:
@@ -90,15 +113,28 @@ def eval_itype(itype, read, out_sort=None):
         case BV.Neg():
             return [_wrap(-r[0], out_sort)]
         case BV.Abs():
-            return [r[0].abs()]
+            return [_wrap(_signed(r[0], out_sort).abs(), out_sort)]
         case BV.UDiv():
-            return [r[0].div(r[1], rounding_mode="floor")]
+            # `bvudiv s 0` is all ones.
+            q = r[0].div(_nonzero(r[1]), rounding_mode="floor")
+            ones = torch.full_like(q, (1 << _bv_width(out_sort)) - 1)
+            return [torch.where(r[1] == 0, ones, q)]
         case BV.SDiv():
-            return [r[0].div(r[1], rounding_mode="trunc")]
+            # Truncating, on the signed values; `bvsdiv s 0` is -1 for a
+            # non-negative `s` and 1 for a negative one.
+            a, b = _signed(r[0], out_sort), _signed(r[1], out_sort)
+            q = a.div(_nonzero(b), rounding_mode="trunc")
+            by0 = torch.where(a >= 0, -torch.ones_like(a), torch.ones_like(a))
+            return [_wrap(torch.where(b == 0, by0, q), out_sort)]
         case BV.UMod():
-            return [r[0].remainder(r[1])]
+            # `bvurem s 0` is `s`.
+            return [torch.where(r[1] == 0, r[0], r[0].remainder(_nonzero(r[1])))]
         case BV.SMod():
-            return [r[0].fmod(r[1])]
+            # `bvsmod`: the sign of the divisor, as Python's `%` has it, on
+            # the signed values; `bvsmod s 0` is `s`.
+            a, b = _signed(r[0], out_sort), _signed(r[1], out_sort)
+            m = torch.where(b == 0, a, a.remainder(_nonzero(b)))
+            return [_wrap(m, out_sort)]
         case BV.MatMul():
             return [_wrap(r[0] @ r[1], out_sort)]
 
@@ -121,16 +157,25 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].ge(r[1])]
 
         # --- comparisons: BV produce a 1-bit BV (0/1 int) ---
-        # TODO: distinguish signed vs unsigned once BV values carry signedness;
-        # for non-negative storage signed == unsigned.
-        case BV.ULt() | BV.SLt():
+        # Values are stored unsigned, so the unsigned ones compare them as
+        # they are and the signed ones read them as two's complement first.
+        case BV.ULt():
             return [(r[0] < r[1]).to(r[0].dtype)]
-        case BV.ULe() | BV.SLe():
+        case BV.ULe():
             return [(r[0] <= r[1]).to(r[0].dtype)]
-        case BV.UGt() | BV.SGt():
+        case BV.UGt():
             return [(r[0] > r[1]).to(r[0].dtype)]
-        case BV.UGe() | BV.SGe():
+        case BV.UGe():
             return [(r[0] >= r[1]).to(r[0].dtype)]
+        case BV.SLt() | BV.SLe() | BV.SGt() | BV.SGe():
+            if in_sorts is None:
+                raise RuntimeError(
+                    f"{type(itype).__name__} compares signed values, and "
+                    f"without `in_sorts` the operands' width is unknown")
+            a, b = _signed(r[0], in_sorts[0]), _signed(r[1], in_sorts[1])
+            cmp = {"BV_SLt": a < b, "BV_SLe": a <= b,
+                   "BV_SGt": a > b, "BV_SGe": a >= b}[type(itype).__name__]
+            return [cmp.to(r[0].dtype)]
         case BV.Eq():
             return [(r[0] == r[1]).to(r[0].dtype)]
         case BV.Ne():
@@ -197,7 +242,8 @@ def _execute_block(state, atoms, get_block):
         for term in get_block(atom):
             read = [state[w] for w in term.read]
             out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort)
+            results = eval_itype(term.itype, read, out_sort,
+                                 [w.dtype for w in term.read])
             for w, val in zip(term.write, results):
                 state[w] = val
 

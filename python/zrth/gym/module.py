@@ -450,7 +450,8 @@ class Env(Module, gym.Wrapper):
         for term in get_block(atom):
             read = [self._state[w] for w in term.read]
             out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort)
+            results = eval_itype(term.itype, read, out_sort,
+                                 [w.dtype for w in term.read])
             for w, val in zip(term.write, results):
                 self._state[w] = val
 

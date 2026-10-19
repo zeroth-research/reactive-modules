@@ -477,3 +477,36 @@ def test_a_reduction_writes_its_wires_shape(op):
     (lin,) = eval_itype(LIA.Linear(torch.tensor([[2]]), torch.tensor([[1]])),
                         [out], Int([1, 1]))
     assert lin.shape == (1, 1)
+
+
+def _bv4(*vals):
+    return [torch.tensor([[v]]) for v in vals]
+
+
+@pytest.mark.parametrize("op, a, b, want", [
+    (BV.SLt(), 9, 3, 1),        # 9 is -7 at width 4
+    (BV.ULt(), 9, 3, 0),
+    (BV.SGe(), 3, 9, 1),
+    (BV.SLe(), 15, 0, 1),       # -1 <= 0
+])
+def test_a_signed_comparison_reads_twos_complement(op, a, b, want):
+    """Values are stored unsigned, and `SLt` compared them as stored: at
+    width 4, `9 < 3` was false where `-7 < 3` is true."""
+    bv4 = BitVec(4, [1, 1])
+    (out,) = eval_itype(op, _bv4(a, b), BitVec(1, [1, 1]), [bv4, bv4])
+    assert out.item() == want
+
+
+@pytest.mark.parametrize("op, a, b, want", [
+    (BV.UDiv(), 9, 0, 15),      # all ones
+    (BV.UMod(), 9, 0, 9),
+    (BV.SDiv(), 3, 0, 15),      # -1
+    (BV.SDiv(), 9, 0, 1),       # a negative dividend gives 1
+    (BV.SMod(), 9, 0, 9),
+    (BV.SDiv(), 9, 3, 14),      # -7 / 3 truncates to -2
+    (BV.SMod(), 9, 3, 2),       # -7 mod 3 takes the divisor's sign
+])
+def test_bv_division_is_smtlibs(op, a, b, want):
+    """By zero it raised; on a negative operand it divided the stored bits."""
+    (out,) = eval_itype(op, _bv4(a, b), BitVec(4, [1, 1]))
+    assert out.item() == want
