@@ -9,6 +9,9 @@ import Mathlib.Data.Real.Archimedean
 import Mathlib.Data.List.OfFn
 import Mathlib.Data.List.Zip
 import Mathlib.Tactic.FinCases
+-- `MatMul` sums in an `AddCommMonoid`, and `BitVec n` is one only through
+-- Mathlib's ring instances: without them a `BV.MatMul` does not elaborate.
+import Mathlib.Data.BitVec
 
 /-!
   Mat — matrix type, operations, and lemmas.
