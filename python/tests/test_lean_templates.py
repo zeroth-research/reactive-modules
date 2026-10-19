@@ -104,10 +104,21 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
         )
 
 
+def _counter_ctx():
+    from zrth.lean.common import LeanContext
+    from zrth.lean.inputs.python import load_module
+
+    fixture = Path(__file__).parent / "fixtures" / "counter.py"
+    return LeanContext(load_module(fixture))
+
+
 def test_the_certificate_simp_set_unfolds_them():
     """Computing the fold is no use if the definition never opens."""
-    cert = (PROJECT_TEMPLATES_DIR / "Certificate" / "Certificate.lean.j2").read_text()
-    simp_mat = [ln for ln in cert.splitlines() if "MatAdd_apply" in ln]
+    from zrth.lean.cert import generate_certificate_lean
+
+    cert = generate_certificate_lean(_counter_ctx())
+    simp_mat = [ln for ln in cert.splitlines()
+                if "simp [" in ln and "MatAdd_apply" in ln]
     assert simp_mat, "the simp_mat macro moved"
     for name in REDUCTIONS:
         assert name in simp_mat[0], f"{name} is not in simp_mat"
@@ -115,7 +126,13 @@ def test_the_certificate_simp_set_unfolds_them():
 
 def test_the_fbk_bridge_simp_set_agrees_with_it():
     """The bridge proves the NA model is the module, over the same terms."""
-    from zrth.lean.translate.fbk_bridge import _MAT_SIMP
+    from zrth.lean.translate.fbk import check_na_supported
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
 
+    ctx = _counter_ctx()
+    bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",
+                                     bodies=check_na_supported(ctx))
+    cascade = [ln for ln in bridge.splitlines() if "MatAdd_apply" in ln]
+    assert cascade, "the bridge's cascade has no matrix simp set"
     for name in REDUCTIONS:
-        assert name in _MAT_SIMP, f"{name} is not in the fbk bridge's simp set"
+        assert name in cascade[0], f"{name} is not in the fbk bridge's simp set"
