@@ -6,18 +6,19 @@ The `--fbk-proveit` route ends in a Lean certificate that says
 ∀ ss μs, M.ωTrace ss μs → ss ⊧ G (AP PROPERTY)
 ```
 
-— a statement about `M`, the NA model `translate/fbk.py` writes. Nothing in
-the tree says `M` is the module. Every other encoding has that link and is
-useless without it (`init_circ_eq`, `update_scalar_eq`, `Rel.effect_i_eq`,
-`ScalarRel.TransRel_func_eq`); this one has never had it, because the route
-was designed around trust leaving Lean through ic3ia and coming back as
-`vmt2lean.py`'s certificate. So a mistranslation anywhere in `smt_encode`,
-`_scalar_element`, cvc5's rewriter or `smt_to_lean_bool` produces a model
-that parses, model-checks, carries a machine-checked certificate — and
-describes a different system.
+— a statement about `M`, the NA model `translate/fbk.py` writes, and not
+about the module. Every other encoding is tied to the module by a theorem
+and is useless without it (`init_circ_eq`, `update_scalar_eq`,
+`Rel.effect_i_eq`, `ScalarRel.TransRel_func_eq`). Without one here, a
+mistranslation anywhere in `smt_encode`, `smt.slots.scalar_element`, cvc5's
+rewriter or `smt_to_lean_bool` would produce a model that parses,
+model-checks, carries a machine-checked certificate — and describes a
+different system.
 
-This file designs the missing link. Everything below marked **measured** was
-run; the Lean shown compiled.
+`translate/fbk_bridge.py` supplies that theorem, in
+`Certificate/Equivalence.lean` ([Built](#built)). This file is its design,
+and [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) #31 is what it still lacks.
+Everything below marked **measured** was run; the Lean shown compiled.
 
 ---
 
@@ -173,8 +174,8 @@ Neither half of that holds up:
   `--fbk-simplify none` only disables `solver.simplify`; `smt_encode` has
   already flattened, scalarised and reassociated during term construction, so
   the unsimplified body is *still* a different expression from
-  `_translate_terms_scalar`'s (`DESIGN_REVIEW.md` lines 17-52 makes this
-  point, and it is why the body producers cannot be swapped);
+  `_translate_terms_scalar`'s (which is why the body producers cannot be
+  swapped);
 * and the direct bridge closes. **Measured** on `m_countdown`, `m_boolint`,
   `m_relu_vec` and `m_relu_net8`, the unsimplified bodies close with the same
   cascade in the same time (3 s / 3 s / 3 s / 7 s) as the optimized ones.
@@ -248,14 +249,14 @@ rather than reading it out of the certificate — but discharging that
 hypothesis means putting the two in one environment, so the name clash is
 part of the work `KNOWN_ISSUES.md` #31 still records as outstanding.
 
-**14 of the 17 module shapes the route accepts get a complete bridge.** The
-three that do not are `m_max`, `m_min` and `m_argmax`, and they fail for the
-reason already recorded as `KNOWN_ISSUES.md` #26 and #30: `matMin`, `matMax`
-and `argmax_1d` are folds that never reduce, so the *right-hand* side of
-`bridge_k` cannot be computed. The same defect blocks those modules' own
-Büchi certificates. It fails loudly -- an unclosed goal in
-`Equivalence.lean`, not a silent gap -- and `--fbk-equiv none` is the escape
-hatch until the fold is fixed.
+**14 of the 17 module shapes the route accepts got a complete bridge**, as
+measured. The three that did not are `m_max`, `m_min` and `m_argmax`:
+`matMin`, `matMax` and `argmax_1d` were folds that never reduced, so the
+*right-hand* side of `bridge_k` could not be computed. `be70a43` made them
+reduce and put them in the `MAT_SIMP` set the cascade uses, but the three
+bridges have not been rebuilt since (`KNOWN_ISSUES.md` #31). A bridge that does not close
+fails loudly -- an unclosed goal in `Equivalence.lean`, not a silent gap --
+and `--fbk-equiv none` is the escape hatch.
 
 Two things the implementation added that the design did not have:
 
@@ -267,32 +268,6 @@ Two things the implementation added that the design did not have:
   so `| _ => …` does not typecheck -- the arm's expected type is
   `TypeMap x✝`, which reduces to nothing. `| _ + N => …` does, because the
   successor pattern lets the match reach its own fallback.
-
-The plan it was built from:
-
-1. **`Core/Basic.lean`** — add `TS.transfer` (above). Module-independent,
-   written once, ~15 lines.
-2. **`translate/fbk.py`** — `_slot_bodies` already returns the slot texts;
-   emit the `_fn` forms and `toSlots` from the same data. The substitution is
-   textual and total: `(var_k state)` ↦ `xk`.
-3. **New `translate/fbk_bridge.py`** (or a section of `fbk.py`) — emit
-   `<Proj>/Certificate/Equivalence.lean`:
-   `import System.System`, `System.Scalar`, `Certificate.Data`, `<Proj>NA`; the
-   `_fn` abbrevs; `link_k` (`rfl`); `bridge_k` (cascade); `INIT_iff`,
-   `TRANS_iff`, `PROPERTY_iff`; `module_safety` via `TS.transfer`.
-4. **`fbk_proveit.py`** — write it after the certificate is installed, and
-   include it in the `--build-cert` build. The lakefile already declares the
-   NA lib, and `Certificate/` is already a lake target.
-5. **`main.py`** — `--fbk-equiv {lean,none}`, default `lean`. `none` for the
-   cases where the bridge is the expensive part (`m_vec32`: 73 s against the
-   ~5 s the rest of the route takes) and the user only wants the model.
-   Refused without `--fbk-proveit`, like `--ic3ia` and `--fbk-simplify`.
-6. **Tests** — `tests/test_lean_fbk.py` gets the emitter's shape (one `_fn`
-   per slot, the substitution is total, the cascade is present); one
-   slow-marked case per shape class (`m_countdown`, `m_boolint`,
-   `m_relu_net`) builds the file, as `Certs/` does today. The existing
-   `test_the_emitted_transition_agrees_with_the_module` stays as the fast
-   check — it is the same claim, evaluated rather than proved.
 
 ### Cost
 
