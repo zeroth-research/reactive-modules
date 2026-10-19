@@ -14,7 +14,7 @@ import pytest
 
 from zrth.lean.smt_module import ModuleSMT
 from zrth.lean.smt_prompt import (
-    CegarPromptEnv,
+    CegisPromptEnv,
     _NotPredicate,
     _pyeval,
     _pyeval_namespace,
@@ -24,12 +24,12 @@ from zrth.lean.smt_prompt import (
 MODS = Path(__file__).parent / "limits" / "mods"
 
 
-def _env(name: str) -> CegarPromptEnv:
+def _env(name: str) -> CegisPromptEnv:
     """A parser context for one `tests/limits` fixture module."""
     spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return CegarPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
+    return CegisPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,6 @@
-"""LLM prompt + SMT-LIB parser for the CEGAR driver.
+"""LLM prompt + SMT-LIB parser for the CEGIS driver.
 
-`CegarPromptEnv` owns the cvc5 parser machinery: it declares state
+`CegisPromptEnv` owns the cvc5 parser machinery: it declares state
 variables `s0..sN-1` once (sorted per ctrl-next wire), and exposes
 `parse_expr(smt_lib: str) → cvc5.Term` that resolves references to those
 state vars back to the cvc5 consts stored on `state_vars`.
@@ -169,7 +169,7 @@ class _MatVar(_E):
         return _Row(self, key)
 
 
-def _pyeval_namespace(env: "CegarPromptEnv") -> dict:
+def _pyeval_namespace(env: "CegisPromptEnv") -> dict:
     """Build the namespace exposed to Python-expression predicates."""
     tm = env.tm
 
@@ -351,7 +351,7 @@ def _coerce_bare_numerals(src: str, bv_widths: dict[str, int]) -> str:
     return _BARE_EQ_RE.sub(repl, src)
 
 
-def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
+def parse_predicate(env: "CegisPromptEnv", src: str) -> cvc5.Term:
     """Parse `src` as a cvc5 predicate. Tries the Python-expression DSL
     first (`_pyeval`), falls back to SMT-LIB on failure."""
     ns = _pyeval_namespace(env)
@@ -375,7 +375,7 @@ def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
     return term
 
 
-CEGAR_GENERATE_SYSTEM = """\
+CEGIS_GENERATE_SYSTEM = """\
 You are a formal verification expert. Given a reactive module and a \
 property, propose an inductive invariant and a ranking function, both \
 as pure SMT-LIB 2 *expressions* (not lambdas, not definitions).
@@ -408,7 +408,7 @@ Tuple fields are accessed with `((_ tuple.select k) t)`.
 """
 
 
-CEGAR_SAFETY_SYSTEM = """\
+CEGIS_SAFETY_SYSTEM = """\
 You are a formal verification expert. Given a reactive module and a \
 property, propose an inductive invariant as a pure SMT-LIB 2 *expression* \
 (not a lambda, not a definition).
@@ -456,7 +456,7 @@ class PromptResult:
     ranking_term: cvc5.Term | None
 
 
-class CegarPromptEnv:
+class CegisPromptEnv:
     """Reusable parser context with module symbols declared once:
       * `s0..sN-1`     — ctrl-next state components
       * `e0..eM-1`     — extl-next inputs
@@ -471,7 +471,7 @@ class CegarPromptEnv:
         self.sm = cvc5.SymbolManager(self.solver)
         self.parser = cvc5.InputParser(self.solver, self.sm)
         self.parser.setIncrementalStringInput(
-            cvc5.InputLanguage.SMT_LIB_2_6, "cegar"
+            cvc5.InputLanguage.SMT_LIB_2_6, "cegis"
         )
 
         self.state_sorts = [wire_sort(self.tm, w) for w in msmt.ctrl_next]
@@ -530,7 +530,7 @@ class CegarPromptEnv:
         # Re-set the input source each call — the incremental stream ends
         # after a single nextTerm/nextCommand pair.
         self.parser.setIncrementalStringInput(
-            cvc5.InputLanguage.SMT_LIB_2_6, "cegar"
+            cvc5.InputLanguage.SMT_LIB_2_6, "cegis"
         )
         self.parser.appendIncrementalStringInput(smt_src)
         return self.parser.nextTerm()
@@ -607,7 +607,7 @@ def parse_llm_reply(
 
 
 def prompt_inv_ranking(
-    env: CegarPromptEnv,
+    env: CegisPromptEnv,
     chat,
     source: str,
     prp: str | None,
@@ -619,7 +619,7 @@ def prompt_inv_ranking(
     kind: str = "buchi",
     known: tuple[str, ...] = (),
 ) -> PromptResult:
-    """Call `chat` with the CEGAR prompt, parse reply into SMT terms.
+    """Call `chat` with the CEGIS prompt, parse reply into SMT terms.
 
     If `fixed_inv_src` / `fixed_ranking_src` is supplied, that field is
     treated as a user-provided input: not requested from the LLM, and
@@ -693,7 +693,7 @@ def prompt_inv_ranking(
             f"{feedback}\n"
             f"Please try again with a corrected {what}.\n"
         )
-    text = chat(CEGAR_SAFETY_SYSTEM if safety else CEGAR_GENERATE_SYSTEM, user_msg)
+    text = chat(CEGIS_SAFETY_SYSTEM if safety else CEGIS_GENERATE_SYSTEM, user_msg)
     inv_src, ranking_src = parse_llm_reply(
         text,
         require_inv=fixed_inv_src is None,

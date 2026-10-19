@@ -29,12 +29,12 @@ class ModuleEncoding:
         import cvc5
 
         from ..smt_module import ModuleSMT, keep_alive
-        from ..smt_prompt import CegarPromptEnv
+        from ..smt_prompt import CegisPromptEnv
 
         self.module = module
         self.tm = cvc5.TermManager()
         self.msmt = ModuleSMT(tm=self.tm, module=module)
-        self.env = CegarPromptEnv(self.msmt)
+        self.env = CegisPromptEnv(self.msmt)
         self._parsed: dict = {}
         self._blocks: dict = {}
         self._queries: dict = {}

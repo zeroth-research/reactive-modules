@@ -79,7 +79,7 @@ def _name(path: Path) -> str:
 
 def test_the_routes_are_found():
     assert {r.rsplit(".", 1)[1] for r in ROUTES} >= {
-        "ai", "cegar", "houdini", "learn", "linear", "sygus", "vampire"}
+        "ai", "cegis", "houdini", "learn", "linear", "sygus", "vampire"}
 
 
 @pytest.mark.parametrize("path", sorted(MAGIC.glob("*.py")), ids=_name)

@@ -60,7 +60,7 @@ GEN_TIMEOUT = 300
 BUILD_TIMEOUT = 420
 # What of GEN_TIMEOUT `--infer ai-cegis` does not spend asking: verith's
 # start-up and the project it writes either side of the loop.
-CEGAR_MARGIN = 20
+CEGIS_MARGIN = 20
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
@@ -137,7 +137,7 @@ def command(row, route, out: Path) -> list[str]:
         # Asked by time rather than by count, so the column uses the budget
         # the cell has: five attempts used to end at 75-107 s of a 180 s cap.
         # The margin is the project written before the loop and after it.
-        cmd += ["--cegar-budget", str(GEN_TIMEOUT - CEGAR_MARGIN)]
+        cmd += ["--cegis-budget", str(GEN_TIMEOUT - CEGIS_MARGIN)]
     return cmd
 
 
@@ -404,7 +404,7 @@ _UNSUPPORTED = re.compile(
 # `max_attempts` rejections -- the same outcome as `ai-cegis` running out of
 # attempts, reported in its own words.
 _NO_CERT = re.compile(
-    r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
+    r"error: --infer|CEG(?:AR|IS) failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
     r"|Failed to find valid invariant/ranking after")
 # A module shape no Lean column can write. `verith` refuses it before

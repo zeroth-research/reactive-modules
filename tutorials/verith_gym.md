@@ -434,16 +434,16 @@ uv run verith cycle_env.py \
 The default `ai-cegis` mode prints each proposal and cvc5's verdict:
 
 ```
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (<= 0 s4) (<= s4 3) (= s3 false))
   ranking: (ite (= s4 0) 0 (- 4 s4))
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 ```
 
 Here the model found the same ranking we wrote by hand in Step 6 (plus a
 slightly stronger invariant — it also pinned the truncated flag to false),
 and cvc5 discharged all obligations on the first attempt. When a proposal is
-wrong, the loop reports which obligation failed, e.g. `[CEGAR] failures:
+wrong, the loop reports which obligation failed, e.g. `[CEGIS] failures:
 ['rank_decrease']`, and re-prompts the model with the concrete
 counterexample until a proposal passes (or the attempt budget runs out).
 

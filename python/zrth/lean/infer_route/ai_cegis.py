@@ -6,7 +6,7 @@ from .api import InferInput, InferResult, InferRoute, Opt
 
 
 def _run(inp: InferInput) -> InferResult:
-    from ..magic.cegar import TA2MagicCEGAR
+    from ..magic.cegis import TA2MagicCEGIS
 
     inp = inp.taking_inv(
         inp.resumable_inv(),
@@ -19,13 +19,13 @@ def _run(inp: InferInput) -> InferResult:
         else "taking its invariant as given and inferring the ranking function",
     )
 
-    magic = TA2MagicCEGAR(
+    magic = TA2MagicCEGIS(
         inp.project.encoding(""),
         inp.module,
         model=inp.model,
         base_url=inp.base_url,
         known=inp.ruled_out(),
-        budget_s=inp.opts["cegar_budget"],
+        budget_s=inp.opts["cegis_budget"],
         encoding=inp.smt,
         budget=inp.budget,
         log=inp.log,
@@ -57,7 +57,7 @@ ROUTE = InferRoute(
     run=_run,
     options=(
         Opt(
-            ("--cegar-budget",),
+            ("--cegis-budget",),
             dict(
                 type=float,
                 default=None,

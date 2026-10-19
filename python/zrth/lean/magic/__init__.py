@@ -5,7 +5,7 @@ route's row in `infer_route/<name>.py` builds and calls
 (`fbk-proveit` has none here):
 
 * `ai` -- an LLM proposes the whole certificate (`--infer ai`).
-* `cegar` -- an LLM proposes, cvc5 refutes, the counterexample goes back
+* `cegis` -- an LLM proposes, cvc5 refutes, the counterexample goes back
   (`--infer ai-cegis`).
 * `houdini` -- candidate facts, greatest inductive subset, over either
   solver (`--infer houdini`).

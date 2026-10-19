@@ -1,9 +1,9 @@
 """Argmax semantics must agree across the three implementations.
 
 `Argmax` exists three times over: `torch.argmax` in the evaluator (the
-runtime reference), `_argmax_flat` in the SMT encoder (what CEGAR reasons
-about), and `argmax_1d` / `argmax` in Core/Mat.lean (what the certificate
-states). If they disagree, CEGAR can prove an invariant that is false of the
+runtime reference), `_argmax_flat` in the SMT encoder (what the SMT
+routes reason about), and `argmax_1d` / `argmax` in Core/Mat.lean (what the certificate
+states). If they disagree, an SMT route can prove an invariant that is false of the
 system the Lean proof is about — so these tests pin all three to torch.
 
 Two historical bugs, one per Lean definition:

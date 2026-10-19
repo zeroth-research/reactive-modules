@@ -235,9 +235,9 @@ def test_verith_infer_rejects_cert_file():
 # ── the pre-check and inference, in that order ──────────────────────────────
 
 
-# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGAR
+# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGIS
 # loop just verifies them once. That is the whole inference path, offline.
-CEGAR_FIXED = (
+CEGIS_FIXED = (
     "--buchi", "(= (X @intf.0) 0)",
     "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
     "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
@@ -249,7 +249,7 @@ def test_pre_check_checks_the_inferred_certificate():
     """`--pre-check` has to wait for `--infer`, or it checks nothing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), *CEGAR_FIXED, "--pre-check", "cvc5",
+            str(COUNTER_MODULE), *CEGIS_FIXED, "--pre-check", "cvc5",
             "-o", tmpdir, "-p", "CounterPreCheck",
         )
         assert r.returncode == 0, r.stderr
@@ -478,8 +478,8 @@ def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
         assert "--infer ai-cegis or --infer nuterm" in r.stderr
 
 
-def test_cegar_infers_a_safety_certificate():
-    """The CEGAR loop with the invariant fixed makes no LLM call: it states
+def test_cegis_infers_a_safety_certificate():
+    """The CEGIS loop with the invariant fixed makes no LLM call: it states
     the safety obligations (init, inductive, `inv -> P`) and verifies them,
     which is the whole route minus the prompting."""
     with tempfile.TemporaryDirectory() as tmpdir:

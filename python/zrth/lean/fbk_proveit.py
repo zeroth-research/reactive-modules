@@ -329,7 +329,7 @@ def try_omega_before_smt(cert: str) -> "tuple[str, int]":
 def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
-    Read through `encoding`'s `CegarPromptEnv` (an encoding of `module` of
+    Read through `encoding`'s `CegisPromptEnv` (an encoding of `module` of
     the caller's own when it has none): the symbols are the module's, so the
     two flags that come through here -- `--safety` and `--pre` -- read `s0`,
     `e0`, `el0` as the same things the rest of the package does.

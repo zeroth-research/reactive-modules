@@ -1,7 +1,7 @@
 """`_run_query` must survive every answer cvc5 can give.
 
 The driver read model values whenever the result was not UNSAT, but
-`unknown` carries no model, so `getValue` raised and took the whole CEGAR
+`unknown` carries no model, so `getValue` raised and took the whole CEGIS
 run down. Reproduced here with a stub solver rather than by provoking a real
 timeout, so the test is fast and deterministic.
 
@@ -13,10 +13,10 @@ import cvc5
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.magic import cegar
+from zrth.lean.magic import cegis
 from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.magic.cegar import TA2MagicCEGAR
-from zrth.lean.smt_prompt import CEGAR_GENERATE_SYSTEM, CEGAR_SAFETY_SYSTEM
+from zrth.lean.magic.cegis import TA2MagicCEGIS
+from zrth.lean.smt_prompt import CEGIS_GENERATE_SYSTEM, CEGIS_SAFETY_SYSTEM
 
 
 class _Result:
@@ -74,9 +74,9 @@ def _run(monkeypatch, kind):
     """Call `_run_query` against a solver scripted to answer `kind`."""
     env = _Env()
     solver = _Solver(kind)
-    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: None)
-    magic = TA2MagicCEGAR("", _counter(), log=lambda *_: None)
-    monkeypatch.setattr(cegar.cvc5, "Solver", lambda _tm: solver)
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: None)
+    magic = TA2MagicCEGIS("", _counter(), log=lambda *_: None)
+    monkeypatch.setattr(cegis.cvc5, "Solver", lambda _tm: solver)
     var = env.tm.mkConst(env.tm.getIntegerSort(), "s0")
     query = env.tm.mkTerm(cvc5.Kind.EQUAL, var, env.tm.mkInteger(0))
     result = magic._run_query("inv-step", query, env.tm, [("s", [var])])
@@ -107,7 +107,7 @@ def test_unknown_reports_instead_of_crashing(monkeypatch):
 
 
 def test_unknown_is_distinguishable_from_a_real_counterexample(monkeypatch):
-    """CEGAR feedback must not present 'unknown' as a refutation."""
+    """CEGIS feedback must not present 'unknown' as a refutation."""
     unknown, _ = _run(monkeypatch, "unknown")
     sat, _ = _run(monkeypatch, "sat")
     assert "Counterexample" not in unknown.counterexample
@@ -140,7 +140,7 @@ def _counter() -> Module:
 
 
 def _infer(monkeypatch, claim, replies, given=Certificate()):
-    """Run the real CEGAR loop, answering each prompt from `replies`.
+    """Run the real CEGIS loop, answering each prompt from `replies`.
 
     Returns `(certificate, prompts)` -- the prompts being `(system, user)`
     pairs, so a test can say which prompt the route actually sent.
@@ -152,8 +152,8 @@ def _infer(monkeypatch, claim, replies, given=Certificate()):
         prompts.append((system, user))
         return pending.pop(0)
 
-    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
-    magic = TA2MagicCEGAR("", _counter())
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
+    magic = TA2MagicCEGIS("", _counter())
     return magic.infer(claim, given), prompts
 
 
@@ -165,7 +165,7 @@ def test_safety_inference_asks_for_an_invariant_alone(monkeypatch):
         Claim(kind="safety", prp="(<= s0 9)"),
         ["INVARIANT: (and (>= s0 0) (<= s0 9))"],
     )
-    assert prompts[0][0] is CEGAR_SAFETY_SYSTEM
+    assert prompts[0][0] is CEGIS_SAFETY_SYSTEM
     assert "RANKING" not in prompts[0][1]
     assert cert.inv == "(and (>= s0 0) (<= s0 9))"
     assert cert.ranking is None
@@ -204,9 +204,9 @@ def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
         prompts.append(user)
         return pending.pop(0)
 
-    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
-    cert = TA2MagicCEGAR("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
+    cert = TA2MagicCEGIS("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
     assert len(prompts) == 1, "the candidate should have been accepted as proposed"
     assert cert.ranking == "(+ 1 s0)"
 
@@ -216,7 +216,7 @@ def test_a_buchi_property_still_asks_for_both(monkeypatch):
         Claim(prp="(= s0 0)"),
         ["INVARIANT: (and (>= s0 0) (<= s0 9))\nRANKING: (ite (= s0 0) 0 (- 10 s0))"],
     )
-    assert prompts[0][0] is CEGAR_GENERATE_SYSTEM
+    assert prompts[0][0] is CEGIS_GENERATE_SYSTEM
     assert cert.inv == "(and (>= s0 0) (<= s0 9))"
     assert cert.ranking == "(ite (= s0 0) 0 (- 10 s0))"
 
@@ -245,9 +245,9 @@ def test_a_certificate_given_whole_builds_no_client(monkeypatch):
     def no_client(base_url, model):
         raise AssertionError("a client was built for a run that asks nothing")
 
-    monkeypatch.setattr(cegar, "make_client", no_client)
+    monkeypatch.setattr(cegis, "make_client", no_client)
     given = Certificate("(and (>= s0 0) (<= s0 9))", "(ite (= s0 0) 0 (- 10 s0))")
-    cert = TA2MagicCEGAR("", _counter(), log=lambda *_: None).infer(
+    cert = TA2MagicCEGIS("", _counter(), log=lambda *_: None).infer(
         Claim(prp="(= s0 0)"), given)
     assert cert == given
 
@@ -265,8 +265,8 @@ def _always_wrong(monkeypatch, clock, step):
         clock[0] += step
         return "INVARIANT: (>= s0 0)"
 
-    monkeypatch.setattr(cegar, "make_client", lambda base_url, model: chat)
-    monkeypatch.setattr(cegar.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegis.time, "monotonic", lambda: clock[0])
     return prompts
 
 
@@ -275,7 +275,7 @@ def test_without_a_budget_the_count_is_the_leash(monkeypatch):
     from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 1.0)
     with pytest.raises(Refused, match="after 5 attempts"):
-        TA2MagicCEGAR("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
+        TA2MagicCEGIS("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 5
 
 
@@ -286,7 +286,7 @@ def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch
     from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
-        TA2MagicCEGAR("", _counter(), budget_s=95).infer(
+        TA2MagicCEGIS("", _counter(), budget_s=95).infer(
             Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 9
 
@@ -296,6 +296,6 @@ def test_a_budget_always_allows_the_first_attempt(monkeypatch):
     from zrth.lean.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 1 attempt in "):
-        TA2MagicCEGAR("", _counter(), budget_s=1).infer(
+        TA2MagicCEGIS("", _counter(), budget_s=1).infer(
             Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 1

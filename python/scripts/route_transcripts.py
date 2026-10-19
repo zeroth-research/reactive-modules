@@ -252,8 +252,8 @@ def index(path: Path) -> str:
 
 
 def install_llm(script: str) -> None:
-    """Replace the LLM client of the ai and cegar routes by scripted replies."""
-    from zrth.lean.magic import ai, cegar
+    """Replace the LLM client of the ai and ai-cegis routes by scripted replies."""
+    from zrth.lean.magic import ai, cegis
 
     gen = list(LLM[script].get("gen", []))
     ver = list(LLM[script].get("verify", []))
@@ -266,7 +266,7 @@ def install_llm(script: str) -> None:
         return chat
 
     ai.make_client = client
-    cegar.make_client = client
+    cegis.make_client = client
 
 
 def transcript(mod: Path, args: list[str], out: Path, name: str) -> str:

@@ -1,4 +1,4 @@
-"""SMT encoding utilities for the CEGAR magic driver.
+"""SMT encoding utilities, shared by the SMT routes and the pre-check.
 
 Maps Python IR types (`Sort`) to cvc5 sorts, and provides element access
 helpers for matrix-shaped state components.

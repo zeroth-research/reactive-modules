@@ -517,11 +517,11 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     as feedback about an attempt.
     """
     from zrth.lean.smt_module import ModuleSMT
-    from zrth.lean.smt_prompt import CegarPromptEnv, prompt_inv_ranking
+    from zrth.lean.smt_prompt import CegisPromptEnv, prompt_inv_ranking
     import cvc5
 
     tm = cvc5.TermManager()
-    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    env = CegisPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
     seen: list[str] = []
 
     def chat(system: str, user: str) -> str:
@@ -540,11 +540,11 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
 def test_the_cegis_prompt_fences_the_source_as_lean():
     """`ai-cegis` is handed the project's Lean encoding, as `ai` is."""
     from zrth.lean.smt_module import ModuleSMT
-    from zrth.lean.smt_prompt import CegarPromptEnv, prompt_inv_ranking
+    from zrth.lean.smt_prompt import CegisPromptEnv, prompt_inv_ranking
     import cvc5
 
     tm = cvc5.TermManager()
-    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    env = CegisPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
     seen: list[str] = []
 
     def chat(system: str, user: str) -> str:
@@ -559,14 +559,14 @@ def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
     """`RANKING:` with nothing after it is feedback, not a cvc5 crash.
 
     cvc5 parses an empty source to a null term, and `getSort()` on one raises
-    a `RuntimeError` from inside the binding -- which `TA2MagicCEGAR`'s loop does
+    a `RuntimeError` from inside the binding -- which `TA2MagicCEGIS`'s loop does
     not catch, so the whole route died on one bad reply."""
     from zrth.lean.smt_module import ModuleSMT
-    from zrth.lean.smt_prompt import CegarPromptEnv, PromptParseError, prompt_inv_ranking
+    from zrth.lean.smt_prompt import CegisPromptEnv, PromptParseError, prompt_inv_ranking
     import cvc5
 
     tm = cvc5.TermManager()
-    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    env = CegisPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
 
     def chat(system: str, user: str) -> str:
         return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING:"

@@ -216,7 +216,7 @@ class InferInput:
         not ask for, over one they did, is the kind of cross-run surprise
         that makes two identical command lines mean different things.
 
-        By default the invariant is one to take as *given*: `magic.cegar`
+        By default the invariant is one to take as *given*: `magic.cegis`
         infers only what is left around a fixed `given.inv`, so it has to be
         inductive and, on a safety claim, imply the property. `too_weak` is
         inductive and merely fails to imply it, which `rule_buchi` never

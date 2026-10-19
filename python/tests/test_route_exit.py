@@ -30,7 +30,7 @@ import zrth.lean.main as entry
 
 print("cvc5 loaded by import:", "cvc5" in sys.modules, flush=True)
 
-from zrth.lean.magic import ai, cegar
+from zrth.lean.magic import ai, cegis
 
 def client(base_url, model):
     def chat(system, user):
@@ -41,7 +41,7 @@ def client(base_url, model):
     return chat
 
 ai.make_client = client
-cegar.make_client = client
+cegis.make_client = client
 
 for argv in json.loads(sys.argv[1]):
     sys.argv = ["verith", *argv]

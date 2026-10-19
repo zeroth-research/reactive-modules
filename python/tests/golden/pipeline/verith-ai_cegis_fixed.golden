@@ -48,14 +48,14 @@ Wrote <OUT>/G/Certificate/Certificate.lean
 
 DONE: Project created at: <OUT>/G
 .. Inferring the certificate with --infer ai-cegis
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (>= s0 0) (<= s0 9))
   ranking: (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
 [smt] check query: (and true (not (and (>= 0 0) (<= 0 9))))
 [smt] check query: (let ((_let_1 (+ ind_s0 1))) (let ((_let_2 (ite (= _let_1 10) 0 _let_1))) (and (and (>= ind_s0 0) (<= ind_s0 9)) true (not (and (>= _let_2 0) (<= _let_2 9))))))
 [smt] check query: (let ((_let_1 (= rd_s0 0))) (let ((_let_2 (+ rd_s0 1))) (let ((_let_3 (ite (= _let_2 10) 0 _let_2))) (and (and (>= rd_s0 0) (<= rd_s0 9)) (not _let_1) true (not (< (ite (<= _let_3 200) (ite (= _let_3 0) 0 (- 10 _let_3)) 999) (ite (<= rd_s0 200) (ite _let_1 0 (- 10 rd_s0)) 999)))))))
 [smt] check query: (let ((_let_1 (= rp_s0 0))) (and (and (>= rp_s0 0) (<= rp_s0 9)) (not _let_1) true (not (>= (ite (<= rp_s0 200) (ite _let_1 0 (- 10 rp_s0)) 999) 1))))
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    wrote artifact system.smt2 (encoded)
    wrote artifact obligation-init_inv.smt2 (encoded)

@@ -1,28 +1,11 @@
-"""CEGAR-based TA2Magic: LLM proposes invariant/ranking as SMT-LIB
+"""CEGIS-based TA2Magic: LLM proposes invariant/ranking as SMT-LIB
 expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 """
 
-# TODO: this is CEGIS, not CEGAR -- the counterexample refines the *candidate*,
-# and there is no abstraction to refine; the obligations are checked over the
-# concrete transition relation. The route was renamed (`--infer ai-cegar` ->
-# `--infer ai-cegis`); the driver was not, so `ai-cegis` still runs
-# `TA2MagicCEGAR` out of `magic/cegar.py` and prints `[CEGAR] attempt 0`.
-# What the rename has to reach, together, in one commit:
-#   * this module (-> `magic/cegis.py`), `TA2MagicCEGAR`, the docstring above,
-#     and the `magic.cegar` mentions in `infer_route/`, `smt_synth.py` and
-#     `magic/sygus.py`;
-#   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
-#     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,
-#     `smt_query.py` and `tests/test_synth_routes.py` import them too;
-#   * `tests/test_cegar_results.py`, and `CEGAR_FIXED` in
-#     `tests/test_verith_cli.py`;
-#   * the `[CEGAR] ...` lines printed below -- quoted verbatim in the
-#     transcripts in `tutorials/verith.md`, `tutorials/verith_gym.md` and
-#     `README.md`, and matched by `CEGAR failed after` in
-#     `tests/bench_matrix/run_matrix.py`'s failure regex. Those are why this
-#     is a sweep of its own rather than part of the flag rename.
-# Leave `magic.learn`'s Farkas/CEGAR alone: that one really does refine an
-# abstraction.
+# CEGIS, not CEGAR: the counterexample refines the *candidate*, and there is
+# no abstraction to refine -- the obligations are checked over the concrete
+# transition relation. `magic.learn`'s Farkas/CEGAR is the one that does
+# refine an abstraction.
 
 from __future__ import annotations
 
@@ -60,8 +43,8 @@ class ObligationResult:
     counterexample: str | None  # formatted CE if not ok, else None
 
 
-class TA2MagicCEGAR(TA2Magic):
-    """Infer invariant and ranking via LLM + cvc5 CEGAR loop.
+class TA2MagicCEGIS(TA2Magic):
+    """Infer invariant and ranking via LLM + cvc5 CEGIS loop.
 
     Each attempt:
       1. Ask LLM for SMT-LIB invariant + ranking expressions.
@@ -169,7 +152,7 @@ class TA2MagicCEGAR(TA2Magic):
 
         while self._another(attempt, complete, start, slowest):
             began = time.monotonic()
-            self.log(f"[CEGAR] attempt {attempt}")
+            self.log(f"[CEGIS] attempt {attempt}")
             attempt += 1
             try:
                 result = prompt_inv_ranking(
@@ -208,13 +191,13 @@ class TA2MagicCEGAR(TA2Magic):
             )
             failures = [o for o in obligations if not o.ok]
             if not failures:
-                self.log("[CEGAR] all obligations UNSAT — accepted")
+                self.log("[CEGIS] all obligations UNSAT — accepted")
                 return Certificate(
                     result.inv_src, None if safety else result.ranking_src
                 )
 
             feedback = self._format_feedback(failures)
-            self.log(f"[CEGAR] failures: {[o.name for o in failures]}")
+            self.log(f"[CEGIS] failures: {[o.name for o in failures]}")
             slowest = max(slowest, time.monotonic() - began)
 
         # `Refused` for the reason `magic.ai` gives: running out of
@@ -222,7 +205,7 @@ class TA2MagicCEGAR(TA2Magic):
         within = (f" in {time.monotonic() - start:.0f} s of a {self.budget_s:g} s "
                   f"budget" if self.budget_s is not None else "")
         raise Refused(
-            f"CEGAR failed after {attempt} attempt{'' if attempt == 1 else 's'}{within}. "
+            f"CEGIS failed after {attempt} attempt{'' if attempt == 1 else 's'}{within}. "
             f"Last feedback:\n{feedback}",
             searched=True,
         )
@@ -351,7 +334,7 @@ class TA2MagicCEGAR(TA2Magic):
             # for (a nonlinear ranking function, say). There is no model, so
             # `getValue` below would raise CVC5ApiException and take the whole
             # run down. Report it as unproven, with the solver's reason, so
-            # CEGAR can carry on.
+            # the loop can carry on.
             why = res.getUnknownExplanation()
             return ObligationResult(
                 name,

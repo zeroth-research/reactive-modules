@@ -118,7 +118,7 @@ tutorial pipes it through one filter — the lines about the *certificate*:
 ```bash
 says() {                                       # what verith says about the certificate
   sed $'s/\x1b\\[[0-9;]*m//g' |                # drop the colour codes
-  grep -E 'pre-check|holds|REFUTED|refuted|\[CEGAR\]|\[nuterm\]|\[sygus\]|\[smt-linear\]|inv:|ranking:|resuming|artifacts:|error:|Project ready|property is|invariant witness|certificate:|Installed|Wrote the'
+  grep -E 'pre-check|holds|REFUTED|refuted|\[CEGIS\]|\[nuterm\]|\[sygus\]|\[smt-linear\]|inv:|ranking:|resuming|artifacts:|error:|Project ready|property is|invariant witness|certificate:|Installed|Wrote the'
 }
 ```
 
@@ -686,7 +686,7 @@ as true as that promise. It belongs in the specification, not in the tactics.
 Everything so far supplied the certificate by hand. `--infer` searches for it.
 The default route is `ai-cegis`: an LLM proposes an invariant and a ranking
 function as SMT-LIB, cvc5 puts them to the obligations, and a refuted
-candidate goes back to the model *with its counterexample* — a CEGAR loop
+candidate goes back to the model *with its counterexample* — a CEGIS loop
 whose checker is a decision procedure, so a wrong proposal costs one round
 trip and never reaches Lean.
 
@@ -701,10 +701,10 @@ grep -E 'def (inv|ranking)' "$OUT/$PROJ"/*/Data.lean
 ```
 
 ```
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (<= 0 s0) (<= s0 100))
   ranking: s0
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
@@ -726,7 +726,7 @@ Build completed successfully (3466 jobs).
 The inferred predicates are printed as SMT-LIB, so a good result can be frozen
 by passing it back with `--invariant` / `--ranking` on later runs. The two
 modes mix: fixing the invariant by hand makes `--infer` search only for a
-ranking function, and fixing **both** makes no LLM call at all — the CEGAR
+ranking function, and fixing **both** makes no LLM call at all — the CEGIS
 loop just verifies your certificate with cvc5, which is `--pre-check` by
 another route.
 
@@ -837,10 +837,10 @@ uv run verith tests/limits/mods/m_step2.py \
 ```
 
 ```
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (<= 0 s0) (<= s0 10) (= (mod s0 2) 0))
   ranking: (ite (= s0 0) 0 (- 12 s0))
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         2 ms
    step_inv  holds         3 ms
@@ -1048,9 +1048,9 @@ uv run verith tests/limits/mods/m_step2.py \
 ```
 .. resuming from inv-0003-sygus.smt2 (proved): taking it as the certificate
 .. resuming from note-0002-smt-linear.md: a space an earlier run ruled out
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (= (mod (+ 2 (* 11 s0)) 2) 0)
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         1 ms
    step_inv  holds         2 ms
@@ -1059,7 +1059,7 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 `.. resuming from inv-…-sygus.smt2 (proved)` is the handoff, and
-`[CEGAR] all obligations UNSAT — accepted` is the loop finding it has nothing
+`[CEGIS] all obligations UNSAT — accepted` is the loop finding it has nothing
 left to ask. The store drops anything found for a different module, a
 different property or a different proof rule before offering it, which is what
 keeps a workspace from turning two identical command lines into two different
@@ -1092,10 +1092,10 @@ error: --infer: --infer smt-linear found no ranking function. No ranking functio
 
 ```
 .. resuming from note-0003-smt-linear.md: a space an earlier run ruled out
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (>= s0 0) (<= s0 10))
   ranking: (ite (>= s0 5) (- s0 5) (- 5 s0))
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         1 ms
    step_inv  holds         2 ms

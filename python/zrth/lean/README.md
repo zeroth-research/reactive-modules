@@ -851,7 +851,7 @@ uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out
 uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
     --pre-check cvc5 -o out/ -p Rea
 # .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
-# [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
+# [CEGIS] all obligations UNSAT — accepted        -- and no LLM call was made
 ```
 
 What each is for, measured on the `tests/limits` fixtures:

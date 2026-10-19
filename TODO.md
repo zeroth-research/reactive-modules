@@ -71,8 +71,6 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
 
 Paths are relative to `python/zrth/lean/`.
 
-- **`ai-cegis` still says CEGAR.** Its names (`cegar.py`, `TA2MagicCEGAR`,
-  `CegarPromptEnv`) say CEGAR for what the CLI calls `ai-cegis`.
 - **An artifact does not record the precondition it was found under.**
   `ArtifactStore._stale` drops an artifact written for another module,
   property or proof rule, but not one found under another `--pre`. An
