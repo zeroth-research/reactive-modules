@@ -327,12 +327,12 @@ def test_without_facts_everything_falls_back_to_the_text():
 
 
 def _hinted(**fields):
-    from zrth.lean.smt_query import SolverHints
+    from zrth.lean.cert import LeanHints
 
     return plan_for(
         LeanContext(_int_module()),
         "fun s => (s 0 0)",
-        hints=SolverHints(**fields),
+        hints=LeanHints(**fields),
     )
 
 
@@ -397,9 +397,9 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
 
 
 def _solver_hints(**fields):
-    from zrth.lean.smt_query import SolverHints
+    from zrth.lean.cert import LeanHints
 
-    return SolverHints(**fields)
+    return LeanHints(**fields)
 
 
 def test_several_settled_conditions_stay_on_one_line():

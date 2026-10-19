@@ -50,11 +50,82 @@ class PlanInputs:
     shape as cvc5 parsed it, and what cvc5 established about them."""
 
     facts: PredicateFacts | None = None
-    hints: SolverHints | None = None
+    hints: "LeanHints | None" = None
     # The Lean of the predicates taken as they were given (a `LeanAnswer`):
     # no term stands behind them, so the facts cannot speak for them and
     # the plan reads their text instead.
     verbatim: str = ""
+
+
+@dataclass
+class LeanHints:
+    """`SolverHints` printed for the tactic plan: a settled condition as
+    Lean over a macro's binder `($v)`, a product as `nlinarith` hint terms."""
+
+    # (Lean text of the condition, the value `inv` forces it to).
+    determined: list = field(default_factory=list)
+    # None when no obligation was proved, so nothing may be concluded.
+    linear_proof: "bool | None" = None
+    # Lean terms to hand `nlinarith`.
+    nlinarith_hints: list = field(default_factory=list)
+    # A real precondition that no obligation's refutation needed.
+    pre_unused: bool = False
+    notes: list = field(default_factory=list)
+
+    @property
+    def any(self) -> bool:
+        return bool(
+            self.determined or self.nlinarith_hints or self.pre_unused
+        ) or (self.linear_proof is not None)
+
+    def why(self) -> str:
+        bits = []
+        for text, value in self.determined:
+            bits.append(f"inv forces `{text}` to be {str(value).lower()}")
+        if self.linear_proof is False:
+            bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
+        if self.pre_unused:
+            bits.append("no refutation needed the precondition: clearing it")
+        bits += self.notes
+        return "\n".join(f"-- cvc5: {b}" for b in bits)
+
+
+def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
+    """`hints` printed. A condition or a factor the printer cannot express
+    is left out: a hint is an optimisation, never needed for the proof."""
+    from .smt_to_lean import smt_to_lean_body
+
+    determined = []
+    for cond, value in hints.determined:
+        try:
+            # `($v)` is the macro's own binder: the condition is spliced into
+            # a tactic, so it has to read whichever state the obligation
+            # bound rather than a fixed name.
+            text = smt_to_lean_body(cond, ctrl_next, param_name="($v)")
+        except Exception:
+            continue
+        determined.append((text, value))
+
+    # `nlinarith` looks for degree-2 certificates by multiplying pairs of
+    # hypotheses; naming the squares it needs up front turns that search
+    # into a check. `mul_self_nonneg (a - b)` and `(a + b)` between them
+    # span the products of two atoms, which is what the arithmetic rules
+    # produce.
+    seen: set[str] = set()
+    nlinarith: list[str] = []
+    for a_term, b_term in hints.products:
+        try:
+            a = smt_to_lean_body(a_term, ctrl_next)
+            b = smt_to_lean_body(b_term, ctrl_next)
+        except Exception:
+            continue
+        for hint in (f"mul_self_nonneg ({a} - {b})",
+                     f"mul_self_nonneg ({a} + {b})"):
+            if hint not in seen:
+                seen.add(hint)
+                nlinarith.append(hint)
+    return LeanHints(determined, hints.linear_proof, nlinarith,
+                     hints.pre_unused, list(hints.notes))
 
 
 @dataclass(frozen=True)
@@ -165,11 +236,12 @@ def prepare(
     """
     from .smt_query import predicate_facts
 
+    printed = print_hints(hints, q.msmt.ctrl_next) if hints is not None else None
     return LeanCertificate(
-        render_certificate(q, share=not (hints and hints.determined),
+        render_certificate(q, share=not (printed and printed.determined),
                            verbatim=verbatim),
         PlanInputs(
-            predicate_facts(q), hints,
+            predicate_facts(q), printed,
             verbatim="\n".join(t for t in (verbatim.inv, verbatim.ranking) if t)
             if verbatim is not None else "",
         ),

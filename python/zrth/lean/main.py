@@ -298,8 +298,14 @@ def _render(settings: Settings, smt, claim: "Claim | None",
             f"<={settings.budget.per_call_ms} ms per query, "
             f"<={settings.budget.phase_ms} ms total"
         )
-        h = solver_hints(q, settings.budget, log=print)
-    return prepare(q, h, verbatim)
+        h = solver_hints(q, settings.budget)
+    lean = prepare(q, h, verbatim)
+    if h is not None:
+        reasons = [ln.removeprefix("-- cvc5: ")
+                   for ln in lean.plan.hints.why().splitlines()]
+        for reason in reasons or ["nothing cvc5 can add to the plan"]:
+            print(f"   {reason}")
+    return lean
 
 
 def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:

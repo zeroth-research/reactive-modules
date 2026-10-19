@@ -8,6 +8,7 @@ a cvc5 exception -- comes back as `UNKNOWN` rather than an exception.
 
 from dataclasses import replace
 
+import cvc5
 import pytest
 import torch
 
@@ -336,7 +337,7 @@ def test_a_condition_the_invariant_settles_is_reported():
         replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
     )
     assert [value for _, value in h.determined] == [True]
-    assert "≥" in h.determined[0][0]
+    assert h.determined[0][0].getKind() == cvc5.Kind.GEQ
 
 
 def test_the_hint_layer_shapes_the_obligation_the_kind_states():
@@ -368,10 +369,13 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
 
 def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
-    h = _hints(
-        replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
-    )
-    assert "($v)" in h.determined[0][0]
+    from zrth.lean.cert import print_hints
+
+    q = ModuleQueries.build(countdown(), CLAIM,
+                            replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
+    printed = print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
+    assert "($v)" in printed.determined[0][0]
+    assert "≥" in printed.determined[0][0]
 
 
 def test_a_folded_relu_is_not_offered_as_a_condition():
@@ -407,16 +411,6 @@ def test_a_spent_budget_yields_no_hints_rather_than_an_exception():
 
 def test_hints_survive_a_module_cvc5_cannot_encode():
     assert solver_hints(None, SmtBudget()).any is False
-
-
-def test_the_hint_log_says_when_there_is_nothing_to_add():
-    lines: list[str] = []
-    solver_hints(
-        ModuleQueries.build(countdown(), CLAIM),
-        SmtBudget(),
-        log=lines.append,
-    )
-    assert any("nothing cvc5 can add" in ln for ln in lines)
 
 
 def test_translation_can_be_asked_not_to_share():
