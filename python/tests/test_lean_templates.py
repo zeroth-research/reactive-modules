@@ -89,10 +89,10 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
     `simp_mat` carries `List.ofFn_succ` and `List.ofFn_zero` and no lemma
     that computes `List.finRange`, so a `finRange` fold stays stuck in the
-    goal at every concrete shape and every closer fails on it -- which is
-    what KNOWN_ISSUES #26 and #30 were. Rewriting one of these back to
-    `finRange` would look like a simplification and would silently cost
-    twelve certificates.
+    goal at every concrete shape and every closer fails on it; `be70a43`
+    moved them to `List.ofFn`. Rewriting one of these back to `finRange`
+    would look like a simplification and would silently cost twelve
+    certificates.
     """
     src = _mat_source()
     for name in REDUCTIONS:
@@ -100,7 +100,7 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
         assert "List.ofFn" in body, f"{name} no longer enumerates with List.ofFn"
         assert "List.finRange" not in body, (
             f"{name} enumerates with List.finRange, which `simp_mat` cannot "
-            f"compute; see KNOWN_ISSUES #26"
+            f"compute (fixed in be70a43)"
         )
 
 
