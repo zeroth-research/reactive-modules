@@ -76,3 +76,19 @@ def test_max_module_encodes_at_all():
     """The regression itself: building the term used to raise TypeError."""
     m = ModuleSMT(tm=_TM, module=_reduce_module(LIA.Max(), 2))
     assert m.update_state(m.fresh_ctrl("s"), [], [])
+
+
+def test_a_bitvector_matrix_product_is_bitvector_arithmetic():
+    """`BV.MatMul` is a sum of bit-vector products, modulo the width. Built
+    from cvc5's arithmetic `MULT` it was refused outright -- "expecting an
+    arithmetic subterm" -- so no module with one had an SMT encoding."""
+    from zrth import BV, BitVec
+    from zrth.lean.smt_encode import _matmul, MatShape
+
+    tm = cvc5.TermManager()
+    bv = lambda v: tm.mkBitVector(4, v)
+    a = tm.mkTuple([bv(3), bv(5)])                  # [[3, 5]]
+    b = tm.mkTuple([bv(7), bv(2)])                  # [[7], [2]]
+    out = _matmul(tm, a, b, MatShape(1, 2), MatShape(2, 1))
+    s = cvc5.Solver(tm)
+    assert s.simplify(out).getBitVectorValue(10) == str((3 * 7 + 5 * 2) % 16)
