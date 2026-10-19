@@ -9,6 +9,8 @@ from typing import Any
 
 from zrth import Module
 
+from ..options import Opt
+
 
 @dataclass(frozen=True)
 class SourceText:
@@ -36,11 +38,13 @@ class Problem:
 class InputAdapter:
     """One input format verith reads.
 
-    `load` turns the input into a `Problem`; it imports its parser when it
-    is called, so `verith --help`, which reads every row, imports none.
+    `load` turns the input into a `Problem`, given the values of the
+    row's `options` by `dest`; it imports its parser when it is called, so
+    `verith --help`, which reads every row, imports none.
     """
 
     name: str                       # the `--format` value
     summary: str                    # one line, for `--format`'s help
     suffixes: tuple[str, ...]       # file suffixes that select it
     load: Callable[[SourceText, Mapping[str, Any]], Problem]
+    options: tuple[Opt, ...] = ()   # its own flags, e.g. python's `-d`

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from ..options import Opt
 from .api import InputAdapter, Problem, SourceText
 
 
@@ -54,9 +55,7 @@ def load_module(filepath: str | Path, module_def: str = "module"):
 
 
 def _load(source: SourceText, opts: Mapping[str, Any]) -> Problem:
-    return Problem(
-        load_module(source.path, opts.get("module_def") or "module"), source
-    )
+    return Problem(load_module(source.path, opts["module_def"]), source)
 
 
 ADAPTER = InputAdapter(
@@ -64,4 +63,14 @@ ADAPTER = InputAdapter(
     summary="a Python file whose `module()` (or `-d NAME`) returns the module",
     suffixes=(".py",),
     load=_load,
+    options=(
+        Opt(("-d", "--module-def"), {
+            "default": "module",
+            "metavar": "NAME",
+            "help": (
+                "Name of the function or class in the Python file that "
+                "produces the Module (default: module)."
+            ),
+        }),
+    ),
 )

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from ..certificate import Certificate, Claim, LeanAnswer
 from ..common import Refused
+from ..options import Opt
 
 if TYPE_CHECKING:
     from zrth import Module
@@ -287,25 +288,6 @@ class InferResult:
 # ══════════════════════════════════════════════════════════════════════════
 # The row
 # ══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class Opt:
-    """One command-line option that belongs to a route, not to verith.
-
-    Given without its route selected it is an error rather than a no-op --
-    which is what `--ic3ia`, `--fbk-simplify` and `--fbk-equiv` each say by
-    hand today, in a block that grows a line per option per route.
-    """
-
-    flags: tuple[str, ...]
-    kwargs: dict                # forwarded to `add_argument`
-    required: bool = False      # the route cannot run without it
-
-    @property
-    def dest(self) -> str:
-        d = self.kwargs.get("dest")
-        return d or self.flags[-1].lstrip("-").replace("-", "_")
 
 
 @dataclass(frozen=True)

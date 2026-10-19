@@ -408,9 +408,8 @@ def _load(settings: Settings) -> "inputs.Problem":
     input, so they are reported rather than raised.
     """
     try:
-        return inputs.load(
-            settings.module_file, {"module_def": settings.module_def}
-        )
+        return inputs.load(settings.module_file, settings.input_opts,
+                           format=settings.input_format)
     except (OSError, AttributeError, RuntimeError) as e:
         raise SystemExit(f"error: {e}") from e
 

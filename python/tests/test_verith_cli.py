@@ -741,3 +741,22 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
     )
     with pytest.raises(project.LakeBuildError, match="unknown constant"):
         project.build_certificate(tmp_path)
+
+
+def test_the_input_format_follows_the_suffix_or_format():
+    from zrth.lean.cli import parse_args
+
+    s = parse_args([str(COUNTER_MODULE)])
+    assert (s.input_format, s.input_opts) == ("python", {"module_def": "module"})
+    s = parse_args([str(COUNTER_MODULE), "-d", "other"])
+    assert s.input_opts == {"module_def": "other"}
+    s = parse_args(["--format", "python", "model.txt"])
+    assert s.input_format == "python"
+
+
+def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
+    from zrth.lean.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["model.txt"])
+    assert "cannot tell the format of model.txt" in capsys.readouterr().err

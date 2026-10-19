@@ -457,7 +457,8 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 |------|---------|-------------|
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
-| `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
+| `--format` | by suffix | The input's format (`python`: `.py`) |
+| `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
 | `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |

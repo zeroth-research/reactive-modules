@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR
+from .inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
 from .infer_route import (
     DEFAULT_ROUTE,
     ROUTES,
@@ -113,7 +114,7 @@ class Settings:
     module_file: str | None
     output_dir: Path
     project_name: str
-    module_def: str
+    input_format: str | None            # an `inputs` row; None without input
     executable: bool
 
     prp: str | None                     # the property, whichever flag carried it
@@ -122,6 +123,8 @@ class Settings:
     pre: str | None
     invariant: str | None
     ranking: str | None
+
+    input_opts: dict = field(default_factory=dict)
 
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)
@@ -170,11 +173,23 @@ def _infer_help() -> str:
     return " ".join(lines)
 
 
+def _format_help() -> str:
+    """`--format`'s help, assembled from the rows."""
+    rows = " ".join(
+        f"`{a.name}` ({', '.join(a.suffixes)}) -- {a.summary}." for a in ADAPTERS
+    )
+    return (
+        "The input's format; by default the one its suffix names. One of: "
+        + rows
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="verith",
         description=(
-            "Generate a Lean4 certificate project from a Python reactive module. "
+            "Generate a Lean4 certificate project from a reactive module, read "
+            "from a Python file or another format --format names. "
             "The property goes under --safety (`G FORMULA`: every reachable "
             "state) or --buchi (`G (F FORMULA)`: infinitely often); with --infer "
             "the invariant is searched for -- by an LLM, by learning a ranking "
@@ -188,8 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
         "module_file",
         nargs="?",
         help=(
-            "Path to a Python file defining the module (must contain a callable that "
-            "returns a Module). Optional when --hammer-file is used alone."
+            "The input: a file stating the module, in the format --format "
+            "names (by default the one its suffix names; a Python file must "
+            "contain a callable that returns a Module). Optional when "
+            "--hammer-file is used alone."
         ),
     )
     parser.add_argument(
@@ -205,14 +222,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Name of the Lean package / library (default: Rea).",
     )
     parser.add_argument(
-        "-d",
-        "--module-def",
-        default="module",
-        help=(
-            "Name of the function or class in the Python file that produces the "
-            "Module (default: module)."
-        ),
+        "--format",
+        choices=[a.name for a in ADAPTERS],
+        default=None,
+        help=_format_help(),
     )
+    # A format's own options, one group per format, parsed `default=None`
+    # so "given" is distinguishable from "not given" -- as the routes' are.
+    for adapter in ADAPTERS:
+        if adapter.options:
+            group = parser.add_argument_group(f"--format {adapter.name}")
+            for opt in adapter.options:
+                group.add_argument(*opt.flags, **{**opt.kwargs, "default": None})
     parser.add_argument(
         "-x",
         "--executable",
@@ -455,6 +476,9 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
             "no ranking function. Ranking functions belong to --buchi."
         )
 
+    adapter = _input_adapter(parser, args)
+    _check_input_options(parser, args, adapter)
+
     route = route_by_name(args.infer) if args.infer else None
     _check_route_options(parser, args, route)
 
@@ -462,7 +486,11 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
         module_file=args.module_file,
         output_dir=Path(args.output_dir),
         project_name=args.project_name,
-        module_def=args.module_def,
+        input_format=adapter.name if adapter else None,
+        input_opts=(
+            {o.dest: getattr(args, o.dest) for o in adapter.options}
+            if adapter else {}
+        ),
         executable=args.executable,
         prp=args.safety or args.buchi,
         kind="safety" if args.safety else "buchi",
@@ -554,6 +582,44 @@ def _resolve_aliases(parser: argparse.ArgumentParser, args) -> None:
             )
         args.infer = route.name
         setattr(args, alias.fills, given)
+
+
+def _input_adapter(parser: argparse.ArgumentParser,
+                   args) -> InputAdapter | None:
+    """The format the input is read in: `--format`, else its suffix's."""
+    if args.format:
+        return adapter_by_name(args.format)
+    if not args.module_file:
+        return None
+    adapter = adapter_for(args.module_file)
+    if adapter is None:
+        parser.error(
+            f"cannot tell the format of {args.module_file} from its suffix; "
+            f"pass --format ({', '.join(a.name for a in ADAPTERS)})"
+        )
+    return adapter
+
+
+def _check_input_options(parser: argparse.ArgumentParser, args,
+                         adapter: InputAdapter | None) -> None:
+    """A format's option is only meaningful for input in that format, as a
+    route's is only with that route; and its row default is put back once
+    the format is known."""
+    stray = [
+        (a, o) for a in ADAPTERS for o in a.options
+        if a is not adapter and getattr(args, o.dest, None) is not None
+    ]
+    if stray:
+        flags = [o.flags[-1] for _, o in stray]
+        formats = sorted({a.name for a, _ in stray})
+        verb = "is" if len(flags) == 1 else "are"
+        parser.error(
+            f"{', '.join(flags)} {verb} only meaningful for "
+            f"{' or '.join(formats)} input"
+        )
+    for o in adapter.options if adapter else ():
+        if getattr(args, o.dest, None) is None and "default" in o.kwargs:
+            setattr(args, o.dest, o.kwargs["default"])
 
 
 def _check_route_options(

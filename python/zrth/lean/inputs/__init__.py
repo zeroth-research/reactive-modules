@@ -24,7 +24,7 @@ from .api import InputAdapter, Problem, SourceText
 
 __all__ = [
     "ADAPTERS", "InputAdapter", "Problem", "SourceText", "adapter_by_name",
-    "load",
+    "adapter_for", "load",
 ]
 
 # The order is the order `--format` lists them in.
@@ -43,13 +43,22 @@ def adapter_by_name(name: str) -> InputAdapter:
         ) from None
 
 
+def adapter_for(path: str | Path) -> InputAdapter | None:
+    """The format `path`'s suffix names, if any does."""
+    suffix = Path(path).suffix
+    return next((a for a in ADAPTERS if suffix in a.suffixes), None)
+
+
 def load(path: str | Path, opts: Mapping[str, Any] | None = None,
          *, format: str = "python") -> Problem:
-    """The `Problem` the file at `path` states, read as `format`."""
+    """The `Problem` the file at `path` states, read as `format`; `opts`
+    are the format's options by `dest`, defaulted as its row says."""
     adapter = adapter_by_name(format)
+    opts = {**{o.dest: o.kwargs.get("default") for o in adapter.options},
+            **(opts or {})}
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Diagram file not found: {path.resolve()}")
     text = path.read_text()
     source = SourceText(adapter.name, path, text, adapter.suffixes[0])
-    return adapter.load(source, opts or {})
+    return adapter.load(source, opts)
