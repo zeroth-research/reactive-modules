@@ -598,7 +598,8 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p 
 # Standalone self-contained certificate (no project scaffold)
 uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
-# → writes out/MyCertScalar.lean  (scalar encoding + equivalence theorems)
+# → and out/MyCertRel.lean, out/MyCertScalar.lean, out/MyCertScalarRel.lean
+#   (the other encodings + equivalence theorems)
 ```
 
 ### What gets generated
@@ -609,20 +610,34 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lea
 <output_dir>/<ProjectName>/
   lakefile.toml
   lean-toolchain
-  ZerothHammer.lean          # standalone zeroth_hammer tactic
-  <ProjectName>.lean          # functional + circuit encodings of init/update
-  Certificate/
-    Certificate.lean          # certificate predicates + proofs
+  System.lean                 # root: imports the encodings
+  System/
+    System.lean               # functional encoding of init/update
+    Circ.lean                 # circuit encoding + equivalence theorems
+    Rel.lean                  # relational encoding + equivalence theorems
     Scalar.lean               # scalar encoding + equivalence theorems
+    ScalarRel.lean            # scalar-relational encoding + equivalence theorems
   Certificate.lean            # re-export shim
-  Core/                       # library files (Mat, Box, ReactiveModule, …)
+  Certificate/
+    Data.lean                 # certificate predicates
+    Certificate.lean          # obligations + proofs
+  ZerothHammer.lean           # standalone zeroth_hammer tactic
+  LeanAI.lean, LeanAI/        # the ai_solve tactic
+  Core/                       # library files (Mat, Box, ReactiveModule, LTL, proof rules)
+  artifacts/                  # what runs found, for the next run (see below)
+  dbg/                        # system.txt (the module) and a copy of the input
+  Main.lean                   # only with --executable
 ```
+
+`--infer fbk-proveit` adds `ProveIt/` and `Certificate/Equivalence.lean`.
 
 **Standalone certificate** (`--cert-file path/Name.lean`):
 
 ```
 path/Name.lean               # self-contained: init/update + certificate
+path/NameRel.lean            # relational encoding + equivalence theorems
 path/NameScalar.lean         # scalar encoding + equivalence theorems
+path/NameScalarRel.lean      # scalar-relational encoding + equivalence theorems
 ```
 
 ### Safety or Büchi
