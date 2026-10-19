@@ -400,8 +400,8 @@ def _infer(
     return result
 
 
-def _load(settings: Settings):
-    """The module the run is about.
+def _load(settings: Settings) -> "inputs.Problem":
+    """The module the run is about, and the input it was read from.
 
     The loader refuses a path that is not there, a file that is not a
     module and a `-d` the file does not define. All three are the user's
@@ -410,7 +410,7 @@ def _load(settings: Settings):
     try:
         return inputs.load(
             settings.module_file, {"module_def": settings.module_def}
-        ).module
+        )
     except (OSError, AttributeError, RuntimeError) as e:
         raise SystemExit(f"error: {e}") from e
 
@@ -474,7 +474,8 @@ def _lean_context(settings: Settings, module) -> LeanContext:
 
 
 def _generate(settings: Settings, module, ctx: LeanContext,
-              lean_cert: "LeanCertificate | None") -> Path:
+              lean_cert: "LeanCertificate | None",
+              source: "inputs.SourceText") -> Path:
     """The Lean project, with the certificate as it stands before inference."""
     print(".. Generating lean code")
     try:
@@ -484,7 +485,7 @@ def _generate(settings: Settings, module, ctx: LeanContext,
             project_name=settings.project_name,
             executable=settings.executable,
             lean_cert=lean_cert,
-            module_file=settings.module_file,
+            source=source,
             lakefile=(
                 settings.route.lakefile(
                     settings.route_config, settings.project_name)
@@ -533,7 +534,8 @@ def main():
         _hammer_only(settings)
         return
 
-    module = _load(settings)
+    problem = _load(settings)
+    module = problem.module
     print(module)
     # The run's one cvc5 encoding, built by whichever stage asks first.
     smt = lazy(module)
@@ -574,7 +576,7 @@ def main():
         _standalone(settings, module, lean_cert)
         return
 
-    project_dir = _generate(settings, module, ctx, lean_cert)
+    project_dir = _generate(settings, module, ctx, lean_cert, problem.source)
 
     if settings.route is not None:
         print(f".. Inferring the certificate with --infer {settings.route.name}")

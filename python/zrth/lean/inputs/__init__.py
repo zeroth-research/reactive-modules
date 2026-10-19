@@ -51,4 +51,5 @@ def load(path: str | Path, opts: Mapping[str, Any] | None = None,
     if not path.exists():
         raise FileNotFoundError(f"Diagram file not found: {path.resolve()}")
     text = path.read_text()
-    return adapter.load(SourceText(adapter.name, path, text), opts or {})
+    source = SourceText(adapter.name, path, text, adapter.suffixes[0])
+    return adapter.load(source, opts or {})

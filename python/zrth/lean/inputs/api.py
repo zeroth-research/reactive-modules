@@ -13,11 +13,14 @@ from zrth import Module
 @dataclass(frozen=True)
 class SourceText:
     """The input file as read: its format (an adapter's name), where it
-    is, and what it says."""
+    is, and what it says. `suffix` is the format's own (the adapter's
+    first), which the project's copy of the input is named with whatever
+    the file was called."""
 
     format: str
     path: Path
     text: str
+    suffix: str
 
 
 @dataclass(frozen=True)
