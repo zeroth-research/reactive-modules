@@ -6,7 +6,13 @@ phases work down; this file is the plan for its section 1 and the way of
 working that phases 2-4 settled on. Paths are relative to `python/zrth/lean/`
 unless they start with `python/`.
 
-## Where things stand
+## Status
+
+Done 2026-10-19 as `0e6b45b3..07012f9d`; `PIPELINE_REVIEW.md` names each
+item's commits. The rest of this file is the plan as it was carried out,
+kept for the decisions (the answers) and the way of checking.
+
+## Where things stood
 
 - Branch `mch/verith-1`. Phases 1-4 of the review's "Order of work" are done
   and each item's status names its commits. Phase 4 is `33e34328..c3cecc54`

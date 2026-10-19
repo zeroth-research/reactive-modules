@@ -42,12 +42,12 @@ design:
 
 | ID | Status | Finding |
 |----|--------|---------|
-| IN-1 | open | The only input path is `load_module_from_file`, which execs a Python file, and it lives in the Lean project builder (`project.py:770`). |
-| IN-2 | open | Other formats bypass verith: `zrth/smv.parse_smv` already returns `(Module, name_map)` but is unreachable from the CLI; SV-COMP and Petri nets get in through Python shims selected by environment variables (`tests/bench_matrix/svcomp_mod.py`, `petri_mod.py`). |
-| IN-3 | open | `--safety`/`--buchi`/`--pre` are positional SMT-LIB over `s0..sN` / `e0..eM`, so a property cannot be written in the input's own names. The bench harness translates (`tests/bench_matrix/suites.py` `smt()`, `entry_pre`). |
-| IN-4 | open | `module_file` is threaded into `create_project` only to copy it to `dbg/system.py` -- assumes Python input. |
-| IN-5 | open | The original input never reaches a decision procedure: `InferInput` has no field for it. `main.py`'s docstring says `init()`/`update()` are there "so that the AI inference can read the high-level logic", but `ai` reads the generated Lean -- and the prompt fences it as ```` ```python ```` (`magic/ai.py:307,326`, `smt_prompt.py:573`). |
-| IN-6 | open | `zrth/smv` changes a model's meaning silently: a non-assignment `TRANS`/`INIT`/`INVAR` is dropped (`_promote_constraints`, `smv/parser.py:189-211`), and a VAR with no `init` starts at 0 and with no `next` holds its value (`:700,707`) where NuSMV leaves both unconstrained. Specs (`INVARSPEC`/`LTLSPEC`) do not parse; `JUSTICE`/`FAIRNESS` parse and are ignored. Every type lowers to BitVec (`integer` is BV32), and none of `tests/smv_fixtures/*.smv` has a Lean form. Must be fixed before SMV becomes an input adapter. |
+| IN-1 | fixed 578abb1e, a9c4766e | The only input path is `load_module_from_file`, which execs a Python file, and it lives in the Lean project builder (`project.py:770`). |
+| IN-2 | fixed a9c4766e (SMV); wontfix for SV-COMP and Petri nets, which stay shims (answers F, G in `PHASE5_HANDOFF.md`) | Other formats bypass verith: `zrth/smv.parse_smv` already returns `(Module, name_map)` but is unreachable from the CLI; SV-COMP and Petri nets get in through Python shims selected by environment variables (`tests/bench_matrix/svcomp_mod.py`, `petri_mod.py`). |
+| IN-3 | fixed 23dc5fbc, 333f8d66 (claims in the module's own terms; the bench harness keeps internal rows and converts at argv) | `--safety`/`--buchi`/`--pre` are positional SMT-LIB over `s0..sN` / `e0..eM`, so a property cannot be written in the input's own names. The bench harness translates (`tests/bench_matrix/suites.py` `smt()`, `entry_pre`). |
+| IN-4 | fixed d344db30 | `module_file` is threaded into `create_project` only to copy it to `dbg/system.py` -- assumes Python input. |
+| IN-5 | fixed 1cbd0688 (the fence), d12906c8 (`reads_source`; no route reads the source yet, answer E) | The original input never reaches a decision procedure: `InferInput` has no field for it. `main.py`'s docstring says `init()`/`update()` are there "so that the AI inference can read the high-level logic", but `ai` reads the generated Lean -- and the prompt fences it as ```` ```python ```` (`magic/ai.py:307,326`, `smt_prompt.py:573`). |
+| IN-6 | fixed 7c6149fa, fcd83a25, b816ec10, 07012f9d | `zrth/smv` changes a model's meaning silently: a non-assignment `TRANS`/`INIT`/`INVAR` is dropped (`_promote_constraints`, `smv/parser.py:189-211`), and a VAR with no `init` starts at 0 and with no `next` holds its value (`:700,707`) where NuSMV leaves both unconstrained. Specs (`INVARSPEC`/`LTLSPEC`) do not parse; `JUSTICE`/`FAIRNESS` parse and are ignored. Every type lowers to BitVec (`integer` is BV32), and none of `tests/smv_fixtures/*.smv` has a Lean form. Must be fixed before SMV becomes an input adapter. |
 
 **Direction:** an `InputAdapter` registry shaped like `ROUTES`, each adapter
 returning a `Problem(module, names, source, prp?, pre?)`. Move the Python
@@ -160,6 +160,7 @@ pipeline.py      load -> generate -> infer -> regenerate certificate -> check/bu
    most of the rest.
 3. **Shared encoding and obligations** -- PL-2, RT-6, RT-7, RT-9, RT-10.
 4. **Routes as modules** -- RT-1..RT-5, RT-12, PL-4.
-5. **Input adapters** -- IN-6 first, then IN-1..IN-5. Plan, open questions
-   and how to check: [`PHASE5_HANDOFF.md`](PHASE5_HANDOFF.md).
+5. **Input adapters** -- IN-6 first, then IN-1..IN-5. Done:
+   0e6b45b3..07012f9d. Plan, answers and how it was checked:
+   [`PHASE5_HANDOFF.md`](PHASE5_HANDOFF.md).
 6. **Codegen cleanup** -- CG-1, CG-2, CG-4..CG-6, CG-8, CG-9, CG-11, RT-8.
