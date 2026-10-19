@@ -3,6 +3,8 @@
 Public API: ``ModuleToLean4``; one submodule per encoding.
 """
 
+from functools import cached_property
+
 from zrth.lean.common import LeanContext, dtype_shape
 from zrth import Module
 
@@ -27,15 +29,24 @@ class ModuleToLean4:
 
     Read-only consumer of a pre-populated LeanContext — does not mutate it.
     Accepts a Module for convenience; in that case builds a fresh context.
+
+    Every method stands alone: what an equivalence theorem needs of its
+    encoding (the circuit's layer names, the scalar encoding's argmax
+    variants) is computed once, by whichever method asks first.
     """
 
     def __init__(self, src: "LeanContext | Module"):
         self.ctx = src if isinstance(src, LeanContext) else LeanContext(src)
-        # Layer names become available after atom_to_lean_circuit runs; the
-        # equivalence-theorem emitter reads them back.
-        self._init_layer_names: list[str] = []
-        self._update_layer_names: list[str] = []
-        self._argmax_scalar_variants: list[tuple[str, int]] = []
+
+    @cached_property
+    def _circuit(self) -> "tuple[str, list[str], list[str]]":
+        """The circuit encoding, and its init and update layer names."""
+        return _atom_to_lean_circuit(self.ctx)
+
+    @cached_property
+    def _scalar(self) -> "tuple[str, list[tuple[str, int]]]":
+        """The scalar encoding, and the argmax variants it defines."""
+        return _atom_to_lean_scalar(self.ctx)
 
     @property
     def module(self):
@@ -66,18 +77,12 @@ class ModuleToLean4:
 
     def atom_to_lean_circuit(self) -> str:
         """Generate the full Lean4 source for this module as a combinational circuit."""
-        src, init_names, update_names = _atom_to_lean_circuit(self.ctx)
-        self._init_layer_names = init_names
-        self._update_layer_names = update_names
-        return src
+        return self._circuit[0]
 
     def to_lean_equiv_theorems(self) -> str:
         """Generate theorems proving circuit ≡ functional."""
-        return _to_lean_equiv_theorems(
-            self.ctx,
-            self._init_layer_names,
-            self._update_layer_names,
-        )
+        _, init_names, update_names = self._circuit
+        return _to_lean_equiv_theorems(self.ctx, init_names, update_names)
 
     def to_lean_circ(self) -> str:
         return "{}\n\n{}".format(
@@ -91,13 +96,11 @@ class ModuleToLean4:
 
     def atom_to_lean_scalar(self) -> str:
         """Generate the scalar encoding inside ``namespace Scalar``."""
-        src, argmax_variants = _atom_to_lean_scalar(self.ctx)
-        self._argmax_scalar_variants = argmax_variants
-        return src
+        return self._scalar[0]
 
     def to_lean_scalar_equiv(self) -> str:
         """Generate theorems proving init/update = pack ∘ Scalar.init/update ∘ unpack."""
-        return _to_lean_scalar_equiv(self.ctx, self._argmax_scalar_variants)
+        return _to_lean_scalar_equiv(self.ctx, self._scalar[1])
 
     def to_lean_scalar(self) -> str:
         if not self._can_scalarize():

@@ -559,3 +559,35 @@ def test_unbound_block_output_raises():
         _translate_terms_scalar(
             [], {}, out, ConstantRegistry()
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# Each producer stands alone
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("mod", ["m_countdown", "m_argmax"])
+def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
+    """`to_lean_equiv_theorems` and `to_lean_scalar_equiv` read what their
+    encoding computed (layer names, argmax variants). Called first, on a
+    fresh `ModuleToLean4`, they print what the full producer prints rather
+    than silently dropping the theorems or the argmax lemmas."""
+    import importlib.util
+    from pathlib import Path
+
+    from zrth.lean.translate import ModuleToLean4
+
+    path = Path(__file__).parent / "limits" / "mods" / f"{mod}.py"
+    spec = importlib.util.spec_from_file_location(f"_alone_{mod}", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    module = m.module()
+
+    circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
+    assert "init_circ_eq" in circ_alone
+    assert ModuleToLean4(module).to_lean_circ().endswith(circ_alone)
+
+    scalar_alone = ModuleToLean4(module).to_lean_scalar_equiv()
+    assert ModuleToLean4(module).to_lean_scalar().endswith(scalar_alone)
+    if mod == "m_argmax":
+        assert "argmax1d_scalar" in scalar_alone
