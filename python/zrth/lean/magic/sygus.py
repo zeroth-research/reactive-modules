@@ -68,6 +68,7 @@ from ..certificate import Certificate, Claim
 from ..errors import Refused
 from . import TA2Magic
 from ..smt.limits import bounded_solver, call_ms
+from ..smt.obligations import initial, transition
 from ..smt_synth import (
     READING_KINDS,
     Search,
@@ -283,9 +284,12 @@ class TA2MagicSygus(TA2Magic):
         try:
             solver.addSygusInvConstraint(
                 inv,
-                solver.defineFun("pre", state, Bool, self._pre(ctx, state)),
                 solver.defineFun(
-                    "trans", state + nxt, Bool, self._trans(ctx, state, nxt)
+                    "pre", state, Bool, initial(ctx.enc, state, ctx.init_pre)
+                ),
+                solver.defineFun(
+                    "trans", state + nxt, Bool,
+                    transition(ctx.enc, state, nxt, ctx.update_pre),
                 ),
                 solver.defineFun(
                     "post", state, Bool, ctx.enc.at(ctx.prp, state)
@@ -309,55 +313,6 @@ class TA2MagicSygus(TA2Magic):
             src = str(body.substitute(bound, ctx.state) if bound else body)
             return src, False
         return None, result.hasNoSolution()
-
-    # --- the three formulas `G P` is made of ----------------------------
-
-    def _pre(self, ctx: SynthContext, state: list):
-        """`s` is an initial state: some input makes `init` produce it.
-
-        Existential rather than a fresh constant, because SyGuS-IF's `pre` is
-        a predicate on the state alone -- and existential rather than
-        universal because `init_inv` asks the invariant to hold at whatever
-        the inputs made, not at every value some other input would have made.
-        """
-        tm = ctx.tm
-        el = [tm.mkVar(v.getSort(), f"pre_el{i}")
-              for i, v in enumerate(ctx.extl_latched)]
-        en = [tm.mkVar(v.getSort(), f"pre_en{i}")
-              for i, v in enumerate(ctx.extl_next)]
-        body = tm.mkTerm(
-            Kind.AND,
-            ctx.enc.with_inputs(ctx.init_pre, el, en),
-            self._same(ctx, state, ctx.enc.init_state(en)),
-        )
-        return self._exists(ctx, el + en, body)
-
-    def _trans(self, ctx: SynthContext, state: list, nxt: list):
-        """`s -> s'`: some input, allowed by `--pre`, takes one to the other."""
-        tm = ctx.tm
-        el = [tm.mkVar(v.getSort(), f"tr_el{i}")
-              for i, v in enumerate(ctx.extl_latched)]
-        en = [tm.mkVar(v.getSort(), f"tr_en{i}")
-              for i, v in enumerate(ctx.extl_next)]
-        body = tm.mkTerm(
-            Kind.AND,
-            ctx.enc.with_inputs(ctx.update_pre, el, en),
-            self._same(ctx, nxt, ctx.enc.next_state(state, el, en)),
-        )
-        return self._exists(ctx, el + en, body)
-
-    def _same(self, ctx: SynthContext, lhs: list, rhs: list):
-        eqs = [ctx.tm.mkTerm(Kind.EQUAL, a, b) for a, b in zip(lhs, rhs)]
-        if not eqs:                                  # pragma: no cover
-            return ctx.tm.mkBoolean(True)
-        return eqs[0] if len(eqs) == 1 else ctx.tm.mkTerm(Kind.AND, *eqs)
-
-    def _exists(self, ctx: SynthContext, vs: list, body):
-        if not vs:
-            return body
-        return ctx.tm.mkTerm(
-            Kind.EXISTS, ctx.tm.mkTerm(Kind.VARIABLE_LIST, *vs), body
-        )
 
     # --- the grammar ----------------------------------------------------
 

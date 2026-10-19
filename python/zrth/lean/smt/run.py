@@ -145,12 +145,18 @@ class ModuleEncoding:
     def bound(self, prefix: str = "") -> tuple[list, list, list]:
         """Bound variables for a state and the inputs latched and awaited,
         for a quantifier to close: `fresh`'s sibling, named the same way."""
-        def vs(terms: list, tag: str) -> list:
-            return [self.tm.mkVar(t.getSort(), f"{prefix}{tag}{i}")
-                    for i, t in enumerate(terms)]
+        return (self._vars(self.state, f"{prefix}s"),
+                *self.bound_inputs(prefix))
 
-        return (vs(self.state, "s"), vs(self.extl_latched, "el"),
-                vs(self.extl_next, "en"))
+    def bound_inputs(self, prefix: str = "") -> tuple[list, list]:
+        """`bound`'s inputs alone, for a relation that closes them over a
+        state it is given."""
+        return (self._vars(self.extl_latched, f"{prefix}el"),
+                self._vars(self.extl_next, f"{prefix}en"))
+
+    def _vars(self, terms: list, prefix: str) -> list:
+        return [self.tm.mkVar(t.getSort(), f"{prefix}{i}")
+                for i, t in enumerate(terms)]
 
     def at(self, term, vs: list):
         """`term` with the state replaced by `vs`."""

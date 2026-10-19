@@ -71,3 +71,29 @@ def test_bound_is_fresh_as_variables_a_quantifier_can_close():
     for vs, consts in zip(bound, fresh):
         assert all(v.getKind() == Kind.VARIABLE for v in vs)
         assert [v.getSort() for v in vs] == [c.getSort() for c in consts]
+
+
+def test_the_round_as_relations_closes_its_inputs():
+    """`initial` and `transition` are predicates on states alone, as SyGuS-IF
+    wants them: the inputs are closed existentially, and the precondition
+    restricts which of them may be used. `m_relu_input` is `x0 = 5`, `x' =
+    relu(x - e)`, with `e` read the round it is awaited."""
+    from zrth.lean.smt import obligations as obl
+    from zrth.lean.smt.run import ModuleEncoding
+
+    enc = ModuleEncoding(_module("m_relu_input"))
+
+    def state(k):
+        return [enc.tm.mkInteger(k)]
+
+    def sat(t):
+        s = enc.solver(10_000, logic="ALL")
+        s.assertFormula(t)
+        return s.checkSat().isSat()
+
+    assert sat(obl.initial(enc, state(5)))
+    assert not sat(obl.initial(enc, state(4)))
+    pre = enc.parse("(>= e0 1)", "pre")
+    assert sat(obl.transition(enc, state(5), state(6)))       # some e < 0
+    assert not sat(obl.transition(enc, state(5), state(6), pre))
+    assert sat(obl.transition(enc, state(5), state(4), pre))

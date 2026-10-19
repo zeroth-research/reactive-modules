@@ -236,6 +236,57 @@ def rank_positive(f, hyps: list, prp, rank) -> Query:
     return _query(named, goal)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# The round as relations
+#
+# `--infer sygus` states `G P` as SyGuS-IF does, over `pre(s)` and
+# `trans(s, s')`: predicates on states alone, so the inputs that make a
+# state initial, or take one state to the next, are closed existentially.
+# Existential rather than fresh constants, because the relation is about the
+# state alone; and existential rather than universal, because `init_inv`
+# asks the invariant to hold at whatever the inputs made, not at every value
+# some other input would have made. A precondition is over the parser's
+# inputs, and `None` is none.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def initial(enc, s: list, init_pre=None, *, prefix: str = "pre_"):
+    """`s` is a state tick 0 can produce: `exists el en. init_pre /\\ s =
+    init en`."""
+    el, en = enc.bound_inputs(prefix)
+    return _closing(enc, el + en, enc.with_inputs(init_pre, el, en),
+                    lambda: _same(enc.tm, s, enc.init_state(en)))
+
+
+def transition(enc, s: list, s2: list, update_pre=None, *,
+               prefix: str = "tr_"):
+    """`s -> s2`: some input, allowed by `update_pre`, takes one to the
+    other -- `exists el en. update_pre /\\ s2 = update s el en`."""
+    el, en = enc.bound_inputs(prefix)
+    return _closing(enc, el + en, enc.with_inputs(update_pre, el, en),
+                    lambda: _same(enc.tm, s2, enc.next_state(s, el, en)))
+
+
+def _closing(enc, vs: list, pre, same):
+    """`exists vs. pre /\\ same()`. `same` is built after `pre`, which is
+    the order cvc5 numbers the terms in, and so the order the relation
+    has always been built in."""
+    from cvc5 import Kind
+
+    tm = enc.tm
+    body = same() if pre is None else tm.mkTerm(Kind.AND, pre, same())
+    if not vs:
+        return body
+    return tm.mkTerm(Kind.EXISTS, tm.mkTerm(Kind.VARIABLE_LIST, *vs), body)
+
+
+def _same(tm, lhs: list, rhs: list):
+    from cvc5 import Kind
+
+    return conjunction(tm, [tm.mkTerm(Kind.EQUAL, a, b)
+                            for a, b in zip(lhs, rhs)])
+
+
 class Frame:
     """An inline frame: fresh constants, and the encoded round from them.
 
