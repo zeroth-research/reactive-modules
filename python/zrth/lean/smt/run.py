@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
-from ..errors import Refused
+from ..errors import PredicateRefused
 from .limits import bounded_solver
 
 
@@ -55,9 +55,11 @@ class ModuleEncoding:
 
     # --- predicates -------------------------------------------------------
 
-    def parse(self, src: str | None, flag: str, want: str = "Bool"):
-        """`src` as a term over the state and inputs, or `Refused` naming
-        `flag`, the source it came from.
+    def parse(self, src: str | None, role: str, want: str = "Bool",
+              kind: str = "buchi"):
+        """`src` as a term over the state and inputs, or `PredicateRefused`
+        naming its `role` ("property" of `kind`, "pre", "invariant",
+        "ranking").
 
         `want` is the sort the field is declared as and the Lean printer
         assumes: a property, an invariant and a precondition become the
@@ -78,10 +80,12 @@ class ModuleEncoding:
                 hit = e
             self._parsed[src] = hit
         if isinstance(hit, Exception):
-            raise Refused(f"{flag}: cannot read `{src}`: {hit}") from hit
+            raise PredicateRefused(
+                role, f"cannot read `{src}`: {hit}", kind=kind) from hit
         got = hit.getSort()
         if not (got.isBoolean() if want == "Bool" else got.isInteger()):
-            raise Refused(f"{flag}: must have sort {want}, got {got}")
+            raise PredicateRefused(
+                role, f"must have sort {want}, got {got}", kind=kind)
         return hit
 
     def queries(self, claim, cert=None):

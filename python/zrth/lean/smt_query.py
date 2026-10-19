@@ -96,7 +96,7 @@ class ModuleQueries:
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
     point is that the caller can carry on without cvc5. A caller that cannot
-    carry on -- `cert.predicate_terms`, whose terms *are* what the Lean is
+    carry on -- `predicate_terms`, whose terms *are* what the Lean is
     printed from -- constructs directly and reports what went wrong:
     `Refused` for a predicate, anything else for the module.
     """
@@ -113,12 +113,11 @@ class ModuleQueries:
 
         cert = cert or Certificate()
         self.kind = claim.kind
-        prp_flag = "--safety" if claim.is_safety else "--buchi"
-        self.prp = enc.parse(claim.prp, prp_flag)
-        self.inv = enc.parse(cert.inv, "--invariant")
-        self.ranking = enc.parse(cert.ranking, "--ranking", want="Int")
-        self.init_pre = enc.parse(claim.init_pre, "--pre")
-        self.update_pre = enc.parse(claim.update_pre, "--pre")
+        self.prp = enc.parse(claim.prp, "property", kind=claim.kind)
+        self.inv = enc.parse(cert.inv, "invariant")
+        self.ranking = enc.parse(cert.ranking, "ranking", want="Int")
+        self.init_pre = enc.parse(claim.init_pre, "pre")
+        self.update_pre = enc.parse(claim.update_pre, "pre")
 
     @classmethod
     def build(cls, source, claim: Claim,
@@ -449,6 +448,26 @@ def pre_check(smt, claim: Claim, answer: "Certificate | LeanAnswer | None",
 # ══════════════════════════════════════════════════════════════════════
 # Predicate shape, read off the terms
 # ══════════════════════════════════════════════════════════════════════
+
+
+def predicate_terms(
+    smt, claim: Claim, cert: Certificate = Certificate()
+) -> "ModuleQueries":
+    """`claim` and `cert` parsed against the module: what the Lean is printed
+    from, and what `predicate_facts` and `solver_hints` read. `smt` is the
+    module, its encoding or a `smt.run.lazy` factory for one.
+
+    A predicate that does not parse is refused by its role; anything
+    else is the module's, and refused as that.
+    """
+    try:
+        return encoding_of(smt).queries(claim, cert)
+    except Refused:
+        raise
+    except Exception as e:
+        raise Refused(
+            f"the certificate predicates cannot be read for this module: {e}"
+        ) from e
 
 
 @dataclass

@@ -12,7 +12,8 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
-from zrth.lean.cert import LeanPredicates, predicate_terms, render_certificate
+from zrth.lean.cert import LeanPredicates, render_certificate
+from zrth.lean.smt_query import predicate_terms
 from zrth.lean.certificate import Certificate, Claim
 
 

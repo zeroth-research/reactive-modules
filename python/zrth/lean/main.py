@@ -103,7 +103,6 @@ from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import (
     LeanCertificate,
     generate_zeroth_hammer_lean,
-    predicate_terms,
     prepare,
 )
 from .certificate import Certificate, Claim, LeanAnswer
@@ -125,7 +124,7 @@ from .project import (
     write_encoding,
 )
 from .smt.run import lazy
-from .smt_query import pre_check, solver_hints
+from .smt_query import pre_check, predicate_terms, solver_hints
 from .translate import ModuleToLean4
 
 

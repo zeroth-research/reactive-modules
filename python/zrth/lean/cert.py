@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.errors import Refused
+from zrth.lean.errors import PredicateRefused, Refused
 from zrth.lean.context import LeanContext
 from zrth.lean.lean_names import MAT_SIMP, rm_def
 from zrth.lean.tactics import plan_for
@@ -138,28 +138,6 @@ class LeanCertificate:
     plan: PlanInputs = field(default_factory=PlanInputs)
 
 
-def predicate_terms(
-    smt, claim: Claim, cert: Certificate = Certificate()
-) -> "ModuleQueries":
-    """`claim` and `cert` parsed against the module: what the Lean is printed
-    from, and what `predicate_facts` and `solver_hints` read. `smt` is the
-    module, its encoding or a `smt.run.lazy` factory for one.
-
-    A predicate that does not parse is refused naming its flag; anything
-    else is the module's, and refused as that.
-    """
-    from .smt.run import encoding_of
-
-    try:
-        return encoding_of(smt).queries(claim, cert)
-    except Refused:
-        raise
-    except Exception as e:
-        raise Refused(
-            f"the certificate predicates cannot be read for this module: {e}"
-        ) from e
-
-
 def render_certificate(
     q: "ModuleQueries", *, share: bool = True,
     verbatim: LeanAnswer | None = None,
@@ -195,28 +173,27 @@ def render_certificate(
             share=share,
         )
 
-    def named(flag: str, term, mode: str) -> str | None:
-        """`translate`, with the flag the source came from on any refusal.
+    def named(term, role: str) -> str | None:
+        """`translate`, with the predicate's role on any refusal.
 
-        The translator walks a cvc5 term and knows nothing of the command
-        line; `--pre (= s0 0)` parses and then fails on a name preconditions
+        The translator walks a cvc5 term and knows nothing of where it came
+        from; `--pre (= s0 0)` parses and then fails on a name preconditions
         do not bind, and "Unknown free variable `s0`" alone does not say
         which of five sources asked for it.
         """
         try:
-            return translate(term, mode)
+            return translate(term, role)
         except Refused as e:
-            raise Refused(f"{flag}: {e}") from e
+            raise PredicateRefused(role, str(e), kind=q.kind) from e
 
-    prp_flag = "--safety" if q.kind == "safety" else "--buchi"
-    prp = named(prp_flag, q.prp, "property")
-    init_pre = named("--pre", q.init_pre, "pre")
-    update_pre = named("--pre", q.update_pre, "pre")
+    prp = named(q.prp, "property")
+    init_pre = named(q.init_pre, "pre")
+    update_pre = named(q.update_pre, "pre")
     if verbatim is not None:
         inv, ranking = verbatim.inv, verbatim.ranking
     else:
-        inv = named("--invariant", q.inv, "invariant")
-        ranking = named("--ranking", q.ranking, "ranking")
+        inv = named(q.inv, "invariant")
+        ranking = named(q.ranking, "ranking")
     return LeanPredicates(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,
@@ -265,6 +242,8 @@ def lean_certificate(
     """`claim` and `cert` printed for codegen, with the facts their terms
     give and no solver hints."""
     from .smt_query import predicate_facts
+
+    from .smt_query import predicate_terms
 
     q = predicate_terms(module, claim, cert)
     return LeanCertificate(

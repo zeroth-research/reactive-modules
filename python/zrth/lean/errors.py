@@ -29,3 +29,28 @@ class Refused(ValueError):
     def __init__(self, *args, searched: bool = False):
         super().__init__(*args)
         self.searched = searched
+
+
+class PredicateRefused(Refused):
+    """A refusal about one of the claim's predicates, named by its `role`:
+    "property" (of `kind` "safety" or "buchi"), "pre", "invariant" or
+    "ranking" -- or any other label, for a term a route made up itself.
+    The layers that raise it know predicates by role; a claim's predicate
+    is shown as the command-line flag it came from, which is where a user
+    can act on it, and this is the one place that spelling lives."""
+
+    def __init__(self, role: str, message: str, *, kind: str = "buchi",
+                 searched: bool = False):
+        super().__init__(message, searched=searched)
+        self.role, self.kind, self.message = role, kind, message
+
+    @property
+    def flag(self) -> str:
+        if self.role == "property":
+            return f"--{self.kind}"
+        if self.role in ("pre", "invariant", "ranking"):
+            return f"--{self.role}"
+        return self.role
+
+    def __str__(self) -> str:
+        return f"{self.flag}: {self.message}"

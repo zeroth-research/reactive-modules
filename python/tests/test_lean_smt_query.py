@@ -420,7 +420,8 @@ def test_translation_can_be_asked_not_to_share():
     a shared `if (u3 ≥ 0) …` gives `simp only [if_pos hf0]` nothing to match
     and the branch is never collapsed.
     """
-    from zrth.lean.cert import predicate_terms, render_certificate
+    from zrth.lean.cert import render_certificate
+    from zrth.lean.smt_query import predicate_terms
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
     shared = render_certificate(q, share=True).ranking
@@ -431,7 +432,8 @@ def test_translation_can_be_asked_not_to_share():
 
 def test_a_lean_answer_is_printed_as_it_was_given():
     """`--infer ai`'s reply is Lean already; the property beside it is not."""
-    from zrth.lean.cert import predicate_terms, render_certificate
+    from zrth.lean.cert import render_certificate
+    from zrth.lean.smt_query import predicate_terms
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
@@ -439,7 +441,7 @@ def test_a_lean_answer_is_printed_as_it_was_given():
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
-    from zrth.lean.cert import predicate_terms
+    from zrth.lean.smt_query import predicate_terms
 
     with pytest.raises(Refused, match="--ranking"):
         predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))

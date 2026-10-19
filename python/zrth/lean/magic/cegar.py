@@ -137,12 +137,13 @@ class TA2MagicCEGAR(TA2Magic):
         env = enc.env
 
         # An absent predicate is `true`, and every obligation states it.
-        def parsed(src, flag):
-            return enc.tm.mkBoolean(True) if src is None else enc.parse(src, flag)
+        def parsed(src, role):
+            return (enc.tm.mkBoolean(True) if src is None
+                    else enc.parse(src, role, kind=claim.kind))
 
-        prp_term = parsed(claim.prp, "--safety" if claim.is_safety else "--buchi")
-        init_pre_term = parsed(claim.init_pre, "--pre")
-        update_pre_term = parsed(claim.update_pre, "--pre")
+        prp_term = parsed(claim.prp, "property")
+        init_pre_term = parsed(claim.init_pre, "pre")
+        update_pre_term = parsed(claim.update_pre, "pre")
 
         preconds = describe_preconditions(claim)
         feedback: str | None = None

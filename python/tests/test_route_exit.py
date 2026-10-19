@@ -101,3 +101,14 @@ def test_every_route_exits_cleanly(tmp_path):
     assert "cvc5 loaded by import: False" in r.stdout
     exits = [ln for ln in r.stdout.splitlines() if ln.startswith("== exit")]
     assert exits == ["== exit 0"] * len(cases), r.stdout[-3000:]
+
+
+def test_a_predicate_refusal_is_shown_as_its_flag():
+    """The layers below the CLI name a predicate by role; the refusal is
+    read where the user can act on it, as the flag it came from."""
+    from zrth.lean.errors import PredicateRefused
+
+    assert str(PredicateRefused("property", "x", kind="safety")) == "--safety: x"
+    assert str(PredicateRefused("property", "x")) == "--buchi: x"
+    assert str(PredicateRefused("pre", "x")) == "--pre: x"
+    assert str(PredicateRefused("branch condition", "x")) == "branch condition: x"

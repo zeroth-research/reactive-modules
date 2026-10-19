@@ -347,7 +347,7 @@ class TA2MagicLinear(TA2Magic):
             conds = []
         for src in conds[:MAX_SPLITS]:
             try:
-                term = ctx.enc.parse(src, "--infer smt-linear")
+                term = ctx.enc.parse(src, "branch condition")
             except Refused:                         # pragma: no cover
                 continue
             shapes.append(_RankShape("split", cond_src=src, cond=term))
@@ -608,7 +608,7 @@ class TA2MagicLinear(TA2Magic):
         Int = tm.getIntegerSort()
         rows = [[tm.mkConst(Int, f"a{j}_{i}") for i in range(n + 1)]
                 for j in range(k)]
-        given_term = ctx.enc.parse(given, "--invariant") if given else None
+        given_term = ctx.enc.parse(given, "invariant") if given else None
 
         def inv(vs):
             parts = []
