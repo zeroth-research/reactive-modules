@@ -160,7 +160,7 @@ def test_matrix_module_uses_matvecaffine():
     assert "affineLinear" not in lean
     assert "matVecAffine" in lean
     assert "Box.linear" in lean
-    assert "[[0, 0], [1, 0], [0, 1]]" in lean  # A of init, as a list literal
+    assert "[[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]]" in lean  # A of init, as a list literal
 
 
 def test_matrix_init_signature():

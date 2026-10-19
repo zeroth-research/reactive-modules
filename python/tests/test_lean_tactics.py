@@ -515,7 +515,7 @@ def test_cvc5_is_asked_about_the_invariant_that_now_exists():
     hints = after.plan.hints
     assert hints is not None
     assert [value for _text, value in hints.determined] == [True]
-    assert "≤ 200" in hints.determined[0][0]
+    assert "≤ (200 : Int)" in hints.determined[0][0]
 
 
 def test_a_settled_condition_is_printed_unshared():

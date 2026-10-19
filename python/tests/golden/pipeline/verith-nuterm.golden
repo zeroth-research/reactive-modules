@@ -79,13 +79,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => ((((2 * (max (2 + (s 0 0)) 0)) + (2 * (max (2 * (s 0 0)) 0)) + (2 * (max ((- 2) * (s 0 0)) 0)) + (2 * (max ((- 1) + (- (s 0 0))) 0)) + (2 * (max (- (s 0 0)) 0)) + (2 * (max ((- 1) + (s 0 0)) 0)) + (2 * (max (- 1) 0))) : Int)).toNat
+def ranking : (Mat Int 1 1) → Nat := fun s => (((((2 : Int) * (max ((2 : Int) + (s 0 0)) (0 : Int))) + ((2 : Int) * (max ((2 : Int) * (s 0 0)) (0 : Int))) + ((2 : Int) * (max ((- (2 : Int)) * (s 0 0)) (0 : Int))) + ((2 : Int) * (max ((- (1 : Int)) + (- (s 0 0))) (0 : Int))) + ((2 : Int) * (max (- (s 0 0)) (0 : Int))) + ((2 : Int) * (max ((- (1 : Int)) + (s 0 0)) (0 : Int))) + ((2 : Int) * (max (- (1 : Int)) (0 : Int)))) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin

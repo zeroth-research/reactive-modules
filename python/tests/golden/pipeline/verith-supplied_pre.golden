@@ -65,13 +65,13 @@ Project ready at: <OUT>/G
 === Certificate/Data.lean
 import Core.Basic
 
-def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ 0)
+def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ 0)
+def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ 0)
+def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 

@@ -3,6 +3,8 @@ module's terms define (`ConstantRegistry`)."""
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 from zrth import BitVec, Bool, Int, Real, Sort, Term, Wire
 from .sorts import _is_scalar_shape, _is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
 
@@ -55,19 +57,49 @@ def _constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
     return _tensor_to_lean_inline(term.itype._0, w)
 
 
-def _get_dtype_item(dtype: Sort, item) -> str:
-    if isinstance(dtype, Bool):
-        return "true" if bool(item) else "false"
-    if isinstance(dtype, Int):
-        return str(int(item))
-    if isinstance(dtype, Real):
-        return _float_literal(float(item))
-    if isinstance(dtype, BitVec):
-        # `ofInt`, not `ofNat`: a negative entry has no `Neg ℕ` instance,
-        # so `BitVec.ofNat w -3` does not elaborate. `ofInt` wraps to
-        # two's complement and handles non-negative values identically.
-        return f"(BitVec.ofInt {dtype._0} ({int(item)}))"
-    raise NotImplementedError(f"Unhnadled type: {dtype}")
+def decimal_fraction(value) -> Fraction:
+    """`value` as an exact fraction, a float read by its decimal form:
+    `0.1` is 1/10, what the number was written as and what Lean makes of
+    a decimal literal. The SMT encoding builds its constants from this
+    too, so the two state the same number."""
+    if isinstance(value, float):
+        return Fraction(repr(value))
+    return Fraction(value)
+
+
+def lean_int(value) -> str:
+    """An Int literal, ascribed whatever its sign, so it reads the same in
+    every position."""
+    return f"({int(value)} : Int)"
+
+
+def lean_real(value) -> str:
+    """A Real literal, exact: `(2 : Real)` or `((p : Real) / q)`."""
+    q = decimal_fraction(value)
+    if q.denominator == 1:
+        return f"({q.numerator} : Real)"
+    return f"(({q.numerator} : Real) / {q.denominator})"
+
+
+def lean_bitvec(width: int, value) -> str:
+    """A BitVec literal. `ofInt`, not `ofNat`: a negative entry has no
+    `Neg ℕ` instance, so `BitVec.ofNat w -3` does not elaborate; `ofInt`
+    wraps to two's complement and reads non-negative values identically."""
+    return f"(BitVec.ofInt {width} ({int(value)}))"
+
+
+def lean_literal(sort: Sort, value) -> str:
+    """`value` as a Lean literal of one element of `sort`: every constant
+    the encodings and the certificate print goes through here."""
+    if isinstance(sort, Bool):
+        return "true" if bool(value) else "false"
+    if isinstance(sort, Int):
+        return lean_int(value)
+    if isinstance(sort, Real):
+        return lean_real(value)
+    if isinstance(sort, BitVec):
+        return lean_bitvec(sort._0, value)
+    raise ValueError(f"no Lean literal for a value of sort {sort}")
 
 
 def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
@@ -83,7 +115,7 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     shape = dtype_shape(wire.dtype)
 
     if _is_scalar_shape(shape):
-        val = _get_dtype_item(wire.dtype, tensor.item())
+        val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
         return f"@[simp] def {name} : {ty} := fun _ _ => {val}\n"
@@ -102,12 +134,12 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
         for i in range(m):
             row_entries = []
             for j in range(n):
-                val = _get_dtype_item(wire.dtype, data[i, j].item())
+                val = lean_literal(wire.dtype, data[i, j].item())
                 row_entries.append(f"| {i}, {j} => {val}")
             lines.append("  " + " ".join(row_entries))
         # Catch-all: enumerated arms already cover all indices, but Lean can't
         # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
-        lines.append(f"  | _, _ => {_get_dtype_item(wire.dtype, 0)}")
+        lines.append(f"  | _, _ => {lean_literal(wire.dtype, 0)}")
 
         return "\n".join(lines) + "\n"
 
@@ -116,38 +148,14 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     )
 
 
-def _float_literal(v: float) -> str:
-    """Lean Real literal for a float value."""
-    if v == int(v):
-        return f"({int(v)} : Real)"
-    return f"({v} : Real)"
-
-
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
     """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
-    if isinstance(wire.dtype, Bool):
-        val = "true" if bool(tensor.item()) else "false"
-        return f"(fun _ _ => {val})"
-    if isinstance(wire.dtype, Int):
-        return f"(fun _ _ => ({int(tensor.item())} : Int))"
-    if isinstance(wire.dtype, Real):
-        return f"(fun _ _ => {_float_literal(float(tensor.item()))})"
-    if isinstance(wire.dtype, BitVec):
-        return f"(fun _ _ => {_get_dtype_item(wire.dtype, tensor.item())})"
-    raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")
+    return f"(fun _ _ => {lean_literal(wire.dtype, tensor.item())})"
 
 
 def _tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     """Return a bare scalar literal (no Mat wrapper) for a scalar tensor."""
-    if isinstance(wire.dtype, Bool):
-        return "true" if bool(tensor.item()) else "false"
-    if isinstance(wire.dtype, Int):
-        return f"({int(tensor.item())} : Int)"
-    if isinstance(wire.dtype, Real):
-        return _float_literal(float(tensor.item()))
-    if isinstance(wire.dtype, BitVec):
-        return _get_dtype_item(wire.dtype, tensor.item())
-    raise ValueError(f"Cannot inline scalar for dtype={wire.dtype}")
+    return lean_literal(wire.dtype, tensor.item())
 
 
 def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
@@ -166,13 +174,13 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     in_dim = int(A.shape[1])
     ty = lean_elem_type(out_wire.dtype)
     rows = [
-        "[" + ", ".join(_get_dtype_item(out_wire.dtype, A[i][l].item()) for l in range(in_dim)) + "]"
+        "[" + ", ".join(lean_literal(out_wire.dtype, A[i][l].item()) for l in range(in_dim)) + "]"
         for i in range(out_m)
     ]
     a_lit = f"([{', '.join(rows)}] : List (List {ty}))"
     if B.numel() == 0:
-        bias = [_get_dtype_item(out_wire.dtype, 0) for _ in range(out_m)]
+        bias = [lean_literal(out_wire.dtype, 0) for _ in range(out_m)]
     else:
-        bias = [_get_dtype_item(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
+        bias = [lean_literal(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
     b_lit = f"([{', '.join(bias)}] : List {ty})"
     return out_m, a_lit, b_lit, ty

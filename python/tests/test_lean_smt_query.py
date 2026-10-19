@@ -441,7 +441,7 @@ def test_a_lean_answer_is_printed_as_it_was_given():
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
-    assert defs.prp == "fun s => ((s 0 0) = 0)"
+    assert defs.prp == "fun s => ((s 0 0) = (0 : Int))"
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():

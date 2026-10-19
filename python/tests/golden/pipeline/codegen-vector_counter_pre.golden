@@ -1,17 +1,17 @@
 === Certificate/Data.lean
 import Core.Basic
 
-def init_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => ((((e.2) 0 0) ≥ 0) ∧ (((e.2) 1 0) ≥ 0))
+def init_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => ((((e.2) 0 0) ≥ (0 : Int)) ∧ (((e.2) 1 0) ≥ (0 : Int)))
 
-def update_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => (((e.2) 0 0) ≥ 0)
+def update_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => (((e.2) 0 0) ≥ (0 : Int))
 
-def inv : (Mat Int 3 1) → Prop := fun s => ((((s) 0 0) ≥ 0) ∧ ((((s) 0 0) ≤ ((s) 1 0)) ∨ (((s) 0 0) ≤ ((s) 2 0))))
+def inv : (Mat Int 3 1) → Prop := fun s => ((((s) 0 0) ≥ (0 : Int)) ∧ ((((s) 0 0) ≤ ((s) 1 0)) ∨ (((s) 0 0) ≤ ((s) 2 0))))
 
-def P : (Mat Int 3 1) → Prop := fun s => (((s) 0 0) = 0)
+def P : (Mat Int 3 1) → Prop := fun s => (((s) 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = 0) then 0 else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + 1)) : Int)).toNat
+def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = (0 : Int)) then (0 : Int) else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + (1 : Int))) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
@@ -159,33 +159,33 @@ set_option maxHeartbeats 2000000
 
 
 @[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
+  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]] : List (List Int)) ([(0 : Int), (0 : Int), (0 : Int)] : List Int) extl_n)
   x0
 
 @[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 1 1) := (matVecAffine 1 ([[1, 0, 0]] : List (List Int)) ([0] : List Int) ctrl)
-  let x1 : (Mat Int 1 1) := (matVecAffine 1 ([[0, 1, 0]] : List (List Int)) ([0] : List Int) ctrl)
-  let x2 : (Mat Int 1 1) := (matVecAffine 1 ([[0, 0, 1]] : List (List Int)) ([0] : List Int) ctrl)
+  let x0 : (Mat Int 1 1) := (matVecAffine 1 ([[(1 : Int), (0 : Int), (0 : Int)]] : List (List Int)) ([(0 : Int)] : List Int) ctrl)
+  let x1 : (Mat Int 1 1) := (matVecAffine 1 ([[(0 : Int), (1 : Int), (0 : Int)]] : List (List Int)) ([(0 : Int)] : List Int) ctrl)
+  let x2 : (Mat Int 1 1) := (matVecAffine 1 ([[(0 : Int), (0 : Int), (1 : Int)]] : List (List Int)) ([(0 : Int)] : List Int) ctrl)
   let x3 : (Mat Bool 1 1) := (fun _ _ => decide (x0 0 0 < x1 0 0))
   let x4 : (Mat Bool 1 1) := (fun _ _ => decide (x0 0 0 < x2 0 0))
   let x5 : (Mat Bool 1 1) := (fun _ _ => (x3 0 0 || x4 0 0))
-  let x6 : (Mat Int 3 1) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
-  let x7 : (Mat Int 3 1) := (matVecAffine 3 ([[0, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([0, 0, 0] : List Int) ctrl)
+  let x6 : (Mat Int 3 1) := (matVecAffine 3 ([[(1 : Int), (0 : Int), (0 : Int)], [(0 : Int), (1 : Int), (0 : Int)], [(0 : Int), (0 : Int), (1 : Int)]] : List (List Int)) ([(1 : Int), (0 : Int), (0 : Int)] : List Int) ctrl)
+  let x7 : (Mat Int 3 1) := (matVecAffine 3 ([[(0 : Int), (0 : Int), (0 : Int)], [(0 : Int), (1 : Int), (0 : Int)], [(0 : Int), (0 : Int), (1 : Int)]] : List (List Int)) ([(0 : Int), (0 : Int), (0 : Int)] : List Int) ctrl)
   let x8 : (Mat Int 3 1) := (if x5 0 0 then x6 else x7)
   x8
 
 
-def init_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => ((((e.2) 0 0) ≥ 0) ∧ (((e.2) 1 0) ≥ 0))
+def init_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => ((((e.2) 0 0) ≥ (0 : Int)) ∧ (((e.2) 1 0) ≥ (0 : Int)))
 
-def update_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => (((e.2) 0 0) ≥ 0)
+def update_pre : ((Mat Int 2 1)) × ((Mat Int 2 1)) → Prop := fun e => (((e.2) 0 0) ≥ (0 : Int))
 
-def inv : (Mat Int 3 1) → Prop := fun s => ((((s) 0 0) ≥ 0) ∧ ((((s) 0 0) ≤ ((s) 1 0)) ∨ (((s) 0 0) ≤ ((s) 2 0))))
+def inv : (Mat Int 3 1) → Prop := fun s => ((((s) 0 0) ≥ (0 : Int)) ∧ ((((s) 0 0) ≤ ((s) 1 0)) ∨ (((s) 0 0) ≤ ((s) 2 0))))
 
-def P : (Mat Int 3 1) → Prop := fun s => (((s) 0 0) = 0)
+def P : (Mat Int 3 1) → Prop := fun s => (((s) 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = 0) then 0 else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + 1)) : Int)).toNat
+def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = (0 : Int)) then (0 : Int) else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + (1 : Int))) : Int)).toNat
 
 
 def RM : ReactiveModule (((Mat Int 2 1)) × ((Mat Int 2 1))) ((Mat Int 3 1)) := {

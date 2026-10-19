@@ -5,24 +5,24 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
 def ranking : (Mat Int 1 1) → Nat := fun s => 
   let u0 := ((s 0 0) + (s 0 0))
-  let u1 := (max u0 0)
+  let u1 := (max u0 (0 : Int))
   let u2 := ((s 0 0) + (- (s 0 0)))
-  let u3 := (max u2 0)
+  let u3 := (max u2 (0 : Int))
   let u4 := (u1 + u3)
-  let u5 := (max u4 0)
+  let u5 := (max u4 (0 : Int))
   let u6 := (u1 + (- u3))
-  let u7 := (max u6 0)
+  let u7 := (max u6 (0 : Int))
   let u8 := (u5 + u7)
   let u9 := (u5 + (- u7))
-  ((((max u8 0) + (max u9 0)) : Int)).toNat
+  ((((max u8 (0 : Int)) + (max u9 (0 : Int))) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
@@ -189,24 +189,24 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
 def ranking : (Mat Int 1 1) → Nat := fun s => 
   let u0 := ((s 0 0) + (s 0 0))
-  let u1 := (max u0 0)
+  let u1 := (max u0 (0 : Int))
   let u2 := ((s 0 0) + (- (s 0 0)))
-  let u3 := (max u2 0)
+  let u3 := (max u2 (0 : Int))
   let u4 := (u1 + u3)
-  let u5 := (max u4 0)
+  let u5 := (max u4 (0 : Int))
   let u6 := (u1 + (- u3))
-  let u7 := (max u6 0)
+  let u7 := (max u6 (0 : Int))
   let u8 := (u5 + u7)
   let u9 := (u5 + (- u7))
-  ((((max u8 0) + (max u9 0)) : Int)).toNat
+  ((((max u8 (0 : Int)) + (max u9 (0 : Int))) : Int)).toNat
 
 
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {

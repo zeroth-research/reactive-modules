@@ -5,13 +5,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => (((s.1 0 0) ≥ 0) ∧ ((s.1 0 0) ≤ (s.2 0 0)) ∧ ((s.2 0 0) = 10))
+def inv : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => (((s.1 0 0) ≥ (0 : Int)) ∧ ((s.1 0 0) ≤ (s.2 0 0)) ∧ ((s.2 0 0) = (10 : Int)))
 
 def P : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => ((s.1 0 0) = (s.2 0 0))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) × (Mat Int 1 1) → Nat := fun s => (((if ((s.1 0 0) = (s.2 0 0)) then 0 else ((s.2 0 0) - (s.1 0 0))) : Int)).toNat
+def ranking : (Mat Int 1 1) × (Mat Int 1 1) → Nat := fun s => (((if ((s.1 0 0) = (s.2 0 0)) then (0 : Int) else ((s.2 0 0) - (s.1 0 0))) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
@@ -182,13 +182,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => (((s.1 0 0) ≥ 0) ∧ ((s.1 0 0) ≤ (s.2 0 0)) ∧ ((s.2 0 0) = 10))
+def inv : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => (((s.1 0 0) ≥ (0 : Int)) ∧ ((s.1 0 0) ≤ (s.2 0 0)) ∧ ((s.2 0 0) = (10 : Int)))
 
 def P : (Mat Int 1 1) × (Mat Int 1 1) → Prop := fun s => ((s.1 0 0) = (s.2 0 0))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) × (Mat Int 1 1) → Nat := fun s => (((if ((s.1 0 0) = (s.2 0 0)) then 0 else ((s.2 0 0) - (s.1 0 0))) : Int)).toNat
+def ranking : (Mat Int 1 1) × (Mat Int 1 1) → Nat := fun s => (((if ((s.1 0 0) = (s.2 0 0)) then (0 : Int) else ((s.2 0 0) - (s.1 0 0))) : Int)).toNat
 
 
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1) × (Mat Int 1 1)) := {

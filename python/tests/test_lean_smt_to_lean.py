@@ -174,7 +174,7 @@ def test_propositions_are_never_bound():
     shared_cond = "(and (>= s0 3) (or (>= s0 3) (<= s0 9)))"
     lean = _inv(_int_module(), shared_cond)
     assert "let " not in lean, lean
-    assert lean.count("≥ 3") == 2
+    assert lean.count("≥ (3 : Int)") == 2
 
 
 def test_ground_subterms_are_never_bound():
@@ -207,4 +207,4 @@ def test_euclidean_division_and_modulus_go_across_unchanged():
     that goes with it counts in halves. `div` having no case turned a
     certificate cvc5 had just accepted into a traceback."""
     lean = _inv(_int_module(), "(and (= (mod s0 2) 0) (= (div s0 2) 3))")
-    assert "% 2" in lean and "/ 2" in lean, lean
+    assert "% (2 : Int)" in lean and "/ (2 : Int)" in lean, lean

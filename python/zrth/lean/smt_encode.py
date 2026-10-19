@@ -25,6 +25,7 @@ from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
 from .sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
+from .literals import decimal_fraction
 from .ops import smt_emitter
 
 
@@ -96,7 +97,10 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
     if isinstance(dt, Int):
         return tm.mkInteger(int(raw))
     if isinstance(dt, Real):
-        return tm.mkReal(float(raw))
+        # The number Lean's literal states (`literals.decimal_fraction`);
+        # `mkReal(float)` reads `str()` and fails on `1e-07`.
+        q = decimal_fraction(float(raw))
+        return tm.mkReal(q.numerator, q.denominator)
     if isinstance(dt, BitVec):
         return tm.mkBitVector(dt._0, int(raw))
     raise ValueError(f"Unsupported scalar Sort: {dt}")

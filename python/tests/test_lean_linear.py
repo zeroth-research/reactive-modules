@@ -7,9 +7,12 @@ shapes, and element formatting (Int/Real). They complement the lake-verified
 `Core.Mat.matVecAffine_eq`, which checks the *Lean* side reduces to the intended
 affine map — here we guard the *generator* that feeds it.
 """
+from fractions import Fraction
+
+import pytest
 import torch
 
-from zrth import Wire, Term, LIA, LRA, Int, Real
+from zrth import BitVec, Bool, Wire, Term, LIA, LRA, Int, Real
 from zrth.lean.literals import linear_list_literals
 from zrth.lean.native import _linear_expr
 
@@ -28,8 +31,8 @@ def test_identity_with_bias():
     term, _ = _int_linear(A, B, 3)
     out_m, a_lit, b_lit, ty = linear_list_literals(term)
     assert out_m == 3
-    assert a_lit == "([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int))"
-    assert b_lit == "([1, 0, 0] : List Int)"
+    assert a_lit == "([[(1 : Int), (0 : Int), (0 : Int)], [(0 : Int), (1 : Int), (0 : Int)], [(0 : Int), (0 : Int), (1 : Int)]] : List (List Int))"
+    assert b_lit == "([(1 : Int), (0 : Int), (0 : Int)] : List Int)"
     assert ty == "Int"
 
 
@@ -41,8 +44,8 @@ def test_orientation_is_row_major():
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     assert out_m == 2
     # rows are A[i][:] in order — NOT the transpose [[1,4],[2,5],[3,6]]
-    assert a_lit == "([[1, 2, 3], [4, 5, 6]] : List (List Int))"
-    assert b_lit == "([0, 0] : List Int)"
+    assert a_lit == "([[(1 : Int), (2 : Int), (3 : Int)], [(4 : Int), (5 : Int), (6 : Int)]] : List (List Int))"
+    assert b_lit == "([(0 : Int), (0 : Int)] : List Int)"
 
 
 def test_negative_coefficients():
@@ -50,8 +53,8 @@ def test_negative_coefficients():
     B = torch.tensor([[-5], [7]], dtype=torch.int64)
     term, _ = _int_linear(A, B, 2)
     _, a_lit, b_lit, _ = linear_list_literals(term)
-    assert a_lit == "([[-1, 2], [0, -3]] : List (List Int))"
-    assert b_lit == "([-5, 7] : List Int)"
+    assert a_lit == "([[(-1 : Int), (2 : Int)], [(0 : Int), (-3 : Int)]] : List (List Int))"
+    assert b_lit == "([(-5 : Int), (7 : Int)] : List Int)"
 
 
 def test_empty_bias_becomes_zeros():
@@ -60,8 +63,8 @@ def test_empty_bias_becomes_zeros():
     term, _ = _int_linear(A, empty, 3)
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     assert out_m == 3
-    assert a_lit == "([[0, 0], [1, 0], [0, 1]] : List (List Int))"
-    assert b_lit == "([0, 0, 0] : List Int)"  # one zero per output row
+    assert a_lit == "([[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]] : List (List Int))"
+    assert b_lit == "([(0 : Int), (0 : Int), (0 : Int)] : List Int)"  # one zero per output row
 
 
 def test_real_lra_formatting():
@@ -73,7 +76,7 @@ def test_real_lra_formatting():
     out_m, a_lit, b_lit, ty = linear_list_literals(term)
     assert out_m == 1
     assert ty == "Real"
-    assert a_lit == "([[(1.5 : Real), (0 : Real)]] : List (List Real))"
+    assert a_lit == "([[((3 : Real) / 2), (0 : Real)]] : List (List Real))"
     assert b_lit == "([(2 : Real)] : List Real)"
 
 
@@ -83,8 +86,8 @@ def test_linear_expr_emits_matvecaffine():
     term, x_w = _int_linear(A, B, 2)
     expr = _linear_expr(term, {x_w.id: "extl_n"})
     assert expr == (
-        "(matVecAffine 2 ([[1, 2, 3], [4, 5, 6]] : List (List Int)) "
-        "([5, 0] : List Int) extl_n)"
+        "(matVecAffine 2 ([[(1 : Int), (2 : Int), (3 : Int)], [(4 : Int), (5 : Int), (6 : Int)]] : List (List Int)) "
+        "([(5 : Int), (0 : Int)] : List Int) extl_n)"
     )
 
 
@@ -147,12 +150,12 @@ def test_bitvec_literal_uses_of_int():
     tests/lean/Playground.lean.
     """
     from zrth import Wire, BitVec
-    from zrth.lean.literals import _get_dtype_item
+    from zrth.lean.literals import lean_literal
 
     dt = Wire(BitVec(8, [1, 1])).dtype
-    assert _get_dtype_item(dt, -3) == "(BitVec.ofInt 8 (-3))"
-    assert _get_dtype_item(dt, 3) == "(BitVec.ofInt 8 (3))"
-    assert "ofNat" not in _get_dtype_item(dt, -1)
+    assert lean_literal(dt, -3) == "(BitVec.ofInt 8 (-3))"
+    assert lean_literal(dt, 3) == "(BitVec.ofInt 8 (3))"
+    assert "ofNat" not in lean_literal(dt, -1)
 
 
 def test_non_negative_bitvec_constant_still_emits():
@@ -170,3 +173,34 @@ def test_non_negative_bitvec_constant_still_emits():
     lean = ModuleToLean4(module).to_lean_functional()
     assert "BitVec.ofInt 8 (5)" in lean
     assert "BitVec.ofNat" not in lean
+
+
+@pytest.mark.parametrize("sort, value, lean", [
+    (Int([1, 1]), 3, "(3 : Int)"),
+    (Int([1, 1]), -3, "(-3 : Int)"),
+    (Real([1, 1]), 2.0, "(2 : Real)"),
+    (Real([1, 1]), -0.5, "((-1 : Real) / 2)"),
+    (Real([1, 1]), 0.1, "((1 : Real) / 10)"),
+    (Real([1, 1]), 1e-07, "((1 : Real) / 10000000)"),
+    (Bool([1, 1]), True, "true"),
+    (BitVec(8, [1, 1]), -3, "(BitVec.ofInt 8 (-3))"),
+])
+def test_one_printer_spells_every_literal(sort, value, lean):
+    """Ints ascribed whatever their sign, Reals exact -- a float read by its
+    decimal form, which is also what the SMT encoding states."""
+    from zrth.lean.literals import lean_literal
+
+    assert lean_literal(sort, value) == lean
+
+
+def test_a_float_constant_in_scientific_notation_encodes():
+    """`cvc5.mkReal(float)` reads `str(1e-07)` and refuses it; the encoder
+    builds the constant from the same exact fraction the Lean literal
+    states."""
+    import cvc5
+    from zrth.lean.smt_encode import translate_terms
+
+    w = Wire(Real([1, 1]))
+    term = Term(LRA.Real(torch.tensor([[1e-07]], dtype=torch.float64)), [w], [])
+    tm = cvc5.TermManager()
+    assert translate_terms(tm, [term], {})[w.id].getRealValue() == Fraction(1, 10**7)

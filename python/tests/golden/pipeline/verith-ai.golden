@@ -67,7 +67,7 @@ def update_pre (e : (Unit) × (Unit)) : Prop := True
 
 def inv : (Mat Int 1 1) → Prop := fun s => (s 0 0) ≥ 0 ∧ (s 0 0) ≤ 9
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
