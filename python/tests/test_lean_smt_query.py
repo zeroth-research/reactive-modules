@@ -414,11 +414,8 @@ def test_hints_survive_a_module_cvc5_cannot_encode():
 
 
 def test_translation_can_be_asked_not_to_share():
-    """`cert_facts` states a condition expanded, so the definition must be.
-
-    A `have` outside the definition cannot name a `let` bound inside it, so
-    a shared `if (u3 ≥ 0) …` gives `simp only [if_pos hf0]` nothing to match
-    and the branch is never collapsed.
+    """`share=False` prints every subterm in full -- for reading; the
+    certificate itself is printed shared, hints or not (`cert.prepare`).
     """
     from zrth.lean.cert import render_certificate
     from zrth.lean.smt_query import predicate_terms

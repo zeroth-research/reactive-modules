@@ -280,11 +280,8 @@ def _render(settings: Settings, smt, claim: "Claim | None",
 
     The predicates are parsed once, and that one parse is printed as Lean,
     read for its shape (`predicate_facts`) and, with `hints` under
-    `--smt-tactics cvc5`, put to `solver_hints`. A condition the hints
-    settle is spliced into a tactic in expanded form, and a `have` outside
-    a definition cannot name a `let` inside it, so the definitions are then
-    printed unshared -- every one, since a condition can come from the
-    property. `verbatim` is an answer that is Lean already.
+    `--smt-tactics cvc5`, put to `solver_hints` (`cert.prepare` says how
+    the two meet). `verbatim` is an answer that is Lean already.
     """
     if claim is None:
         return None
