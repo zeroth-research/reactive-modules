@@ -257,7 +257,7 @@ def test_na_model_init_is_the_matrix_read_row_major():
     """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
 
     The whole chain in one assertion: the Python tensor, `smt_encode`'s cvc5
-    tuple, `_scalar_element`'s selection, and the slot numbering this module
+    tuple, `smt.slots.scalar_element`'s selection, and the slot numbering this module
     owns. Transpose any one of them and the constants come back permuted.
     """
     from zrth.lean.translate.fbk import atom_to_lean_na

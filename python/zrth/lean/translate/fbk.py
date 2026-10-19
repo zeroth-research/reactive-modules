@@ -280,7 +280,7 @@ def check_na_supported(
 #
 # One VMT variable per *element*, not per wire. A wire holding a 3-vector
 # becomes `var_k, var_k+1, var_k+2`, in the row-major order `mat_select`
-# packs a matrix into a cvc5 tuple -- `common.flat_layout` owns that order
+# packs a matrix into a cvc5 tuple -- `layout.flat_layout` owns that order
 # for every encoding, and `tests/test_lean_flat_layout.py` is what keeps the
 # slot arithmetic here and the element selection there in step.
 #
@@ -467,70 +467,16 @@ def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
     return _INPUT_RE.sub(lambda m: f"(var_{slot_of[m.group(0)]} state)", text)
 
 
-def _scalar_element(tm, term, shape, i: int, j: int):
-    """Element `[i][j]` of a matrix-valued term, as a *scalar* term.
-
-    `mat_select` alone leaves `select k (…)` sitting on whatever built the
-    matrix, and the two things that build one here are a tuple constructor
-    and an `ite` over tuples. Pushing the selection through both is what
-    turns a wire's transition into one scalar expression per slot; the
-    rewrite is the tuple axiom in each case, and cvc5's own simplifier does
-    the rest.
-    """
-    from cvc5 import Kind
-
-    from ..smt_encode import mat_select
-
-    if shape.is_scalar:
-        return term
-    idx = i * shape.n + j
-    kind = term.getKind()
-    if kind == Kind.APPLY_CONSTRUCTOR:
-        return term[idx + 1]          # child 0 is the constructor
-    if kind == Kind.ITE:
-        return tm.mkTerm(
-            Kind.ITE,
-            term[0],
-            _scalar_element(tm, term[1], shape, i, j),
-            _scalar_element(tm, term[2], shape, i, j),
-        )
-    return mat_select(tm, term, shape, i, j)
-
-
-def _simplify(solver, term, enabled: bool = True):
-    """cvc5's rewriter, but never on a Bool-sorted slot.
-
-    On the arithmetic it is what makes the model tractable: `m_vec32`'s
-    affine layer is 97 KB of term before the constant weights are folded and
-    1.9 KB after. On a *Bool* slot it rewrites `ite c b (!b)` into the
-    equality `b = c`, which moves the state variable from a branch into a
-    condition -- and a condition is where `vmt2lean`'s certificate cannot
-    follow it: `generalizeNatVar` retypes the slot to the unreduced
-    `TypeMap` match, and the `Decidable`/`BEq` instance the condition needs
-    can no longer be synthesised. The measured symptom is `MixedBoolInt`
-    failing its certificate with "Tactic `generalize` failed".
-
-    `enabled=False` (`--fbk-simplify none`) turns the rewriter off
-    everywhere, leaving each slot the shape the module's own terms give it:
-    the same transition, spelled the way the module spells it rather than
-    the way cvc5 prefers to. Useful for reading the model against the
-    source; expensive on anything with a constant matrix in it.
-    """
-    if not enabled or term.getSort().isBoolean():
-        return term
-    return solver.simplify(term)
-
-
 def _slot_bodies(
     ctx: LeanContext, simplify: bool = True, encoding=None
 ) -> SlotBodies:
     """`(update, init)` Lean text for every state slot, in slot order.
 
-    Built on `encoding`'s `TermManager` and `ModuleSMT` -- the run's one
-    encoding of the module -- with a `Solver` of its own for the rewriter,
-    retained for the process's lifetime (`smt_module.keep_alive`). Callers
-    go through :func:`check_na_supported` and pass the result along rather
-    than calling this again.
+    The terms are `smt.slots.slot_terms` of `encoding` -- the run's one
+    encoding of the module, which also does the rewriting -- or of an
+    encoding of `ctx.module` made for the call when there is none; this
+    only prints them. Callers go through :func:`check_na_supported` and
+    pass the result along rather than calling this again.
 
     The transition comes from `smt_encode` -- the encoder `--pre-check` and
     `--infer ai-cegis` already run on, so the model `lean2vmt` reads and the
@@ -538,22 +484,10 @@ def _slot_bodies(
     module -- and is printed by `smt_to_lean_bool`, whose fragment is chosen
     to be what `lean2vmt` translates.
     """
-    import cvc5
-
-    from ..smt.run import ModuleEncoding
-    from ..smt_encode import wire_shape
-    from ..smt_module import keep_alive
+    from ..smt.run import encoding_of
+    from ..smt.slots import slot_terms
     from ..smt_to_lean import smt_to_lean_bool
 
-    if encoding is None:
-        encoding = ModuleEncoding(ctx.module)
-    tm = encoding.tm
-    msmt = encoding.msmt
-    solver = cvc5.Solver(tm)
-    solver.setLogic("ALL")
-    keep_alive(solver)
-
-    layout = flat_layout(ctx.ctrl_next)
     # An input reading is marked rather than translated: it has no Lean form
     # in this encoding, and what the caller does about one depends on where
     # it turned up. `_free_init_slots` reads the markers back.
@@ -566,23 +500,10 @@ def _slot_bodies(
         **_slot_accessors(ctx.ctrl_next),
         **_input_markers(ctx.extl_next, "en"),
     }
-    state = msmt.fresh_ctrl("s")
-    nxt = msmt.update_state(
-        state, msmt.fresh_extl_l("el"), msmt.fresh_extl_n("en")
-    )
-    ini = msmt.init_state(msmt.fresh_extl_n("en"))
-
-    update_text: list[str] = []
-    init_text: list[str] = []
-    for i, r, c in layout.slots:
-        shape = wire_shape(ctx.ctrl_next[i])
-        # Simplified because the encoder builds a matrix and then takes one
-        # element of it: `m_vec32`'s affine layer is 97 KB of term before
-        # the rewriter folds the constant weights and 1.9 KB after.
-        upd = _simplify(solver, _scalar_element(tm, nxt[i], shape, r, c), simplify)
-        init = _simplify(solver, _scalar_element(tm, ini[i], shape, r, c), simplify)
-        update_text.append(smt_to_lean_bool(upd, acc_upd))
-        init_text.append(smt_to_lean_bool(init, acc_ini))
+    update, init = slot_terms(encoding_of(encoding or ctx.module),
+                              ctx.ctrl_next, simplify)
+    update_text = [smt_to_lean_bool(t, acc_upd) for t in update]
+    init_text = [smt_to_lean_bool(t, acc_ini) for t in init]
 
     # An input read by the *transition* is a different encoding, not a
     # missing line here. `update x l x'` draws `l` afresh at every step and

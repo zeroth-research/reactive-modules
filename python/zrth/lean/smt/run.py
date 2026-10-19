@@ -39,6 +39,7 @@ class ModuleEncoding:
         self._blocks: dict = {}
         self._queries: dict = {}
         self._solvers: list = []
+        self._rewriter = None
         keep_alive(self)
 
     @property
@@ -152,6 +153,16 @@ class ModuleEncoding:
         old = list(self.extl_next) + list(self.extl_latched)
         new = list(en) + list(el)
         return term.substitute(old, new) if old else term
+
+    def simplify(self, term):
+        """`term` through cvc5's rewriter, on a solver this encoding keeps
+        for that alone."""
+        if self._rewriter is None:
+            import cvc5
+
+            self._rewriter = cvc5.Solver(self.tm)
+            self._rewriter.setLogic("ALL")
+        return self._rewriter.simplify(term)
 
     def solver(self, ms: int, *, logic: str | None = None, **options):
         """`smt.limits.bounded_solver` on this encoding's terms."""

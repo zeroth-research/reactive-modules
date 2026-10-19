@@ -4,7 +4,7 @@
 comes back is about *that model*. Every other encoding in this package
 carries an equivalence theorem to the functional one and would be worthless
 without it; this route had none, so a mistranslation anywhere in
-`smt_encode`, `_scalar_element`, cvc5's rewriter or `smt_to_lean_bool`
+`smt_encode`, `smt.slots`, cvc5's rewriter or `smt_to_lean_bool`
 produced a model that parses, model-checks, and describes a different
 system.
 
