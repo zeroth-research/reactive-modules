@@ -153,6 +153,8 @@ the certificate](#building-the-certificate---build-cert).
 ## Further reading
 
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): the pipeline's known defects.
+- [PIPELINE_REVIEW.md](PIPELINE_REVIEW.md): what is still open in the
+  pipeline's shape, and how to check a refactor of it.
 - [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md): how the `fbk-proveit`
   certificate is tied back to the module.
 - [SMT_ASSIST.md](SMT_ASSIST.md): what cvc5 does for the pipeline (the
@@ -428,9 +430,10 @@ than one file uses is one constant in `lean_names.py`.
 
 `predicate_terms` parses with cvc5 and refuses a predicate by the flag it
 came from; `render_certificate(q, share=..., verbatim=...)` translates the
-terms. `share=False` prints repeated subterms in full, which a condition
-`--smt-tactics` settled needs; `verbatim` takes the invariant and ranking of
-a `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
+terms. `share=False` prints repeated subterms in full; `cert.prepare`
+always shares, because a hint's `if_pos` matches once `simp` has
+zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
+`LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
 for a caller that wants no solver hints.
 
 ---
