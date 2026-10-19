@@ -245,3 +245,19 @@ ASSIGN
     trace = _run(text, [{}, {}])
     assert [(t["x"], t["n"], t["b"], t["s"]) for t in trace] == [
         (-3, -1, 0, 0), (-5, -2, 1, 1), (-8, -3, 1, 0)]
+
+
+@pytest.mark.parametrize("strict", [True, False])
+def test_implies_and_iff_are_read_on_words(strict):
+    text = """MODULE main
+VAR a : boolean;
+    b : boolean;
+    w : unsigned word[1];
+ASSIGN
+  init(a) := FALSE; next(a) := !a;
+  init(b) := TRUE;  next(b) := (a -> b) <-> a;
+  init(w) := 0ud1_0; next(w) := w;
+"""
+    trace = _run(text, [{}, {}], strict=strict)
+    # a: 0 1 0; b: 1, ((0->1)<->0)=0, ((1->0)<->1)=0
+    assert [(t["a"], t["b"]) for t in trace] == [(0, 1), (1, 0), (0, 0)]

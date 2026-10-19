@@ -415,10 +415,11 @@ def _try_extract_assign(
 # 5. Type resolution
 # ---------------------------------------------------------------------------
 
-# The SMV parser is BV-only: every SMV value lowers to a bit-vector wire,
-# every emitted op is in the BV theory. The default width below is used for
-# SMV's unbounded `integer` (and enum / range types). Adjust freely; the
-# tests don't depend on the specific value.
+# A model with words, and every model read leniently, lowers to bit-vector
+# wires and BV ops (strict parsing lowers a model without words to LIA:
+# `_LIALowerer`). The default width below is the BV lowering's for SMV's
+# unbounded `integer` (and enum / range types). Adjust freely; the tests
+# don't depend on the specific value.
 _DEFAULT_INT_BW = 32
 
 
@@ -464,7 +465,7 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
 # ---------------------------------------------------------------------------
 
 # Table-driven binary operator dispatch. Values are op-name strings into
-# the `IType.BV` namespace (the SMV parser is BV-only). Resolution is
+# the `IType.BV` namespace (`_LIALowerer` maps them to LIA). Resolution is
 # deferred to term-construction time so missing ops produce a useful error.
 _BINOPS: dict[str, dict[str, str]] = {
     "iff": {"<->": "Xnor", "xnor": "Xnor"},
@@ -493,9 +494,8 @@ _NARY_OPS = {
 def _bv_op(name: str):
     """Construct `BV.<name>()` (raises AttributeError if the op is missing).
 
-    Note: Xnor / Implies are referenced by the grammar maps but are NOT BV ops;
-    those SMV constructs aren't exercised by the fixtures. If needed later, compose
-    them (Not(Xor) / Or(Not, b)) here.
+    Xnor and Implies, which the grammar maps name, are not BV ops: the
+    lowerer composes them (Not(Xor), Or(Not, b)) before asking here.
     """
     return getattr(BV, name)()
 
@@ -519,7 +519,7 @@ _BUILTIN_MAP = {
 
 def _const_out_dtype(itype):
     """Output Sort for a scalar const op, or None to defer to the target wire."""
-    # BV-only parser: const width defers to the target/default width.
+    # BV lowering: const width defers to the target/default width.
     return None
 
 
@@ -624,13 +624,20 @@ class _Lowerer:
             if (self.strict and op_tok == "/"
                     and (self._is_signed(left) or self._is_signed(rhs))):
                 raise self.refuse("`/` on signed words is not read", children[i])
-            itype = _bv_op(op_map[op_tok])
+            operands = [left, rhs]
+            if op_map[op_tok] == "Xnor":
+                # No BV op: `a <-> b` is `!(a xor b)`.
+                x = self._fresh(None, left.dtype)
+                self.terms.append(Term(BV.Xor(), [x], operands))
+                itype, operands = BV.Not(), [x]
+            else:
+                itype = _bv_op(op_map[op_tok])
             out = target if i + 2 >= len(children) else None
             out_dtype = (
                 out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
             )
             w = self._fresh(out, out_dtype)
-            self.terms.append(Term(itype, [w], [left, rhs]))
+            self.terms.append(Term(itype, [w], operands))
             self._propagate_type(w, left, rhs)
             left = w
             i += 2
@@ -667,7 +674,13 @@ class _Lowerer:
             for c in tree.children
             if not (isinstance(c, Token) and c.type in _OP_TOKENS)
         ]
-        itype = _bv_op(op_name)
+        if op_name == "Implies":
+            # No BV op: `a -> b` is `!a | b`.
+            not_a = self._fresh(None, inputs[0].dtype)
+            self.terms.append(Term(BV.Not(), [not_a], [inputs[0]]))
+            itype, inputs = BV.Or(), [not_a, inputs[1]]
+        else:
+            itype = _bv_op(op_name)
         # Ite: output matches then-branch (inputs[1]); others match first input
         out_dtype = (
             inputs[1].dtype
