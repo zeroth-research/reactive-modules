@@ -31,6 +31,8 @@ param_list: IDENT ("," IDENT)*
     | justice_section
     | compassion_section
     | constants_section
+    | invarspec_section
+    | ltlspec_section
 
 var_section: "VAR" var_decl+
 var_decl: IDENT ":" type_spec ";"
@@ -56,6 +58,18 @@ fairness_section: "FAIRNESS" expr ";"
 justice_section: "JUSTICE" expr ";"
 compassion_section: "COMPASSION" "(" expr "," expr ")" ";"
 constants_section: "CONSTANTS" IDENT ("," IDENT)* ";"
+
+// --- Specifications ---
+// LTL here is the unary future/past operators over a state formula; the
+// binary ones (U, V, S, T) do not parse.
+
+invarspec_section: "INVARSPEC" spec_name? expr ";"?
+ltlspec_section: "LTLSPEC" spec_name? ltl ";"?
+spec_name: "NAME" IDENT ":="
+?ltl: LTL_OP ltl -> ltl_op
+    | "(" ltl ")"
+    | expr
+LTL_OP: /[GFXYZHO](?![A-Za-z0-9_$#])/
 
 // --- Types ---
 

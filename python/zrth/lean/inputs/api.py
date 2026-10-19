@@ -31,6 +31,17 @@ class SourceText:
 
 
 @dataclass(frozen=True)
+class StatedClaim:
+    """A property the input states about its own module: `kind` "safety"
+    or "buchi", `text` the formula in internal names, `where` what says it
+    (e.g. "line 12: INVARSPEC")."""
+
+    kind: str
+    where: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Problem:
     """What an adapter makes of its input: the module the run is about,
     the text it was read from, and the names a claim may call its
@@ -39,6 +50,7 @@ class Problem:
     module: Module
     source: SourceText
     names: Names
+    claims: tuple[StatedClaim, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,3 +67,6 @@ class InputAdapter:
     suffixes: tuple[str, ...]       # file suffixes that select it
     load: Callable[[SourceText, Mapping[str, Any]], Problem]
     options: tuple[Opt, ...] = ()   # its own flags, e.g. python's `-d`
+    # Whether an input in this format can state its own property
+    # (`Problem.claims`), so `--safety`/`--buchi` may be left to it.
+    states_claims: bool = False

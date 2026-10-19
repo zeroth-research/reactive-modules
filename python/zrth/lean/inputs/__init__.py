@@ -21,13 +21,13 @@ from pathlib import Path
 from typing import Any
 
 from . import python, smv
-from .api import InputAdapter, InputError, Problem, SourceText
+from .api import InputAdapter, InputError, Problem, SourceText, StatedClaim
 from .names import ClaimError, Names, to_internal, to_surface
 from .python import Named
 
 __all__ = [
     "ADAPTERS", "ClaimError", "InputAdapter", "InputError", "Named", "Names",
-    "Problem",
+    "Problem", "StatedClaim",
     "SourceText", "adapter_by_name", "adapter_for", "load", "to_internal",
     "to_surface",
 ]
@@ -55,10 +55,16 @@ def adapter_for(path: str | Path) -> InputAdapter | None:
 
 
 def load(path: str | Path, opts: Mapping[str, Any] | None = None,
-         *, format: str = "python") -> Problem:
-    """The `Problem` the file at `path` states, read as `format`; `opts`
-    are the format's options by `dest`, defaulted as its row says."""
-    adapter = adapter_by_name(format)
+         *, format: str | None = None) -> Problem:
+    """The `Problem` the file at `path` states, read as `format` (by
+    default the one its suffix names); `opts` are the format's options by
+    `dest`, defaulted as its row says."""
+    adapter = adapter_by_name(format) if format else adapter_for(path)
+    if adapter is None:
+        raise KeyError(
+            f"cannot tell the format of {path} from its suffix (have: "
+            f"{', '.join(_BY_NAME)})"
+        )
     opts = {**{o.dest: o.kwargs.get("default") for o in adapter.options},
             **(opts or {})}
     path = Path(path)

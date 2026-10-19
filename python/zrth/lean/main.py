@@ -96,6 +96,7 @@ returns a :class:`zrth.Module`::
 """
 
 import shlex
+import sys
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
@@ -568,14 +569,68 @@ def _show_certificate(cert: Certificate, names: "inputs.Names") -> None:
         print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")
 
 
+def _stated_claim(settings: Settings, problem: "inputs.Problem",
+                  argv: list[str]) -> Settings:
+    """The command line, with the property the input states when it gives
+    none (an SMV INVARSPEC or LTLSPEC).
+
+    The stated property is the claim exactly as if it had been passed as
+    `--safety`/`--buchi`: the command line is parsed again with it added,
+    so every rule about the flags applies to it unchanged. Given both, the
+    run would prove one and ignore the other, so that is refused.
+    """
+    stated = problem.claims
+    chosen = settings.input_opts.get("spec")
+    listing = "; ".join(f"{i}: {c.where}" for i, c in enumerate(stated, 1))
+    if settings.prp:
+        if chosen is not None:
+            raise SystemExit(
+                "error: --spec chooses one of the input's properties, and "
+                "--safety/--buchi already gives the claim"
+            )
+        if stated:
+            raise SystemExit(
+                f"error: {problem.source.path} states its own property "
+                f"({listing}); pass no --safety/--buchi to prove it, or "
+                "remove it to prove another"
+            )
+        return settings
+    if not settings.claim_deferred:
+        return settings
+    if not stated:
+        if chosen is not None:
+            raise SystemExit("error: --spec: the input states no property")
+        return parse_args(argv, defer_claim=False)
+    if chosen is None:
+        if len(stated) > 1:
+            raise SystemExit(
+                f"error: the input states {len(stated)} properties "
+                f"({listing}); choose one with --spec N"
+            )
+        chosen = 1
+    if not 1 <= chosen <= len(stated):
+        raise SystemExit(
+            f"error: --spec {chosen}: the input states {len(stated)} "
+            f"propert{'y' if len(stated) == 1 else 'ies'} ({listing})"
+        )
+    claim = stated[chosen - 1]
+    print(f".. the claim is the input's {claim.where} (--{claim.kind})")
+    return parse_args(
+        [*argv, f"--{claim.kind}", inputs.to_surface(claim.text, problem.names)],
+        defer_claim=False,
+    )
+
+
 def main():
-    settings = parse_args()
+    argv = sys.argv[1:]
+    settings = parse_args(argv)
 
     if settings.hammer_file:
         _hammer_only(settings)
         return
 
     problem = _load(settings)
+    settings = _stated_claim(settings, problem, argv)
     module = problem.module
     print(module)
     # The run's one cvc5 encoding, built by whichever stage asks first.

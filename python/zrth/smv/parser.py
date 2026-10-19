@@ -48,6 +48,33 @@ class SMVRefused(ValueError):
     """A model `parse_smv(strict=True)` would read differently from NuSMV."""
 
 
+@dataclass(frozen=True)
+class Spec:
+    """A property the model states, as a claim: `kind` "safety"
+    (`INVARSPEC p`, `LTLSPEC G p`) or "buchi" (`LTLSPEC G F p`). `wire`
+    carries `p`, read at the state after a round -- every variable's next
+    value -- and `terms` compute it from those values."""
+    kind: str
+    where: str          # e.g. "line 12: INVARSPEC"
+    wire: Wire
+    terms: tuple
+
+
+def read_smv(text: str) -> "tuple[Module, dict[str, Var], list[Spec]]":
+    """`parse_smv(text, strict=True)`, and the properties the model states.
+
+    A spec that is not `INVARSPEC p`, `LTLSPEC G p` or `LTLSPEC G F p` --
+    any other temporal operator, or one inside `p` -- is refused, as is
+    a `p` that reads an input."""
+    tree = _get_parser().parse(text)
+    decls = _collect_declarations(tree)
+    _split_assigns(decls, strict=True)
+    _promote_constraints(decls, strict=True)
+    theory = _theory(tree)
+    _check_strict(decls, theory)
+    return _build_module(decls, {}, strict=True, theory=theory, specs=True)
+
+
 def parse_smv(
         text: str,
         overrides: dict[str, tuple[Wire, Wire]] | None = None,
@@ -78,7 +105,8 @@ def parse_smv(
     theory = _theory(tree) if strict else "bv"
     if strict:
         _check_strict(decls, theory)
-    return _build_module(decls, overrides or {}, strict=strict, theory=theory)
+    return _build_module(decls, overrides or {}, strict=strict,
+                         theory=theory)[:2]
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +143,8 @@ class _Decls:
     trans_exprs: list[Tree] = field(default_factory=list)
     invar_exprs: list[Tree] = field(default_factory=list)
     fairness: list[tuple[str, int | None]] = field(default_factory=list)
+    # (keyword, formula) for each INVARSPEC / LTLSPEC, in source order.
+    specs: list[tuple[str, Tree]] = field(default_factory=list)
     enum_values: dict[str, int] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
@@ -215,6 +245,14 @@ class _DeclCollector(Transformer):
 
     def compassion_section(self, children):
         self.decls.fairness.append(("COMPASSION", _line(children[0])))
+
+    # --- specifications -----------------------------------------------------
+
+    def invarspec_section(self, children):
+        self.decls.specs.append(("INVARSPEC", children[-1]))
+
+    def ltlspec_section(self, children):
+        self.decls.specs.append(("LTLSPEC", children[-1]))
 
 
 def _collect_declarations(tree: Tree) -> _Decls:
@@ -1139,7 +1177,8 @@ def _build_module(
         *,
         strict: bool = False,
         theory: str = "bv",
-) -> tuple[Module, dict[str, Var]]:
+        specs: bool = False,
+) -> "tuple[Module, dict[str, Var], list[Spec]]":
     # Prepend frozen vars before regular state vars
     all_var_decls = list(d.frozen_decls) + list(d.var_decls)
 
@@ -1192,7 +1231,43 @@ def _build_module(
         init_terms = _in_dataflow_order(init_terms, "the initial state")
         update_terms = _in_dataflow_order(update_terms, "the next state")
     module = Module.sequential(obs_pairs, init_terms, update_terms)
-    return module, name_map
+    stated = []
+    if specs:
+        stated = [
+            _lower_spec(keyword, formula, lowerer(
+                name_map, d.define_map, d.enum_values, var_types,
+                is_init=True, strict=True, ivars=ivars))
+            for keyword, formula in d.specs
+        ]
+    return module, name_map, stated
+
+
+def _lower_spec(keyword: str, formula, low: "_Lowerer") -> Spec:
+    """`formula`'s claim, lowered by `low`: an init-block reader, so a
+    variable reads its value after the round and an input is refused."""
+    where = f"{_at(formula)}{keyword}"
+    ops: list[str] = []
+    body = formula
+    if keyword == "LTLSPEC":
+        while isinstance(body, Tree) and body.data == "ltl_op":
+            ops.append(str(body.children[0]))
+            body = body.children[1]
+    kind = {(): "safety", ("G",): "safety", ("G", "F"): "buchi"}.get(
+        tuple(ops) if keyword == "LTLSPEC" else (), None)
+    if keyword == "LTLSPEC" and not ops:
+        kind = None
+    nested = isinstance(body, Tree) and any(
+        t.data == "ltl_op" for t in body.iter_subtrees())
+    if kind is None or nested:
+        raise SMVRefused(
+            f"{where}: only `INVARSPEC p`, `LTLSPEC G p` and `LTLSPEC G F p` "
+            "are read as a claim"
+        )
+    low.context = where
+    wire = low.lower(body)
+    if _sort_name(wire.dtype) != "boolean" and wire.dtype != BitVec(1, [1, 1]):
+        raise SMVRefused(f"{where}: the property is not a boolean")
+    return Spec(kind, where, wire, tuple(low.terms))
 
 
 def _in_dataflow_order(terms: list[Term], block: str) -> list[Term]:

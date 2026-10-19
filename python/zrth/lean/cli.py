@@ -146,6 +146,11 @@ class Settings:
     model: str | None = None
     base_url: str | None = None
 
+    # No --safety/--buchi, and the input's format can state its own
+    # property: the checks that need the claim wait until it is read
+    # (`main._stated_claim` parses the command line again with it).
+    claim_deferred: bool = False
+
     @property
     def is_safety(self) -> bool:
         return self.kind == "safety"
@@ -444,7 +449,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(argv: "list[str] | None" = None) -> Settings:
+def parse_args(argv: "list[str] | None" = None, *,
+               defer_claim: bool = True) -> Settings:
+    """The command line as `Settings`. With `defer_claim`, an input whose
+    format can state its own property and no --safety/--buchi leaves the
+    checks that need the claim to the second parse, once it is read."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -517,7 +526,11 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
         base_url=args.base_url,
     )
 
-    if route is not None:
+    settings.claim_deferred = bool(
+        defer_claim and adapter is not None and adapter.states_claims
+        and not settings.prp
+    )
+    if route is not None and not settings.claim_deferred:
         _check_route(parser, args, settings)
 
     _check_outputs(parser, settings)
@@ -750,7 +763,8 @@ def _check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
                 f"--build-cert is incompatible with {which}: that writes a "
                 "file and generates no project to build"
             )
-        if not (settings.route or settings.supplied_complete):
+        if not (settings.route or settings.supplied_complete
+                or settings.claim_deferred):
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
                 "with --invariant, or --buchi with --invariant and "

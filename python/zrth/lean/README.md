@@ -379,6 +379,14 @@ last condition is not `TRUE`. An input (`IVAR`) is read in the round it labels,
 and `INVAR x = e` / `x := e` hold in every state. Claims use the model's
 variable names: `uv run verith tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
 
+A model's own specification is the claim when no `--safety`/`--buchi` is
+given: `INVARSPEC p` and `LTLSPEC G p` are `--safety p`, `LTLSPEC G F p` is
+`--buchi p` (any other spec is refused). The command line is parsed again with
+it added, so every flag rule applies as if it had been typed. A model that
+states several needs `--spec N` (counted from 1); one that states any, given
+`--safety`/`--buchi` as well, is refused rather than proving one and ignoring
+the other.
+
 ### Common invocations
 
 ```bash
