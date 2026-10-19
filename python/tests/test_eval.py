@@ -463,3 +463,17 @@ def test_min_max_agree_with_the_theory_arity():
     Term(LIA.Min(), [Wire(Int([1, 1]))], [Wire(Int([4, 1]))])
     with pytest.raises(Exception):
         Term(LIA.Min(), [Wire(Int([1, 1]))], [Wire(Int([4, 1])), Wire(Int([4, 1]))])
+
+
+@pytest.mark.parametrize("op", [LIA.Argmax(), LIA.Min(), LIA.Max()],
+                         ids=["Argmax", "Min", "Max"])
+def test_a_reduction_writes_its_wires_shape(op):
+    """A reduction's wire is `[1, 1]`, and so is what the interpreter writes
+    to it: a 0-d tensor there broke the next `Linear` that read it, which is
+    every module of the limit matrix with a `min`, `max` or `argmax` in it."""
+    row = torch.tensor([[3, 9, 4]])
+    (out,) = eval_itype(op, [row], Int([1, 1]))
+    assert out.shape == (1, 1)
+    (lin,) = eval_itype(LIA.Linear(torch.tensor([[2]]), torch.tensor([[1]])),
+                        [out], Int([1, 1]))
+    assert lin.shape == (1, 1)

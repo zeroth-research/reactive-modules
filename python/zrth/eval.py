@@ -29,6 +29,18 @@ def _wrap(t, sort):
     return t & ((1 << bw) - 1)
 
 
+def _shaped(t, sort: Sort):
+    """`t` in `sort`'s shape. A reduction gives a 0-d tensor, and the wire it
+    writes is `[1, 1]`: left 0-d, the next `Linear` reading it fails with
+    "both arguments to matmul need to be at least 1D"."""
+    if sort is None:
+        return t
+    match sort:
+        case BitVec(_, shape):
+            return t.reshape(*shape)
+    return t.reshape(*sort._0)
+
+
 def _linear(weight, bias, x):
     """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear).
 
@@ -154,14 +166,14 @@ def eval_itype(itype, read, out_sort=None):
         case LRA.ReLU() | LIA.ReLU():
             return [r[0].relu()]
         case LRA.Argmax() | LIA.Argmax():
-            return [r[0].argmax()]
+            return [_shaped(r[0].argmax(), out_sort)]
         # Reductions, not elementwise binaries: the theory checks Min/Max as
         # one read to a single-element write (`check_mat_ops`, and its own
         # `min_ok` asserts int(4,1) -> int(1,1)), the same shape as Argmax.
         case LRA.Min() | LIA.Min():
-            return [r[0].min()]
+            return [_shaped(r[0].min(), out_sort)]
         case LRA.Max() | LIA.Max():
-            return [r[0].max()]
+            return [_shaped(r[0].max(), out_sort)]
 
         # --- matrix ---
         case LRA.Transpose() | LIA.Transpose():

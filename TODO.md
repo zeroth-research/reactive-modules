@@ -61,7 +61,10 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
     cycle that their property survives, which is evidence and not proof. 12
     more error in the simulator rather than answer: it assumes scalar
     components as `nuterm` does (item 8), `m_max`, `m_min` and `m_argmax`
-    raise a matmul shape error, and `m_uninterp` cannot be evaluated.
+    raised a matmul shape error, and `m_uninterp` cannot be evaluated. The
+    shape error was `zrth.eval`'s and is fixed (2026-10-19): those three
+    rows now run and close a cycle, so they join the 74 above in the next
+    pass rather than filling anything in.
 
     What would fill them is truth from upstream. For the svcomp rows that is
     the task definitions the benchmarks were converted from, which are not
