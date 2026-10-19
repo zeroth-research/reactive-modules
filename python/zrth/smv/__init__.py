@@ -1,5 +1,5 @@
 """SMV (NuSMV) parser for zeroth reactive modules."""
 
-from .parser import parse_smv
+from .parser import SMVRefused, parse_smv
 
-__all__ = ["parse_smv"]
+__all__ = ["SMVRefused", "parse_smv"]

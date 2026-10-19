@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from contextlib import contextmanager
 import torch
 from collections import Counter
 from dataclasses import dataclass, field
@@ -43,20 +44,38 @@ def _get_parser():
 # ---------------------------------------------------------------------------
 
 
+class SMVRefused(ValueError):
+    """A model `parse_smv(strict=True)` would read differently from NuSMV."""
+
+
 def parse_smv(
         text: str,
         overrides: dict[str, tuple[Wire, Wire]] | None = None,
+        *,
+        strict: bool = False,
 ) -> tuple[Module, dict[str, tuple[Wire, Wire]]]:
     """Parse an SMV source string and return ``(Module, name_map)``.
 
     *name_map* maps every variable name to its ``(latched, next)`` wire pair.
     *overrides* lets the caller supply pre-existing wires for specific
     variables (used for module composition via shared wires).
+
+    With *strict*, the module means what NuSMV means by the text, or
+    `SMVRefused` says why it cannot: a constraint that is not an
+    assignment, a fairness constraint, a variable left free (no ``init``
+    or no ``next``), an integer type (it would lower to a wrapping word).
+    Inputs are read in the round they label, ``next(e)`` reads ``e`` at the
+    next state, and ``INVAR x = e`` / ``x := e`` hold in every state.
+    Without it, such text is read leniently: constraints dropped, free
+    variables started at 0 and held.
     """
     tree = _get_parser().parse(text)
     decls = _collect_declarations(tree)
-    _promote_constraints(decls)
-    return _build_module(decls, overrides or {})
+    _split_assigns(decls, strict=strict)
+    _promote_constraints(decls, strict=strict)
+    if strict:
+        _check_strict(decls)
+    return _build_module(decls, overrides or {}, strict=strict)
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +85,14 @@ def parse_smv(
 
 @dataclass(frozen=True)
 class _SMVType:
-    """SMV variable type: BV Sort paired with its signedness."""
+    """SMV variable type: BV Sort paired with its signedness.
+
+    `kind` is the SMV type it came from: "boolean", "word", "enum",
+    "integer" (`integer`, a range, or an enum of numbers only) or
+    "mixed-enum" (an enum of names and numbers)."""
     dtype: Sort
     signed: bool
+    kind: str = "word"
 
 
 @dataclass(slots=True)
@@ -77,22 +101,42 @@ class _Decls:
     ivar_decls: list[tuple[str, _SMVType]] = field(default_factory=list)
     frozen_decls: list[tuple[str, _SMVType]] = field(default_factory=list)
     define_map: dict[str, Tree] = field(default_factory=dict)
+    # ASSIGN statements in source order: (kind, name, rhs), kind one of
+    # "init" (`init(x) :=`), "next" (`next(x) :=`), "invar" (`x :=`).
+    assigns: list[tuple[str, str, Tree]] = field(default_factory=list)
     init_assigns: dict[str, Tree] = field(default_factory=dict)
     next_assigns: dict[str, Tree] = field(default_factory=dict)
+    # Strict only: `x` equals the rhs in every state, the initial one included.
+    invar_assigns: dict[str, Tree] = field(default_factory=dict)
     init_exprs: list[Tree] = field(default_factory=list)
     trans_exprs: list[Tree] = field(default_factory=list)
     invar_exprs: list[Tree] = field(default_factory=list)
+    fairness: list[tuple[str, int | None]] = field(default_factory=list)
     enum_values: dict[str, int] = field(default_factory=dict)
+    problems: list[str] = field(default_factory=list)
 
 
 def _typed_children(section: Tree, data: str):
     return (c for c in section.children if isinstance(c, Tree) and c.data == data)
 
 
+def _line(node) -> int | None:
+    if isinstance(node, Token):
+        return node.line
+    if isinstance(node, Tree) and not node.meta.empty:
+        return node.meta.line
+    return None
+
+
+def _at(node) -> str:
+    line = _line(node)
+    return f"line {line}: " if line is not None else ""
+
+
 _ASSIGN_TARGETS = {
-    "init_ref": "init_assigns",
-    "next_ref": "next_assigns",
-    "bare_assign": "init_assigns",
+    "init_ref": "init",
+    "next_ref": "next",
+    "bare_assign": "invar",
 }
 
 
@@ -142,13 +186,12 @@ class _DeclCollector(Transformer):
                 str(target_node.children[0]),
                 expr,
             )
-        return ("init_assigns", str(target_node), expr)
+        return ("invar", str(target_node), expr)
 
     def assign_section(self, children):
         for child in children:
             if isinstance(child, tuple) and len(child) == 3:
-                attr, name, expr = child
-                getattr(self.decls, attr)[name] = expr
+                self.decls.assigns.append(child)
 
     # --- constraint sections ------------------------------------------------
 
@@ -161,11 +204,41 @@ class _DeclCollector(Transformer):
     def invar_section(self, children):
         self.decls.invar_exprs.append(children[0])
 
+    def fairness_section(self, children):
+        self.decls.fairness.append(("FAIRNESS", _line(children[0])))
+
+    def justice_section(self, children):
+        self.decls.fairness.append(("JUSTICE", _line(children[0])))
+
+    def compassion_section(self, children):
+        self.decls.fairness.append(("COMPASSION", _line(children[0])))
+
 
 def _collect_declarations(tree: Tree) -> _Decls:
     collector = _DeclCollector()
     collector.transform(tree)
     return collector.decls
+
+
+def _split_assigns(d: _Decls, *, strict: bool) -> None:
+    """Sort the ASSIGN statements into `init_assigns` / `next_assigns`
+    (and, when strict, `invar_assigns`).
+
+    Lenient: `x := e` is an initial value, and a later assignment to the
+    same target replaces an earlier one. Strict: `x := e` holds in every
+    state, and a second assignment to the same target is a problem.
+    """
+    for kind, name, expr in d.assigns:
+        if not strict:
+            target = d.next_assigns if kind == "next" else d.init_assigns
+            target[name] = expr
+            continue
+        target = {"init": d.init_assigns, "next": d.next_assigns,
+                  "invar": d.invar_assigns}[kind]
+        if name in target:
+            d.problems.append(f"{_at(expr)}`{name}` is assigned twice")
+            continue
+        target[name] = expr
 
 
 # ---------------------------------------------------------------------------
@@ -174,36 +247,47 @@ def _collect_declarations(tree: Tree) -> _Decls:
 
 
 def _promote_loop(
-        exprs, var_names, target: dict[str, Tree], *, expect_next=False
+        exprs, var_names, target: dict[str, Tree], *, expect_next=False,
+        taken=(),
 ) -> list[Tree]:
     remaining = []
     for expr in exprs:
         result = _try_extract_assign(expr, var_names, expect_next=expect_next)
-        if result and result[0] not in target:
+        if result and result[0] not in target and result[0] not in taken:
             target[result[0]] = result[1]
         else:
             remaining.append(expr)
     return remaining
 
 
-def _promote_constraints(d: _Decls) -> None:
+def _promote_constraints(d: _Decls, *, strict: bool = False) -> None:
     var_names = {n for n, _ in d.var_decls} | {n for n, _ in d.frozen_decls}
+    taken = d.invar_assigns
 
     # TRANS: next(var) = expr -> next_assigns
     d.trans_exprs = _promote_loop(
-        d.trans_exprs, var_names, d.next_assigns, expect_next=True
+        d.trans_exprs, var_names, d.next_assigns, expect_next=True,
+        taken=taken,
     )
 
     # INIT: var = expr -> init_assigns
-    d.init_exprs = _promote_loop(d.init_exprs, var_names, d.init_assigns)
+    d.init_exprs = _promote_loop(d.init_exprs, var_names, d.init_assigns,
+                                 taken=taken)
 
-    # INVAR: var = expr -> define_map + next_assigns
+    # INVAR: var = expr -> define_map + next_assigns (strict: invar_assigns)
     parsed = [_try_extract_assign(expr, var_names) for expr in d.invar_exprs]
     counts = Counter(p[0] for p in parsed if p)
 
     remaining = []
     for expr, p in zip(d.invar_exprs, parsed):
-        if p and counts[p[0]] == 1 and p[0] not in d.next_assigns:
+        if strict:
+            if (p and counts[p[0]] == 1 and p[0] not in d.next_assigns
+                    and p[0] not in d.init_assigns
+                    and p[0] not in d.invar_assigns):
+                d.invar_assigns[p[0]] = p[1]
+            else:
+                remaining.append(expr)
+        elif p and counts[p[0]] == 1 and p[0] not in d.next_assigns:
             d.define_map[p[0]] = p[1]
             d.next_assigns[p[0]] = p[1]
         else:
@@ -211,9 +295,80 @@ def _promote_constraints(d: _Decls) -> None:
     d.invar_exprs = remaining
 
 
+def _check_strict(d: _Decls) -> None:
+    """Raise `SMVRefused` listing everything strict parsing would read
+    differently from NuSMV, as far as the declarations show it. What only
+    the expressions show (an undeclared name, an input read where NuSMV
+    does not allow one) is refused while lowering them."""
+    problems = list(d.problems)
+    for keyword, line in d.fairness:
+        at = f"line {line}: " if line is not None else ""
+        problems.append(f"{at}{keyword} constraints are not read")
+    for keyword, form, exprs in (
+            ("INIT", "`x = e`", d.init_exprs),
+            ("TRANS", "`next(x) = e`", d.trans_exprs),
+            ("INVAR", "`x = e`", d.invar_exprs)):
+        for expr in exprs:
+            problems.append(
+                f"{_at(expr)}{keyword} is not {form} for a variable with no "
+                "other such value"
+            )
+
+    var_names = [n for n, _ in d.var_decls]
+    frozen = [n for n, _ in d.frozen_decls]
+    ivars = {n for n, _ in d.ivar_decls}
+    declared = set(var_names) | set(frozen)
+    for assigns in (d.init_assigns, d.next_assigns, d.invar_assigns):
+        for name, expr in assigns.items():
+            if name in ivars:
+                problems.append(f"{_at(expr)}input variable `{name}` is assigned")
+            elif name not in declared:
+                problems.append(f"{_at(expr)}`{name}` is assigned but not declared")
+    for name in var_names + frozen:
+        if name in d.invar_assigns:
+            if name in d.init_assigns or name in d.next_assigns:
+                problems.append(
+                    f"`{name}` is assigned in every state and also its "
+                    "initial or next value"
+                )
+            continue
+        if name not in d.init_assigns:
+            problems.append(f"`{name}` has no initial value (NuSMV leaves it free)")
+        if name in frozen:
+            if name in d.next_assigns:
+                problems.append(f"FROZENVAR `{name}` is assigned a next value")
+        elif name not in d.next_assigns:
+            problems.append(
+                f"`{name}` has no next value (NuSMV leaves it free at every step)"
+            )
+
+    for name, t in d.var_decls + d.frozen_decls + d.ivar_decls:
+        if t.kind == "integer":
+            problems.append(
+                f"`{name}` has an integer type, which would lower to a "
+                f"{_DEFAULT_INT_BW}-bit word and wrap"
+            )
+        elif t.kind == "mixed-enum":
+            problems.append(f"`{name}`'s type mixes names and numbers")
+    clashes = sorted(set(d.enum_values) & (declared | ivars | set(d.define_map)))
+    for name in clashes:
+        problems.append(f"`{name}` is both an enum value and a variable or DEFINE")
+
+    if problems:
+        raise SMVRefused(
+            "the model cannot be read as NuSMV reads it:\n  "
+            + "\n  ".join(problems)
+        )
+
+
+# Single-child nodes that are operators, not wrappers: `_peel` stops at them.
+_UNARY_OPS = frozenset({"next_expr", "neg", "abs_call"})
+
+
 def _peel(tree):
-    """Peel single-child wrappers down to a leaf."""
-    while isinstance(tree, Tree) and len(tree.children) == 1:
+    """Peel single-child wrappers down to a leaf or a unary operator."""
+    while (isinstance(tree, Tree) and len(tree.children) == 1
+           and tree.data not in _UNARY_OPS):
         tree = tree.children[0]
     return tree
 
@@ -268,9 +423,10 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
     if isinstance(tree, Tree):
         match tree.data:
             case "type_bool":
-                return _SMVType(BitVec(1, [1, 1]), signed=False)
+                return _SMVType(BitVec(1, [1, 1]), signed=False, kind="boolean")
             case "type_int" | "range_type":
-                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True,
+                                kind="integer")
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
@@ -278,17 +434,25 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
                 width = int(str(tree.children[1]))
                 return _SMVType(BitVec(width, [1, 1]), signed=(sign_tok == "signed"))
             case "enum_type":
+                names = numbers = 0
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
                     if name is not None:
+                        names += 1
                         enum_values.setdefault(name, code)
-                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False)
+                    else:
+                        numbers += 1
+                kind = ("enum" if not numbers else
+                        "integer" if not names else "mixed-enum")
+                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False,
+                                kind=kind)
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return _SMVType(BitVec(1, [1, 1]), signed=False)
+        return _SMVType(BitVec(1, [1, 1]), signed=False, kind="boolean")
     if text == "integer":
-        return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+        return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True,
+                        kind="integer")
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -375,15 +539,30 @@ class _Lowerer:
             enum_values: dict[str, int],
             var_types: dict[str, _SMVType],
             is_init: bool = False,
+            *,
+            strict: bool = False,
+            ivars: frozenset[str] = frozenset(),
     ):
         self.name_map = name_map
         self.defines = defines
         self.enum_values = enum_values
         self.var_types = var_types
         self.is_init = is_init
+        # Strict only: what a name reads. The init block reads every
+        # variable's initial value and no input; the update block reads a
+        # variable's latched value and the input of its own round, and
+        # under `next()` (`at_next`) a variable's next value and no input.
+        self.strict = strict
+        self.ivars = ivars
+        self.at_next = False
+        self.context = ""
         self.terms: list[Term] = []
         self._expanding: set[str] = set()
         self._wire_types: dict[int, _SMVType] = {}
+
+    def refuse(self, why: str, node=None) -> "SMVRefused":
+        where = f" (in {self.context})" if self.context else ""
+        return SMVRefused(f"{_at(node) if node is not None else ''}{why}{where}")
 
     # --- public entry -------------------------------------------------------
 
@@ -394,10 +573,13 @@ class _Lowerer:
             if tree.type == "IDENT":
                 return self._lower_name(str(tree), target)
             if tree.type == "NUMBER":
-                return self._emit_const(_bv_const(int(str(tree))), target)
+                return self._lower_number(tree, target)
             raise ValueError(f"unexpected token type: {tree.type}")
 
         name = tree.data
+
+        if name == "mod_expr" and len(tree.children) > 1:
+            return self._lower_mod(tree, target)
 
         # Table-driven binary ops
         if name in _BINOPS:
@@ -416,7 +598,7 @@ class _Lowerer:
         if name == "var_ref":
             return self._lower_name(str(tree.children[0]), target)
         if name == "int_lit":
-            return self._emit_const(_bv_const(int(str(tree.children[0]))), target)
+            return self._lower_number(tree.children[0], target)
         if name in ("true_lit", "false_lit"):
             # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
             # fallback would otherwise widen them to BV<32>.
@@ -442,6 +624,9 @@ class _Lowerer:
         while i < len(children):
             op_tok = str(children[i])
             rhs = self.lower(children[i + 1])
+            if (self.strict and op_tok == "/"
+                    and (self._is_signed(left) or self._is_signed(rhs))):
+                raise self.refuse("`/` on signed words is not read", children[i])
             itype = _bv_op(op_map[op_tok])
             out = target if i + 2 >= len(children) else None
             out_dtype = (
@@ -538,6 +723,13 @@ class _Lowerer:
             return self._emit_const(_bv_const(0), target)
         cond_tree, val_tree = branches[idx].children
         if idx == len(branches) - 1:
+            # The last branch is taken whatever its condition: only right
+            # when that condition is TRUE (NuSMV has no value otherwise).
+            if self.strict and not _is_true(cond_tree):
+                raise self.refuse(
+                    "the last branch of a `case` must have condition TRUE",
+                    cond_tree,
+                )
             return self.lower(val_tree, target)
         cond = self.lower(cond_tree)
         then_w = self.lower(val_tree)
@@ -550,11 +742,55 @@ class _Lowerer:
 
     def _lower_next(self, tree: Tree, target: Wire | None) -> Wire:
         inner = tree.children[0]
+        if self.strict:
+            if self.is_init or self.at_next:
+                raise self.refuse("`next()` is not allowed here", tree)
+            with self.next_values():
+                return self.lower(inner, target)
         name = _extract_name(_peel(inner))
         if name and name in self.name_map:
             _, next_w = self.name_map[name]
             return self._enforce(next_w, target)
         return self.lower(inner, target)
+
+    @contextmanager
+    def next_values(self):
+        """Names read their next values while inside (strict only)."""
+        self.at_next = True
+        try:
+            yield
+        finally:
+            self.at_next = False
+
+    # --- mod ----------------------------------------------------------------
+
+    def _lower_mod(self, tree: Tree, target: Wire | None) -> Wire:
+        # `a mod b mod c`: the grammar keeps no operator tokens here.
+        operands = tree.children
+        left = self.lower(operands[0])
+        for i, operand in enumerate(operands[1:], start=1):
+            rhs = self.lower(operand)
+            if self.strict and (self._is_signed(left) or self._is_signed(rhs)):
+                raise self.refuse("`mod` on signed words is not read", tree)
+            out = target if i == len(operands) - 1 else None
+            w = self._fresh(out, None if out is not None else left.dtype)
+            self.terms.append(Term(BV.UMod(), [w], [left, rhs]))
+            self._propagate_type(w, left, rhs)
+            left = w
+        return self._enforce(left, target)
+
+    # --- numbers ------------------------------------------------------------
+
+    def _lower_number(self, token, target: Wire | None) -> Wire:
+        if self.strict:
+            # Every type that holds a number is refused, so a bare number
+            # is a word of whatever width it lands in.
+            raise self.refuse(
+                f"the number {token} is not a word constant (write e.g. "
+                f"0ud8_{token})",
+                token,
+            )
+        return self._emit_const(_bv_const(int(str(token))), target)
 
     # --- word literal -------------------------------------------------------
 
@@ -601,13 +837,27 @@ class _Lowerer:
         # Wire lookup
         if name in self.name_map:
             var = self.name_map[name]
-            w = X(var) if self.is_init else var
+            w = self._strict_read(name, var) if self.strict else (
+                X(var) if self.is_init else var)
             if name in self.var_types:
                 self._wire_types[id(w)] = self.var_types[name]
             return self._enforce(w, target)
+        if self.strict:
+            raise self.refuse(f"`{name}` is not declared")
         # Unknown name — emit zero with warning
         warnings.warn(f"undeclared variable '{name}', defaulting to 0")
         return self._emit_const(_bv_const(0), target)
+
+    def _strict_read(self, name: str, var: Var) -> Wire:
+        if name in self.ivars:
+            if self.is_init or self.at_next:
+                raise self.refuse(
+                    f"input variable `{name}` is read where NuSMV allows no "
+                    "input (an initial value, an INVAR or `x :=`, or under "
+                    "`next()`)"
+                )
+            return X(var)
+        return X(var) if (self.is_init or self.at_next) else var
 
     # --- helpers ------------------------------------------------------------
 
@@ -666,9 +916,16 @@ class _Lowerer:
 # ---------------------------------------------------------------------------
 
 
+def _is_true(tree) -> bool:
+    node = _peel(tree)
+    return isinstance(node, Tree) and node.data == "true_lit"
+
+
 def _build_module(
         d: _Decls,
         overrides: dict[str, Var],
+        *,
+        strict: bool = False,
 ) -> tuple[Module, dict[str, Var]]:
     # Prepend frozen vars before regular state vars
     all_var_decls = list(d.frozen_decls) + list(d.var_decls)
@@ -686,11 +943,18 @@ def _build_module(
             else Var(smv_type.dtype)
         )
 
-    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=True)
-    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=False)
+    ivars = frozenset(n for n, _ in d.ivar_decls)
+    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
+                        is_init=True, strict=strict, ivars=ivars)
+    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
+                          is_init=False, strict=strict, ivars=ivars)
 
     for name, smv_type in all_var_decls:
         var = name_map[name]
+
+        if strict:
+            _lower_strict(d, name, var, init_low, update_low)
+            continue
 
         # --- INIT ---
         init_expr = d.init_assigns.get(name)
@@ -709,5 +973,64 @@ def _build_module(
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [name_map[n] for n, _ in all_decls]
 
-    module = Module.sequential(obs_pairs, init_low.terms, update_low.terms)
+    init_terms, update_terms = init_low.terms, update_low.terms
+    if strict:
+        init_terms = _in_dataflow_order(init_terms, "the initial state")
+        update_terms = _in_dataflow_order(update_terms, "the next state")
+    module = Module.sequential(obs_pairs, init_terms, update_terms)
     return module, name_map
+
+
+def _in_dataflow_order(terms: list[Term], block: str) -> list[Term]:
+    """`terms` with each wire written before it is read.
+
+    A strict block reads next values (an INVAR, `next()`), so one
+    variable's term may read a wire another variable's term writes later
+    in declaration order."""
+    writer = {w: i for i, t in enumerate(terms) for w in t.write}
+    deps = [{writer[w] for w in t.read if w in writer} for t in terms]
+    order: list[Term] = []
+    state = [0] * len(terms)  # 0 unvisited, 1 on the stack, 2 placed
+    for root in range(len(terms)):
+        if state[root]:
+            continue
+        state[root] = 1
+        stack = [(root, iter(sorted(deps[root])))]
+        while stack:
+            i, it = stack[-1]
+            j = next(it, None)
+            if j is None:
+                stack.pop()
+                state[i] = 2
+                order.append(terms[i])
+            elif state[j] == 1:
+                raise SMVRefused(
+                    f"{block} depends on itself (a cycle through `next()` "
+                    "or INVAR)"
+                )
+            elif state[j] == 0:
+                state[j] = 1
+                stack.append((j, iter(sorted(deps[j]))))
+    return order
+
+
+def _lower_strict(d: _Decls, name: str, var: Var,
+                  init_low: _Lowerer, update_low: _Lowerer) -> None:
+    """`name`'s initial and next value, which `_check_strict` has made sure
+    the text gives (a FROZENVAR's next value is its own)."""
+    invar = d.invar_assigns.get(name)
+    if invar is not None:
+        # In every state, so the next value is the rhs at the next state.
+        init_low.context = update_low.context = f"`{name}` in every state"
+        init_low.lower(invar, X(var))
+        with update_low.next_values():
+            update_low.lower(invar, X(var))
+        return
+    init_low.context = f"init({name})"
+    init_low.lower(d.init_assigns[name], X(var))
+    update_low.context = f"next({name})"
+    next_expr = d.next_assigns.get(name)
+    if next_expr is not None:
+        update_low.lower(next_expr, X(var))
+    else:
+        update_low.terms.append(Term(BV.Id(), [X(var)], [var]))
