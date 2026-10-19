@@ -32,7 +32,8 @@ from zrth.lean.cert import (
 )
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import LeanContext
-from zrth.lean.project import generate_standalone_cert_lean, load_module_from_file
+from zrth.lean.inputs.python import load_module
+from zrth.lean.project import generate_standalone_cert_lean
 
 pytest.importorskip("cvc5")
 
@@ -57,7 +58,7 @@ def _check(name: str, text: str) -> None:
 
 
 def _fixture(name: str) -> Module:
-    return load_module_from_file(str(FIXTURES / f"{name}.py"))
+    return load_module(str(FIXTURES / f"{name}.py"))
 
 
 def _vector_counter() -> Module:

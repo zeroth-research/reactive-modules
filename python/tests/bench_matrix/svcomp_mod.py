@@ -3,7 +3,7 @@
 The corpus in `benchmarks/svcomp/dsl/` is written for the Farkas pipeline:
 each file exposes a `BENCH` whose `build()` returns
 `(module, ctrl_by_name, extl_by_name)`, and the package is imported
-relatively, so `verith`'s `load_module_from_file` cannot read one of those
+relatively, so `verith`'s python input adapter cannot read one of those
 files directly -- it wants a no-argument `module()` in a file it can exec on
 its own.
 

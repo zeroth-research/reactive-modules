@@ -92,7 +92,7 @@ sys.path.insert(0, str(SP))
 from suites import all_rows, column_of                          # noqa: E402
 
 from zrth.lean.certificate import Claim                         # noqa: E402
-from zrth.lean.project import load_module_from_file             # noqa: E402
+from zrth.lean.inputs.python import load_module                # noqa: E402
 from zrth.lean.smt_synth import SynthContext                    # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
@@ -121,7 +121,7 @@ def context_for(row):
     saved = {k: os.environ.get(k) for k in row.env}
     os.environ.update(row.env)
     try:
-        module = load_module_from_file(str(row.module))
+        module = load_module(str(row.module))
     finally:
         for k, v in saved.items():
             os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)

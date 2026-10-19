@@ -103,6 +103,7 @@ from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .common import LeanContext, Refused
 from .native import lean_gaps
+from . import inputs
 from .infer_route import (
     InferInput, InferResult, ProjectHandle, owned_files,
 )
@@ -113,7 +114,6 @@ from .project import (
     build_certificate,
     create_project,
     generate_standalone_cert_lean,
-    load_module_from_file,
     write_encoding,
 )
 from .smt.run import lazy
@@ -408,9 +408,9 @@ def _load(settings: Settings):
     input, so they are reported rather than raised.
     """
     try:
-        return load_module_from_file(
-            settings.module_file, module_def=settings.module_def
-        )
+        return inputs.load(
+            settings.module_file, {"module_def": settings.module_def}
+        ).module
     except (OSError, AttributeError, RuntimeError) as e:
         raise SystemExit(f"error: {e}") from e
 

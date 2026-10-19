@@ -116,13 +116,13 @@ def screen(opts) -> int:
     same set.  Needs no Lean, no ic3ia and no lean-ltl-certifying."""
     sys.path.insert(0, str(Path(opts.mods).resolve()))
     from zrth.lean.common import LeanContext
-    from zrth.lean.project import load_module_from_file
+    from zrth.lean.inputs.python import load_module
     from zrth.lean.translate.fbk import NAUnsupported, check_na_supported
 
     accepted, rejected, surprises = [], {}, []
     for path in sorted(Path(opts.mods).glob("m_*.py")):
         try:
-            check_na_supported(LeanContext(load_module_from_file(str(path))))
+            check_na_supported(LeanContext(load_module(str(path))))
             accepted.append(path.stem)
         except NAUnsupported as e:
             rejected[path.stem] = str(e)

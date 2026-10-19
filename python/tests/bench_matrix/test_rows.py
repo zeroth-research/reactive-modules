@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sim                                                      # noqa: E402
 from suites import SUITES                                       # noqa: E402
 
-from zrth.lean.project import load_module_from_file
+from zrth.lean.inputs.python import load_module
 
 ROWS = [r for name in ("hybrid", "petri") for r in SUITES[name]()]
 
@@ -36,7 +36,7 @@ def _load(row):
     saved = {k: os.environ.get(k) for k in row.env}
     os.environ.update(row.env)
     try:
-        return load_module_from_file(str(row.module))
+        return load_module(str(row.module))
     finally:
         for k, v in saved.items():
             os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
@@ -126,7 +126,7 @@ COUNTDOWN = Path(__file__).resolve().parents[1] / "limits" / "mods" / "m_countdo
 
 def test_a_recurrence_longer_than_the_tail_is_not_refuted():
     """`s0 = 0` recurs once per 101 ticks, which is a property that holds."""
-    seen = sim.observe(load_module_from_file(str(COUNTDOWN)), "(= s0 0)", "buchi")
+    seen = sim.observe(load_module(str(COUNTDOWN)), "(= s0 0)", "buchi")
 
     assert not seen.refuted
     # And the absence has force: a cycle *was* closed, so the property was
@@ -138,7 +138,7 @@ def test_a_cycle_the_property_never_holds_in_refutes_it():
     """`s0 = -1` is false at every state of the same cycle, and the cycle is
     the refutation: its length is the module's real period, and replaying
     the inputs of those 101 ticks repeats it for ever."""
-    seen = sim.observe(load_module_from_file(str(COUNTDOWN)), "(= s0 (- 1))",
+    seen = sim.observe(load_module(str(COUNTDOWN)), "(= s0 (- 1))",
                        "buchi")
 
     assert seen.refuted and seen.verdict == "fails"
