@@ -1,5 +1,8 @@
 # Phase 6 plan: codegen cleanup
 
+Done 2026-10-19 as `c4f5b00e..26c41773`; `PIPELINE_REVIEW.md` names each
+item's commits. Kept for the answers and the reasoning.
+
 Phase 6 of the `verith` refactor ([`PIPELINE_REVIEW.md`](PIPELINE_REVIEW.md),
 "Order of work"): CG-1, CG-2, CG-4..CG-6, CG-8, CG-9, CG-12, CG-13, RT-8.
 Phase 7, a README for the pipeline with a picture the user supplies, comes
