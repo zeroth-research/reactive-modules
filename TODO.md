@@ -114,10 +114,6 @@ Paths are relative to `python/zrth/lean/`.
   whenever its body is `skip`, unused `e`/`extl_l`/`extl_n` binders, a
   `dsimp` and an `infer_instance` that do nothing, and an unused simp
   argument.
-- **`ModuleToLean4._can_scalarize()` gates nothing.**
-  `len(dtype_shape(w.dtype)) <= 2` is vacuous, since every Sort is 2-D, but
-  its docstring and the callers' "not available" message say it rejects
-  matrix wires.
 - **Nothing in CI builds a `verith -o` project.** The Lean tests compile
   standalone `Certs/*.lean`, except the slow ones in
   `tests/test_lean_svcomp.py`, which build `create_project` output with

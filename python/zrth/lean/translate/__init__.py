@@ -5,7 +5,6 @@ Public API: ``ModuleToLean4``; one submodule per encoding.
 
 from functools import cached_property
 
-from zrth.lean.sorts import dtype_shape
 from zrth.lean.context import LeanContext
 from zrth import Module
 
@@ -53,12 +52,6 @@ class ModuleToLean4:
     def module(self):
         return self.ctx.module
 
-    def _can_scalarize(self) -> bool:
-        """True when every wire has a shape that can be flattened to scalars (≤ 2-D)."""
-        ctx = self.ctx
-        all_wires = ctx.ctrl_latched + ctx.ctrl_next + ctx.extl_latched + ctx.extl_next
-        return all(len(dtype_shape(w.dtype)) <= 2 for w in all_wires)
-
     # ------------------------------------------------------------------
     # Functional encoding
     # ------------------------------------------------------------------
@@ -104,10 +97,6 @@ class ModuleToLean4:
         return _to_lean_scalar_equiv(self.ctx, self._scalar[1])
 
     def to_lean_scalar(self) -> str:
-        if not self._can_scalarize():
-            return (
-                "-- scalar encoding not available: module has non-scalar (matrix) wires"
-            )
         return "{}\n\n{}".format(
             self.atom_to_lean_scalar(),
             self.to_lean_scalar_equiv(),
@@ -130,8 +119,6 @@ class ModuleToLean4:
         return self.atom_to_lean_mat_rel()
 
     def to_lean_rel(self) -> str:
-        if not self._can_scalarize():
-            return "-- relational encoding not available: module has non-scalar (matrix) wires"
         return self.atom_to_lean_rel()
 
 
@@ -149,9 +136,7 @@ class ModuleToLean4:
         (``Scalar.init``/``update``, ``unpack_*``, ``pack``) and the
         composition theorems.  ``rel=True`` appends the relational namespace
         (``ScalarRel.effect_i``, ``ScalarRel.R_i``, ``ScalarRel.TransRel``, ``ScalarRel.InitCond``).
-        All default to True; pass ``False`` to omit.  The scalar and
-        relational encodings are silently skipped when the module has
-        non-scalar (matrix) wires.
+        All default to True; pass ``False`` to omit.
         """
         parts = [self.to_lean_functional()]
         if circuit:

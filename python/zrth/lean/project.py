@@ -253,7 +253,6 @@ class Encoding:
     core: str                   # the Core module the encoding is written against
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
     producer: str               # the `ModuleToLean4` method that prints it
-    scalar: bool = False        # only sound when the module scalarizes
     cert_file: bool = True      # also written by the `--cert-file` route
 
 
@@ -268,10 +267,9 @@ ENCODINGS: tuple[Encoding, ...] = (
              cert_file=False),
     Encoding("Rel", "Matrix-domain relational encoding", "Core.Basic", ("",),
              "to_lean_mat_rel"),
-    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar",
-             scalar=True),
+    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar"),
     Encoding("ScalarRel", "Scalar-relational encoding", "Core.Basic", ("Scalar",),
-             "to_lean_rel", scalar=True),
+             "to_lean_rel"),
 )
 
 
@@ -290,20 +288,15 @@ def write_encoding(
     return path
 
 
-def generate_root(scalar: bool = True) -> str:
+def generate_root() -> str:
     """Root module file that imports the `System.*` encodings.
 
     The import list is the encoding table, so a row added there reaches the
-    root without a second edit. `scalar` drops the rows whose encoding only
-    holds for a module the scalar layout can express.
+    root without a second edit.
     """
     return render(
         "project/Root.lean.j2",
-        imports=[
-            SYSTEM_LAYOUT.lean_module(e.suffix)
-            for e in ENCODINGS
-            if scalar or not e.scalar
-        ],
+        imports=[SYSTEM_LAYOUT.lean_module(e.suffix) for e in ENCODINGS],
     )
 
 
@@ -660,12 +653,10 @@ def create_project(
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
-    root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
+    root_lean.write_text(generate_root())
     print(f"Wrote root module {root_lean}")
 
-    # Every encoding the project carries, in table order. The scalar rows
-    # are written whether or not the module scalarizes -- only the root
-    # import list is gated, which is what it has always done.
+    # Every encoding the project carries, in table order.
     layout = replace(SYSTEM_LAYOUT, directory=src_dir)
     for enc in ENCODINGS:
         print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
