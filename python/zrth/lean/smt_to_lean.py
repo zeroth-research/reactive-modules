@@ -460,11 +460,11 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
             slots = acc[name]
             if len(slots) == 1:
                 return slots[0]
-            raise ValueError(
+            raise Refused(
                 f"`{name}` holds {len(slots)} elements, so it has no single "
                 "value; select an element instead"
             )
-        raise ValueError(
+        raise Refused(
             f"Unknown free variable `{name}` (known: {sorted(acc)})"
         )
 
@@ -481,12 +481,12 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
         # A wide wire reaches here as a tuple constant; its elements are
         # exactly the state slots, in the row-major order `mat_select` packs.
         if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in acc:
-            raise ValueError(
+            raise Refused(
                 f"tuple selector against a non-state term is not supported: {t}"
             )
         slots = acc[obj.getSymbol()]
         if idx >= len(slots):
-            raise ValueError(
+            raise Refused(
                 f"element {idx} of `{obj.getSymbol()}`, which has "
                 f"{len(slots)}"
             )
@@ -526,7 +526,7 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
     if k == Kind.ITE:
         return f"(if {recur(t[0])} then {recur(t[1])} else {recur(t[2])})"
 
-    raise ValueError(
+    raise Refused(
         f"SMT→Bool Lean: unsupported kind {k} in {t}; "
         + (
             "lean2vmt does translate `mod`, and ic3ia proves such a "
