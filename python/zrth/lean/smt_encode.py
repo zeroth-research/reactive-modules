@@ -106,7 +106,7 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
     raise ValueError(f"Unsupported scalar Sort: {dt}")
 
 
-def _tensor_const(tm: cvc5.TermManager, wire: Wire, tensor) -> cvc5.Term:
+def tensor_const(tm: cvc5.TermManager, wire: Wire, tensor) -> cvc5.Term:
     """Materialize a torch tensor as a matrix-shaped cvc5 term."""
     shape = wire_shape(wire)
     dt = wire.dtype
@@ -292,7 +292,7 @@ class SmtOp:
         return _scalar_const(self.tm, dt, raw)
 
     def tensor(self, wire: Wire, data) -> cvc5.Term:
-        return _tensor_const(self.tm, wire, data)
+        return tensor_const(self.tm, wire, data)
 
     # -- matrices ---------------------------------------------------------
     def shape(self, m: int, n: int) -> MatShape:

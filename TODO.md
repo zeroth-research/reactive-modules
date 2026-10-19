@@ -93,16 +93,6 @@ Paths are relative to `python/zrth/lean/`.
 - **nuterm needs the editable install.** `magic/learn.py` imports `nuterm`,
   which sits beside `zrth` in `python/` and is not in the wheel: maturin
   packages `zrth` alone.
-- **Check the Lean encoding against the SMT one.** `pre_check` asks cvc5
-  about the certificate (`init_inv`, `step_inv`, `hrank`); nothing asks
-  whether `native.py`'s Lean and `smt_encode`'s cvc5 terms agree about the
-  module, which they do only by construction. The equivalence theorems do
-  not cover this: they can stay provable while both sides are wrong, as
-  `argmax1d_scalar_n_eq` did while both sides had argmax's tie-breaking
-  wrong. Re-parsing the emitted Lean would be circular. Instead, give
-  `native.py`'s op table a cvc5 *evaluator* sibling in the same registry
-  (`ops.py`), and check the two agree on random concrete inputs, in
-  milliseconds per module.
 
 ## Lean generation
 
@@ -135,7 +125,9 @@ Paths are relative to `python/zrth/lean/`.
 - **`Real` has no Lean IO** (needs a decision). `generate_main_lean`
   refuses a `Real` wire, since Lean's `Real` is noncomputable. A float
   approximation at the IO boundary would work, if `verith -x` is wanted for
-  LRA modules.
+  LRA modules. For the same reason `tests/lean/test_lean_agree.py` cannot
+  `#eval` an LRA module, so only the SMT side of those is held to the
+  interpreter.
 
 ## Proof automation and cvc5
 

@@ -169,6 +169,12 @@ compare; every difference must be one the change means.
 - **Suites**: `uv run pytest -m 'not slow' -q` from `python/` (set `VAMPIRE`
   to the binary for the Vampire tests), and `just test-lean` for the lake
   builds after any change to the generated Lean.
+- **Encodings against the module**: after a change to an encoder or to the
+  op table, `tests/test_encodings_agree.py` (the SMT encoding, two seconds)
+  and `tests/lean/test_lean_agree.py` (the Lean one, `-m slow`, a minute)
+  run every module of the suite's corpus on random inputs and hold both
+  encodings to `zrth.eval`, the interpreter. The equivalence theorems
+  cannot catch an encoder that is wrong on every side at once; these can.
 
 ## Further reading
 
