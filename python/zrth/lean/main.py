@@ -5,9 +5,10 @@ Entry point: ``uv run verith``
 Quick start
 -----------
 A *module file* is a Python file that defines a ``module()`` function (or
-class) returning a :class:`zrth.Module`.  Optionally it may also define plain
-``init()`` / ``update()`` functions so that the AI inference (``--infer``) can
-read the high-level logic.
+class) returning a :class:`zrth.Module` (or a ``zrth.lean.inputs.Named``
+one, for claims in its own names), or another format ``--format`` lists.
+The LLM routes prompt on the module's generated Lean; a route that declares
+``reads_source`` is also handed the input file itself.
 
 Generate a bare Lean project (all certificate fields left as ``sorry``)::
 
@@ -341,6 +342,7 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
 def _infer(
     settings: Settings, module, handle: ProjectHandle, claim: Claim,
     given: Certificate, prechecked, smt=None,
+    problem: "inputs.Problem | None" = None,
 ) -> "InferResult":
     """Run the selected route against the generated project.
 
@@ -368,6 +370,10 @@ def _infer(
                 base_url=settings.base_url,
                 log=print,
                 smt=smt,
+                source=(problem.source
+                        if route.reads_source and problem else None),
+                names=(problem.names
+                       if route.reads_source and problem else None),
             )
         )
     except (Refused, ImportError) as e:
@@ -626,7 +632,7 @@ def main():
             artifacts=store,
         )
         result = _infer(settings, module, handle, claim, given, prechecked,
-                        smt=smt)
+                        smt=smt, problem=problem)
         # `files`: the certificate is the route's own, so there is nothing
         # of ours to be complete about and nothing to regenerate from.
         lean_cert = (
