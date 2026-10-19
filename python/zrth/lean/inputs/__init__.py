@@ -20,19 +20,20 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from . import python
-from .api import InputAdapter, Problem, SourceText
+from . import python, smv
+from .api import InputAdapter, InputError, Problem, SourceText
 from .names import ClaimError, Names, to_internal, to_surface
 from .python import Named
 
 __all__ = [
-    "ADAPTERS", "ClaimError", "InputAdapter", "Named", "Names", "Problem",
+    "ADAPTERS", "ClaimError", "InputAdapter", "InputError", "Named", "Names",
+    "Problem",
     "SourceText", "adapter_by_name", "adapter_for", "load", "to_internal",
     "to_surface",
 ]
 
 # The order is the order `--format` lists them in.
-ADAPTERS: tuple[InputAdapter, ...] = (python.ADAPTER,)
+ADAPTERS: tuple[InputAdapter, ...] = (python.ADAPTER, smv.ADAPTER)
 
 _BY_NAME = {a.name: a for a in ADAPTERS}
 assert len(_BY_NAME) == len(ADAPTERS), "two input adapters share a name"

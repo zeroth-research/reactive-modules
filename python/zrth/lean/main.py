@@ -417,7 +417,8 @@ def _load(settings: Settings) -> "inputs.Problem":
     try:
         return inputs.load(settings.module_file, settings.input_opts,
                            format=settings.input_format)
-    except (OSError, AttributeError, RuntimeError, inputs.ClaimError) as e:
+    except (OSError, AttributeError, RuntimeError, inputs.ClaimError,
+            inputs.InputError) as e:
         raise SystemExit(f"error: {e}") from e
 
 

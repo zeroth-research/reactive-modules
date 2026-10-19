@@ -363,6 +363,22 @@ def module() -> Module:
     return Module.sequential([state], init_terms, update_terms)
 ```
 
+To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
+`zrth.lean.inputs.Named(module, {"x": state})` instead of the bare module.
+
+### SMV input (`--format smv`, `.smv`)
+
+A NuSMV model with one `MODULE main` is read by `zrth.smv.parse_smv(strict=True)`:
+it means what NuSMV means by it, or it is refused with every reason listed. A
+model without words lowers to LIA (`integer`, ranges and enum codes are `Int`,
+`boolean` is `Bool`), one with words to BV. Refused: a variable with no `init`
+or no `next` (NuSMV leaves it free), an `INIT`/`TRANS`/`INVAR` that is not an
+assignment to a variable, fairness constraints, an integer type in a model
+with words, `*` of two non-constants and `/`/`mod` in LIA, and a `case` whose
+last condition is not `TRUE`. An input (`IVAR`) is read in the round it labels,
+and `INVAR x = e` / `x := e` hold in every state. Claims use the model's
+variable names: `uv run verith tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
+
 ### Common invocations
 
 ```bash
@@ -460,7 +476,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 |------|---------|-------------|
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
-| `--format` | by suffix | The input's format (`python`: `.py`) |
+| `--format` | by suffix | The input's format (`python`: `.py`, `smv`: `.smv`) |
 | `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
 | `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |

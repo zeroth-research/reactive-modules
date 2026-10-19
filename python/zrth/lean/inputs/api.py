@@ -13,6 +13,10 @@ from ..options import Opt
 from .names import Names
 
 
+class InputError(Exception):
+    """The input is not a module verith can read; the message says why."""
+
+
 @dataclass(frozen=True)
 class SourceText:
     """The input file as read: its format (an adapter's name), where it

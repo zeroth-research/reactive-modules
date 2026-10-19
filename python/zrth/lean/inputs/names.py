@@ -43,6 +43,13 @@ class ClaimError(ValueError):
     """A claim that names something the module does not have."""
 
 
+def usable(name: str) -> bool:
+    """Whether a claim can call a variable `name`: not `X`, a boolean
+    literal or a positional name, and a single symbol."""
+    return bool(name) and not (name in _RESERVED or name.startswith("@")
+                               or _FORBIDDEN.search(name))
+
+
 @dataclass(frozen=True)
 class Names:
     """Source names of a module's variables, in positional order:
@@ -57,8 +64,7 @@ class Names:
         for name in self.ctrl + self.extl:
             if name is None:
                 continue
-            if (not name or name in _RESERVED or name.startswith("@")
-                    or _FORBIDDEN.search(name)):
+            if not usable(name):
                 raise ClaimError(f"`{name}` cannot name a variable in a claim")
             if name in seen:
                 raise ClaimError(f"two variables are named `{name}`")

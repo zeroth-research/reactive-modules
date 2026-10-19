@@ -760,3 +760,36 @@ def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
     with pytest.raises(SystemExit):
         parse_args(["model.txt"])
     assert "cannot tell the format of model.txt" in capsys.readouterr().err
+
+
+SMV_FIXTURES = Path(__file__).parent / "smv_fixtures"
+
+
+def test_d_is_only_meaningful_for_python_input(capsys):
+    from zrth.lean.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([str(SMV_FIXTURES / "mod10.smv"), "-d", "other"])
+    assert "--module-def is only meaningful for python input" in \
+        capsys.readouterr().err
+
+
+def test_an_smv_model_is_certified_in_its_own_names(tmp_path):
+    """mod10 counts to 9 and wraps: `x` stays in 0..9, and cvc5 checks the
+    invariant that says so before a line of the certificate is written."""
+    band = "(and (>= (X x) 0) (<= (X x) 9))"
+    r = _verith(str(SMV_FIXTURES / "mod10.smv"), "--safety", band,
+                "--invariant", band, "--pre-check", "cvc5",
+                "--cert-file", str(tmp_path / "Mod10.lean"))
+    assert r.returncode == 0, r.stderr
+    assert ".. --safety, in internal names: (and (>= s0 0) (<= s0 9))" in r.stdout
+    assert (tmp_path / "Mod10.lean").exists()
+
+
+def test_a_model_strict_smv_refuses_is_an_error_line(tmp_path):
+    free = tmp_path / "free.smv"
+    free.write_text("MODULE main\nVAR x : boolean;\nASSIGN init(x) := TRUE;\n")
+    r = _verith(str(free), "-o", str(tmp_path))
+    assert r.returncode != 0
+    assert "Traceback" not in r.stderr, r.stderr
+    assert "error:" in r.stderr and "`x` has no next value" in r.stderr

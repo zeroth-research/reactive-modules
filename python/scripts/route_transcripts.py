@@ -35,6 +35,7 @@ PY = Path(__file__).resolve().parents[2] / "python"
 FIX = PY / "tests" / "fixtures"
 MODS = PY / "tests" / "limits" / "mods"
 HYBRID = PY / "tests" / "bench_matrix" / "hybrid"
+SMV = PY / "tests" / "smv_fixtures"
 
 
 def _tool(var: str, default: str) -> Path:
@@ -105,6 +106,9 @@ CASES = {
                                "--infer", "smt-linear"])],
     "linear_toward5": [C(MODS / "m_toward5.py",
                          ["--buchi", "(= (X @intf.0) 5)", "--infer", "smt-linear"])],
+    "smv_houdini": [C(SMV / "mod10.smv",
+                      ["--safety", "(and (>= (X x) 0) (<= (X x) 9))",
+                       "--infer", "houdini", "--pre-check", "cvc5"])],
     "houdini_buchi": [C(FIX / "svcomp_countdown.py",
                         ["--buchi", "(= (X @intf.0) 0)", "--infer", "houdini",
                          "--pre-check", "cvc5", "--smt-tactics", "cvc5"])],
