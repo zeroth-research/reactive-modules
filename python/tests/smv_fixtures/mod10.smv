@@ -1,0 +1,13 @@
+-- A counter modulo 10, advanced when the input asks.
+MODULE main
+IVAR
+    inc : boolean;
+VAR
+    x : 0..9;
+ASSIGN
+    init(x) := 0;
+    next(x) := case
+        inc & x = 9 : 0;
+        inc         : x + 1;
+        TRUE        : x;
+    esac;

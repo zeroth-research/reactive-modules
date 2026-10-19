@@ -11,8 +11,8 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, Term, Module, BV, Var, X
-from ..sort import Sort, BitVec, Bool
+from ..zrth import Wire, Term, Module, BV, LIA, Var, X
+from ..sort import Sort, BitVec, Bool, Int
 
 
 def _bw(sort) -> int:
@@ -63,7 +63,9 @@ def parse_smv(
     With *strict*, the module means what NuSMV means by the text, or
     `SMVRefused` says why it cannot: a constraint that is not an
     assignment, a fairness constraint, a variable left free (no ``init``
-    or no ``next``), an integer type (it would lower to a wrapping word).
+    or no ``next``), an integer type in a model with words (it would lower
+    to a wrapping word). A model with no words is lowered to LIA: integers,
+    ranges and enum codes are Int, booleans Bool.
     Inputs are read in the round they label, ``next(e)`` reads ``e`` at the
     next state, and ``INVAR x = e`` / ``x := e`` hold in every state.
     Without it, such text is read leniently: constraints dropped, free
@@ -73,9 +75,10 @@ def parse_smv(
     decls = _collect_declarations(tree)
     _split_assigns(decls, strict=strict)
     _promote_constraints(decls, strict=strict)
+    theory = _theory(tree) if strict else "bv"
     if strict:
-        _check_strict(decls)
-    return _build_module(decls, overrides or {}, strict=strict)
+        _check_strict(decls, theory)
+    return _build_module(decls, overrides or {}, strict=strict, theory=theory)
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +298,7 @@ def _promote_constraints(d: _Decls, *, strict: bool = False) -> None:
     d.invar_exprs = remaining
 
 
-def _check_strict(d: _Decls) -> None:
+def _check_strict(d: _Decls, theory: str) -> None:
     """Raise `SMVRefused` listing everything strict parsing would read
     differently from NuSMV, as far as the declarations show it. What only
     the expressions show (an undeclared name, an input read where NuSMV
@@ -343,10 +346,10 @@ def _check_strict(d: _Decls) -> None:
             )
 
     for name, t in d.var_decls + d.frozen_decls + d.ivar_decls:
-        if t.kind == "integer":
+        if t.kind == "integer" and theory == "bv":
             problems.append(
-                f"`{name}` has an integer type, which would lower to a "
-                f"{_DEFAULT_INT_BW}-bit word and wrap"
+                f"`{name}` has an integer type in a model with words, so it "
+                f"would lower to a {_DEFAULT_INT_BW}-bit word and wrap"
             )
         elif t.kind == "mixed-enum":
             problems.append(f"`{name}`'s type mixes names and numbers")
@@ -600,13 +603,7 @@ class _Lowerer:
         if name == "int_lit":
             return self._lower_number(tree.children[0], target)
         if name in ("true_lit", "false_lit"):
-            # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
-            # fallback would otherwise widen them to BV<32>.
-            w = self._fresh(target, BitVec(1, [1, 1]))
-            self.terms.append(
-                Term(_bv_const(1 if name == "true_lit" else 0), [w])
-            )
-            return self._enforce(w, target)
+            return self._lower_bool_lit(name == "true_lit", target)
 
         # Fallback: descend into single child
         if tree.children:
@@ -734,8 +731,12 @@ class _Lowerer:
         cond = self.lower(cond_tree)
         then_w = self.lower(val_tree)
         else_w = self._lower_case_rec(branches, idx + 1, None)
-        w = self._fresh(target, then_w.dtype)
-        self.terms.append(Term(BV.Ite(), [w], [cond, then_w, else_w]))
+        return self._ite(cond, then_w, else_w, target, cond_tree)
+
+    def _ite(self, cond: Wire, a: Wire, b: Wire, target: Wire | None,
+             node) -> Wire:
+        w = self._fresh(target, a.dtype)
+        self.terms.append(Term(BV.Ite(), [w], [cond, a, b]))
         return self._enforce(w, target)
 
     # --- next(expr) ---------------------------------------------------------
@@ -833,7 +834,7 @@ class _Lowerer:
             return result
         # Check enum
         if name in self.enum_values:
-            return self._emit_const(_bv_const(self.enum_values[name]), target)
+            return self._lower_code(self.enum_values[name], target)
         # Wire lookup
         if name in self.name_map:
             var = self.name_map[name]
@@ -879,6 +880,19 @@ class _Lowerer:
             return target
         return Wire(dtype if dtype is not None else BitVec(_DEFAULT_INT_BW, [1, 1]))
 
+    def _lower_bool_lit(self, value: bool, target: Wire | None) -> Wire:
+        # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
+        # fallback would otherwise widen them to BV<32>.
+        w = self._fresh(target, BitVec(1, [1, 1]))
+        self.terms.append(Term(_bv_const(1 if value else 0), [w]))
+        return self._enforce(w, target)
+
+    def _lower_code(self, code: int, target: Wire | None) -> Wire:
+        return self._emit_const(_bv_const(code), target)
+
+    def id_op(self):
+        return BV.Id()
+
     def _emit_const(self, itype, target: Wire | None) -> Wire:
         out_dtype = _const_out_dtype(itype)
         w = self._fresh(target, out_dtype)
@@ -887,7 +901,7 @@ class _Lowerer:
 
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
-            self.terms.append(Term(BV.Id(), [target], [wire]))
+            self.terms.append(Term(self.id_op(), [target], [wire]))
             t = self._smv_type(wire)
             if t is not None:
                 self._wire_types[id(target)] = t
@@ -916,6 +930,191 @@ class _Lowerer:
 # ---------------------------------------------------------------------------
 
 
+_INT = Int([1, 1])
+_BOOL = Bool([1, 1])
+_LIA_CMP = {"=": LIA.Eq, "!=": LIA.Ne, "<": LIA.Lt, "<=": LIA.Le,
+            ">": LIA.Gt, ">=": LIA.Ge}
+
+
+def _lia_sort(t: _SMVType) -> Sort:
+    return _BOOL if t.kind == "boolean" else _INT
+
+
+def _sort_name(sort: Sort) -> str:
+    match sort:
+        case Bool(_):
+            return "boolean"
+        case Int(_):
+            return "integer"
+    return str(sort)
+
+
+class _LIALowerer(_Lowerer):
+    """Strict lowering of a model with no words, in LIA: integers, ranges
+    and enum codes are Int, booleans Bool.
+
+    NuSMV's integers are unbounded, so this is the reading that does not
+    wrap. LIA multiplies only by a constant and has no division, so `*` of
+    two non-constants, `/` and `mod` are refused, as is an operand of the
+    wrong type (NuSMV refuses those too)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._int_consts: dict[Wire, int] = {}
+
+    def id_op(self):
+        return LIA.Id()
+
+    def _fresh(self, target: Wire | None, dtype=None) -> Wire:
+        return target if target is not None else Wire(dtype)
+
+    def _emit(self, op, sort: Sort, inputs: list[Wire], target: Wire | None,
+              node=None) -> Wire:
+        if target is not None and _sort_name(target.dtype) != _sort_name(sort):
+            raise self.refuse(
+                f"a {_sort_name(sort)} where a {_sort_name(target.dtype)} "
+                "is needed", node)
+        w = self._fresh(target, sort)
+        self.terms.append(Term(op, [w], inputs))
+        return w
+
+    def _need(self, w: Wire, sort: Sort, node) -> None:
+        if _sort_name(w.dtype) != _sort_name(sort):
+            raise self.refuse(
+                f"a {_sort_name(w.dtype)} where a {_sort_name(sort)} is needed",
+                node)
+
+    def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
+        if target is not None and target != wire:
+            return self._emit(LIA.Id(), wire.dtype, [wire], target)
+        return wire
+
+    # --- constants ------------------------------------------------------
+
+    def _int_const(self, value: int, target: Wire | None, node=None) -> Wire:
+        op = LIA.Int(torch.tensor([[int(value)]], dtype=torch.int64))
+        w = self._emit(op, _INT, [], target, node)
+        self._int_consts[w] = int(value)
+        return w
+
+    def _lower_number(self, token, target: Wire | None) -> Wire:
+        return self._int_const(int(str(token)), target, token)
+
+    def _lower_code(self, code: int, target: Wire | None) -> Wire:
+        return self._int_const(code, target)
+
+    def _lower_bool_lit(self, value: bool, target: Wire | None) -> Wire:
+        op = LIA.Bool(torch.tensor([[bool(value)]], dtype=torch.bool))
+        return self._emit(op, _BOOL, [], target)
+
+    # --- operators ------------------------------------------------------
+
+    def _scale(self, k: int, x: Wire, target: Wire | None, node) -> Wire:
+        op = LIA.Linear(torch.tensor([[k]], dtype=torch.int64),
+                        torch.zeros(1, 1, dtype=torch.int64))
+        return self._emit(op, _INT, [x], target, node)
+
+    def _lower_binop(self, tree: Tree, op_map: dict, target: Wire | None,
+                     *, out_dtype_fn=None) -> Wire:
+        children = tree.children
+        left = self.lower(children[0])
+        for i in range(1, len(children), 2):
+            tok = children[i]
+            rhs = self.lower(children[i + 1])
+            out = target if i + 2 >= len(children) else None
+            left = self._binop(op_map[str(tok)], left, rhs, out, tok)
+        return self._enforce(left, target)
+
+    def _binop(self, name: str, a: Wire, b: Wire, out: Wire | None,
+               tok) -> Wire:
+        if name in ("And", "Or", "Xor", "Xnor"):
+            self._need(a, _BOOL, tok)
+            self._need(b, _BOOL, tok)
+            if name == "Xnor":
+                x = self._emit(LIA.Xor(), _BOOL, [a, b], None)
+                return self._emit(LIA.Not(), _BOOL, [x], out, tok)
+            return self._emit(getattr(LIA, name)(), _BOOL, [a, b], out, tok)
+        self._need(a, _INT, tok)
+        self._need(b, _INT, tok)
+        if name in ("Add", "Sub"):
+            return self._emit(getattr(LIA, name)(), _INT, [a, b], out, tok)
+        if name == "Mul":
+            for c, x in ((a, b), (b, a)):
+                if c in self._int_consts:
+                    return self._scale(self._int_consts[c], x, out, tok)
+            raise self.refuse(
+                "`*` of two non-constants is not linear integer arithmetic",
+                tok)
+        raise self.refuse(f"`{tok}` is not linear integer arithmetic", tok)
+
+    def _lower_mod(self, tree: Tree, target: Wire | None) -> Wire:
+        raise self.refuse("`mod` is not linear integer arithmetic", tree)
+
+    def _lower_cmp(self, tree: Tree, target: Wire | None) -> Wire:
+        children = tree.children
+        left = self.lower(children[0])
+        for i in range(1, len(children), 2):
+            tok = children[i]
+            op = str(tok)
+            rhs = self.lower(children[i + 1])
+            out = target if i + 2 >= len(children) else None
+            if op in ("=", "!=") and _sort_name(left.dtype) == "boolean":
+                self._need(rhs, _BOOL, tok)
+                if op == "!=":
+                    left = self._emit(LIA.Xor(), _BOOL, [left, rhs], out, tok)
+                else:
+                    x = self._emit(LIA.Xor(), _BOOL, [left, rhs], None)
+                    left = self._emit(LIA.Not(), _BOOL, [x], out, tok)
+            else:
+                self._need(left, _INT, tok)
+                self._need(rhs, _INT, tok)
+                left = self._emit(_LIA_CMP[op](), _BOOL, [left, rhs], out, tok)
+        return self._enforce(left, target)
+
+    def _lower_nary(self, tree: Tree, op_name: str, target: Wire | None) -> Wire:
+        inputs = [
+            self.lower(c)
+            for c in tree.children
+            if not (isinstance(c, Token) and c.type in _OP_TOKENS)
+        ]
+        if op_name == "Ite":
+            return self._ite(*inputs, target, tree)
+        if op_name == "Not":
+            self._need(inputs[0], _BOOL, tree)
+            return self._emit(LIA.Not(), _BOOL, inputs, target, tree)
+        if op_name == "Implies":
+            a, b = inputs
+            self._need(a, _BOOL, tree)
+            self._need(b, _BOOL, tree)
+            not_a = self._emit(LIA.Not(), _BOOL, [a], None)
+            return self._emit(LIA.Or(), _BOOL, [not_a, b], target, tree)
+        (x,) = inputs
+        self._need(x, _INT, tree)
+        if op_name == "Neg":
+            return self._scale(-1, x, target, tree)
+        # Abs
+        negative = self._emit(LIA.Lt(), _BOOL, [x, self._int_const(0, None)],
+                              None)
+        return self._ite(negative, self._scale(-1, x, None, tree), x, target,
+                         tree)
+
+    def _ite(self, cond: Wire, a: Wire, b: Wire, target: Wire | None,
+             node) -> Wire:
+        self._need(cond, _BOOL, node)
+        self._need(b, a.dtype, node)
+        return self._emit(LIA.Ite(), a.dtype, [cond, a, b], target, node)
+
+    def _lower_builtin(self, tree: Tree, target: Wire | None) -> Wire:
+        raise self.refuse(f"`{tree.children[0]}()` needs a word", tree)
+
+
+def _theory(tree: Tree) -> str:
+    """"bv" for a model with words (a word type, a word constant, a word
+    builtin or a bit selection), else "lia"."""
+    words = {"word_type", "word_lit", "builtin_call", "bit_select"}
+    return "bv" if any(t.data in words for t in tree.iter_subtrees()) else "lia"
+
+
 def _is_true(tree) -> bool:
     node = _peel(tree)
     return isinstance(node, Tree) and node.data == "true_lit"
@@ -926,6 +1125,7 @@ def _build_module(
         overrides: dict[str, Var],
         *,
         strict: bool = False,
+        theory: str = "bv",
 ) -> tuple[Module, dict[str, Var]]:
     # Prepend frozen vars before regular state vars
     all_var_decls = list(d.frozen_decls) + list(d.var_decls)
@@ -940,14 +1140,15 @@ def _build_module(
         name_map[name] = (
             overrides[name]
             if name in overrides
-            else Var(smv_type.dtype)
+            else Var(_lia_sort(smv_type) if theory == "lia" else smv_type.dtype)
         )
 
     ivars = frozenset(n for n, _ in d.ivar_decls)
-    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
-                        is_init=True, strict=strict, ivars=ivars)
-    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
-                          is_init=False, strict=strict, ivars=ivars)
+    lowerer = _LIALowerer if theory == "lia" else _Lowerer
+    init_low = lowerer(name_map, d.define_map, d.enum_values, var_types,
+                       is_init=True, strict=strict, ivars=ivars)
+    update_low = lowerer(name_map, d.define_map, d.enum_values, var_types,
+                         is_init=False, strict=strict, ivars=ivars)
 
     for name, smv_type in all_var_decls:
         var = name_map[name]
@@ -1033,4 +1234,4 @@ def _lower_strict(d: _Decls, name: str, var: Var,
     if next_expr is not None:
         update_low.lower(next_expr, X(var))
     else:
-        update_low.terms.append(Term(BV.Id(), [X(var)], [var]))
+        update_low.terms.append(Term(update_low.id_op(), [X(var)], [var]))

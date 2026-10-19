@@ -104,11 +104,12 @@ def _model(body, decls="VAR x : boolean;"):
 REFUSED = {
     "no next": (_model("ASSIGN init(x) := TRUE;"), "`x` has no next value"),
     "no init": (_model("ASSIGN next(x) := x;"), "`x` has no initial value"),
-    "integer": (_model("ASSIGN init(x) := 0; next(x) := x;", "VAR x : integer;"),
-                "`x` has an integer type"),
-    "range": (_model("ASSIGN init(x) := 0; next(x) := x;", "VAR x : 0..9;"),
-              "`x` has an integer type"),
-    "numeric enum": (_model("", "VAR x : {0, 2};"), "`x` has an integer type"),
+    "integer with words": (_model("", "VAR x : integer; w : unsigned word[4];"),
+                           "`x` has an integer type in a model with words"),
+    "range with words": (_model("", "VAR x : 0..9; w : unsigned word[4];"),
+                         "`x` has an integer type in a model with words"),
+    "numeric enum with words": (_model("", "VAR x : {0, 2}; w : unsigned word[4];"),
+                                "`x` has an integer type in a model with words"),
     "mixed enum": (_model("", "VAR x : {idle, 2};"), "mixes names and numbers"),
     "enum clash": (_model("ASSIGN init(x) := TRUE; next(x) := x;",
                           "VAR x : boolean; s : {x, y};"),
@@ -163,6 +164,22 @@ REFUSED = {
                      "next(x) := next(y); next(y) := next(x);",
                      "VAR x : boolean; y : boolean;"),
               "the next state depends on itself"),
+    "nonlinear": (_model("ASSIGN init(x) := 1; next(x) := x * x;",
+                         "VAR x : integer;"),
+                  "`\\*` of two non-constants"),
+    "division": (_model("ASSIGN init(x) := 1; next(x) := x / 2;",
+                        "VAR x : integer;"),
+                 "`/` is not linear integer arithmetic"),
+    "mod": (_model("ASSIGN init(x) := 1; next(x) := x mod 2;",
+                   "VAR x : integer;"),
+            "`mod` is not linear integer arithmetic"),
+    "boolean as integer": (_model("ASSIGN init(x) := 1; next(x) := x + b;\n"
+                                  "init(b) := TRUE; next(b) := b;",
+                                  "VAR x : integer; b : boolean;"),
+                           "a boolean where a integer is needed"),
+    "integer to boolean": (_model("ASSIGN init(b) := 0; next(b) := b;",
+                                  "VAR b : boolean;"),
+                           "a integer where a boolean is needed"),
     "bare number": (_model("ASSIGN init(w) := 0; next(w) := w;",
                            "VAR w : unsigned word[4];"),
                     "the number 0 is not a word constant"),
@@ -190,3 +207,41 @@ def test_hrm_is_refused_for_its_free_variables():
         parse_smv(text, strict=True)
     assert "`hrm_enhanced_ebmc_dut_MAX_BPM` has no initial value" in str(e.value)
     assert "TRANS" not in str(e.value)
+
+
+def test_a_model_without_words_is_lia():
+    from zrth import Bool, Int
+
+    text = (FIXTURES / "mod10.smv").read_text()
+    module, names = parse_smv(text, strict=True)
+    assert names["x"].dtype == Int([1, 1])
+    assert names["inc"].dtype == Bool([1, 1])
+    assert [str(v) for v in module.ctrl] == [str(names["x"])]
+    assert [str(v) for v in module.extl] == [str(names["inc"])]
+    trace = _run(text, [{"inc": (1, 0)}] * 10 + [{"inc": (0, 1)}])
+    assert [s["x"] for s in trace] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0]
+
+
+def test_mod10_has_a_lean_form():
+    from zrth.lean.common import LeanContext
+    from zrth.lean.native import lean_gaps
+
+    module, _ = parse_smv((FIXTURES / "mod10.smv").read_text(), strict=True)
+    assert lean_gaps(LeanContext(module)) == []
+
+
+def test_lia_operators():
+    text = """MODULE main
+VAR x : integer;
+    n : integer;
+    b : boolean;
+    s : {idle, busy};
+ASSIGN
+  init(x) := -3;  next(x) := 2 * x + abs(n);
+  init(n) := -1;  next(n) := n - 1;
+  init(b) := FALSE; next(b) := (x < 0 -> b) <-> (n != -1);
+  init(s) := idle; next(s) := s = idle ? busy : idle;
+"""
+    trace = _run(text, [{}, {}])
+    assert [(t["x"], t["n"], t["b"], t["s"]) for t in trace] == [
+        (-3, -1, 0, 0), (-5, -2, 1, 1), (-8, -3, 1, 0)]
