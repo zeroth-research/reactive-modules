@@ -220,7 +220,7 @@ class TA2MagicAI(TA2Magic):
     def _generate(self, claim: Claim, feedback: str | None) -> tuple[str, str]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```python\n{self.source}\n```\n\n"
+            f"Source code:\n```lean\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n"
@@ -239,7 +239,7 @@ class TA2MagicAI(TA2Magic):
     ) -> tuple[bool, str | None]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```python\n{self.source}\n```\n\n"
+            f"Source code:\n```lean\n{self.source}\n```\n\n"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n\n"

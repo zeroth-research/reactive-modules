@@ -167,6 +167,17 @@ def test_no_precondition_says_so_rather_than_saying_nothing(monkeypatch):
     assert "No preconditions on inputs." in seen[0][1]
 
 
+def test_the_source_is_fenced_as_the_lean_it_is(monkeypatch):
+    """The route hands the model the project's Lean encoding; a fence that
+    calls it Python tells the model to read it as something it is not."""
+    magic, seen = _recording_ai(monkeypatch)
+    claim = Claim(prp="x == 0")
+    magic._generate(claim, None)
+    magic._verify(claim, "fun s => True", "fun s => 0")
+    for _system, user in seen:
+        assert f"```lean\n{COUNTER_SOURCE}\n```" in user
+
+
 def test_a_projection_off_a_numeral_is_parenthesised():
     """`s 0 0.toNat` is not what it looks like.
 

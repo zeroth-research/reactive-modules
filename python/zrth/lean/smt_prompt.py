@@ -659,7 +659,7 @@ def prompt_inv_ranking(
         else "Property (prp), to hold infinitely often"
     )
     user_msg = (
-        f"Source code:\n```python\n{source}\n```\n\n"
+        f"Source code:\n```lean\n{source}\n```\n\n"
         f"{goal}: {prp}\n\n"
         f"{preconds}\n\n"
         f"{env.state_description()}\n\n"

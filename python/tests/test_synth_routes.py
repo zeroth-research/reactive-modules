@@ -537,6 +537,24 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     assert "do not propose anything of a shape ruled out" in seen[0]
 
 
+def test_the_cegis_prompt_fences_the_source_as_lean():
+    """`ai-cegis` is handed the project's Lean encoding, as `ai` is."""
+    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt_prompt import CegarPromptEnv, prompt_inv_ranking
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    seen: list[str] = []
+
+    def chat(system: str, user: str) -> str:
+        seen.append(user)
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING: s0"
+
+    prompt_inv_ranking(env, chat, "def system := 0", "(= s0 0)", "", None)
+    assert "```lean\ndef system := 0\n```" in seen[0]
+
+
 def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
     """`RANKING:` with nothing after it is feedback, not a cvc5 crash.
 
