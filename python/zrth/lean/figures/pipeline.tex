@@ -1,0 +1,102 @@
+% The pipeline picture at the top of ../README.md. After an edit, rebuild
+% the PNG here with
+%   xelatex pipeline.tex && pdftoppm -png -r 300 -singlefile pipeline.pdf pipeline
+% and delete the .aux, .log and .pdf it leaves.
+\documentclass[border=3mm]{standalone}
+\usepackage[no-math]{fontspec}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{newtxsf}
+\setsansfont{lmsans10}[
+  Extension=.otf,
+  UprightFont=*-regular,
+  BoldFont=*-bold,
+  ItalicFont=*-oblique,
+  BoldItalicFont=*-boldoblique,
+  Ligatures=TeX
+]
+\setmonofont{DejaVuSansMono}[
+  Extension=.ttf,
+  UprightFont=*,
+  BoldFont=*-Bold,
+  ItalicFont=*-Oblique,
+  BoldItalicFont=*-BoldOblique,
+  Scale=0.9
+]
+\usepackage{amssymb}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning, calc, fit, arrows.meta, backgrounds}
+\begin{document}
+  \newcommand*{\notchA}{1.6mm}\newcommand*{\notchB}{3.2mm}\newcommand*{\notchD}{3.6mm}
+  \begin{tikzpicture}[
+      node distance=6mm and 12mm,
+      >={Stealth[length=2mm]},
+      py/.style={draw, align=center, minimum width=21mm, minimum height=10mm, fill=orange!10},
+      rm/.style={draw, align=center, minimum width=22mm, minimum height=10mm, fill=green!10},
+      lean/.style={align=center, minimum height=10mm},
+      tool/.style={draw, align=center, fill=white},
+      lbl/.style={font=\scriptsize, align=center},
+      ctrl/.style={->, very thick},
+      data/.style={->, dashed, blue!70!black},
+      verdict/.style={circle, draw, minimum size=7mm, inner sep=0pt, font=\large},
+    ]
+    % ---- row 1: input, reactive module, Lean project, Lean certificate ----
+    \node[py] (dsl) {Python DSL\\module};
+    \node[py, below=4mm of dsl] (gym) {Gymnasium\\environment};
+    \node[draw, rounded corners=4pt, inner sep=2mm, fit=(dsl) (gym),
+          label={[anchor=south, font=\scriptsize\itshape]north:input}] (input) {};
+    \node[rm, right=of input] (rm) {Reactive\\module};
+    \node[lean, minimum width=35mm, right=of rm] (proj) {Lean project\\{\scriptsize encodings, proof rules,}\\{\scriptsize obligations}};
+    \node[lean, minimum width=22mm, right=7mm of proj] (cert) {Lean\\certificate};
+    % the project's cut-out and the certificate's tab have the same shape: the two lock together
+    \begin{scope}[on background layer]
+      \draw[fill=blue!8, rounded corners=1pt] (proj.north west) -- (proj.north east)
+        -- ($(proj.east)+(0,\notchA)$) -- ($(proj.east)+(-\notchD,\notchB)$)
+        -- ($(proj.east)+(-\notchD,-\notchB)$) -- ($(proj.east)+(0,-\notchA)$)
+        -- (proj.south east) -- (proj.south west) -- cycle;
+      \draw[fill=blue!8, rounded corners=1pt] (cert.north west) -- (cert.north east)
+        -- (cert.south east) -- (cert.south west)
+        -- ($(cert.west)+(0,-\notchA)$) -- ($(cert.west)+(-\notchD,-\notchB)$)
+        -- ($(cert.west)+(-\notchD,\notchB)$) -- ($(cert.west)+(0,\notchA)$) -- cycle;
+    \end{scope}
+
+    % ---- row 2: the decision procedure, under input, module and project ----
+    \coordinate (dpa) at ($(input.south west)+(0,-13mm)$);
+    \coordinate (dpb) at ($(proj.east |- dpa)+(0,-16mm)$);
+    \node[tool, fit=(dpa) (dpb), inner sep=0pt] (dp) {};
+    \node[align=center] at (dp.center) {Decision procedure\\[1pt]{\scriptsize AI \textperiodcentered{} AI-CEGIS \textperiodcentered{} FBK-proveit \textperiodcentered{} NuTerm}\\{\scriptsize SyGuS \textperiodcentered{} SMT-Linear \textperiodcentered{} Houdini \textperiodcentered{} Vampire}};
+    \begin{scope}[on background layer]
+      \node[draw, dashed, rounded corners=4pt, fill=gray!10, inner sep=2.5mm, fit=(dp),
+            label={[anchor=north west, font=\scriptsize\itshape]south west:untrusted}] (ubox) {};
+    \end{scope}
+
+    % ---- the check ----
+    \coordinate (join) at ($(cert.east)+(6mm,0)$);
+    \coordinate (br) at ($(cert.east)+(28mm,0)$);
+    \node[verdict, fill=green!15, text=green!50!black, anchor=west] (yes) at ($(br)+(8mm,6mm)$) {$\checkmark$};
+    \node[verdict, fill=red!12, text=red!70!black, anchor=west] (no) at ($(br)+(8mm,-6mm)$) {$\times$};
+    \node[right=1mm of yes, lbl, align=left] {certified};
+    \node[right=1mm of no, lbl, align=left] {not certified};
+
+    % ---- control flow ----
+    \draw[ctrl] (input) -- node[lbl, above, inner xsep=0pt] {} (rm);
+    \draw[ctrl] (rm) -- node[lbl, above, inner xsep=0pt] {} (proj);
+    \draw[ctrl] ([xshift=-5mm]proj.south) -- ([xshift=-5mm]proj.south |- dp.north);
+    \draw[ctrl] (dp.east) -| node[lbl, pos=0.75, right] {invariant,\\ranking\\function} (cert.south);
+    \draw[very thick] (cert.east) -- (join) -- node[lbl, above] {\texttt{lake build}} (br);
+    \draw[ctrl] (br) -- (yes.west);
+    \draw[ctrl] (br) -- (no.west);
+
+    % ---- data flow ----
+    \draw[data] (input.south) -- node[lbl, right] {Python source} (input.south |- dp.north);
+    \draw[data] (rm.south) -- node[lbl, right] {module} (rm.south |- dp.north);
+    \draw[data] ([xshift=5mm]proj.south) -- node[lbl, right] {Lean\\encodings} ([xshift=5mm]proj.south |- dp.north);
+    % lake build checks the certificate together with the project
+    \draw[data] (proj.north) -- ++(0,4mm) -| (join);
+
+    % ---- legend ----
+    \coordinate (leg) at ($(input.west |- ubox.south)+(0,-8mm)$);
+    \draw[ctrl] (leg) -- ++(8mm,0) node[right, font=\scriptsize] {control flow};
+    \draw[data] ($(leg)+(45mm,0)$) -- ++(8mm,0) node[right, font=\scriptsize] {data flow};
+  \end{tikzpicture}
+\end{document}

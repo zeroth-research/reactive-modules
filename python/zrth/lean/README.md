@@ -1,18 +1,169 @@
 # `zrth/lean` — Lean 4 Certificate Generation
 
-This package translates Python reactive modules (an SSA-style IR) into Lean 4
-source files that encode the module and carry machine-checked proofs of
-safety/liveness properties.
+`uv run verith` takes a reactive module and a property of it, and ends with a
+Lean project in which `lake build` checks a proof of the property. The proof
+rests on a certificate: an inductive invariant, and for a Büchi property
+also a ranking function. A decision procedure finds the certificate, and
+the pipeline does not trust it. Whatever the procedure answers is written
+into the project, and Lean checks it.
 
-Known defects in this pipeline, fixed and open, are catalogued in
-[KNOWN_ISSUES.md](KNOWN_ISSUES.md).  The one link the `--fbk-proveit` route
-is missing -- a proof that the NA model *is* the module -- is designed, with
-measurements, in [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md).  What cvc5 is used for -- the obligation
-pre-check, sharing in the printer, and the solver-informed tactics -- is in
-[SMT_ASSIST.md](SMT_ASSIST.md), together with what the synthesis routes
-(`--infer sygus`, `--infer smt-linear`) were measured against and the
-cold-start plan for abduction that is still one.  The 77-case limit matrix those two are measured on, with its
-runners and baseline, is in [`tests/limits/`](../../tests/limits/README.md).
+![The verification pipeline](figures/pipeline.png)
+
+Solid arrows are the run's control flow. Dashed ones are data: what the
+decision procedure may read, and the project that the check builds the
+certificate in. The picture's source is
+[`figures/pipeline.tex`](figures/pipeline.tex).
+
+## The pipeline, stage by stage
+
+`main.main` runs the stages in this order. Each one names the code that
+does it and the section of this file that covers it in full.
+
+### 1. Input (`inputs/`)
+
+The input is a file, read by the adapter that `--format` names or that the
+file's suffix picks:
+
+| format | suffix | what it gives |
+|---|---|---|
+| `python` | `.py` | the `zrth.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `zrth.gym` ([tutorial](../../../tutorials/verith_gym.md)) |
+| `smv` | `.smv` | a NuSMV model with one `MODULE main`, read as NuSMV reads it; a model that NuSMV would read differently is refused. Its variable names are the claim's names, and its `INVARSPEC` / `LTLSPEC G F` is the claim when neither `--safety` nor `--buchi` is given (`--spec N` picks one of several). The picture does not show this input |
+
+The adapter returns an `inputs.Problem`: the module, the source text, the
+names, and the claims the input states. A new input format is a new
+`InputAdapter` in `inputs/`.
+
+### 2. The claim (`cli.py`, `inputs/names.py`)
+
+The property goes under the flag of its proof rule:
+
+- `--safety P` claims `G P`, that `P` holds in every reachable state. The
+  certificate is an invariant that implies `P`.
+- `--buchi P` claims `G F P`, that `P` holds infinitely often. The
+  certificate is an invariant and a ranking function.
+
+`P` is SMT-LIB written in the input's names, and so are `--pre`,
+`--invariant` and `--ranking`. For example, `(X x)` is `x` after the round
+and `(X @intf.N)` is interface variable N by position. See [Writing a claim
+on the command line](#writing-a-claim-on-the-command-line) for the full
+spelling. This stage translates the names to the internal `s{i}`, `e{i}`
+and `el{i}`, and everything after it uses those. verith translates them back
+when it shows the certificate.
+
+### 3. Reactive module (`zrth.Module`)
+
+The module is the IR: `init` and `update` in SSA form over typed matrix
+wires ([Reactive Module IR](#reactive-module-ir)). Two checks run before any
+Lean is written:
+
+- the route's `precheck` refuses a module that its procedure cannot read;
+- `lean_gaps` refuses an operator with no Lean form.
+
+### 4. Lean project (`project.py`, `translate/`, `templates/`)
+
+`create_project` writes the project to `-o DIR -p NAME`:
+
+```
+NAME/
+  System.lean, System/          the module in five encodings: functional,
+                                circuit, relational, scalar and
+                                scalar-relational, each tied to the
+                                functional one by equivalence theorems
+  Certificate/Data.lean         the certificate: init_pre, update_pre, P,
+                                inv, ranking
+  Certificate/Certificate.lean  the proof rule's obligations, and the
+                                tactics that close them
+  Core/                         matrices, ReactiveModule, LTL, the proof
+                                rules (rule_globally, rule_buchi)
+  ZerothHammer.lean, LeanAI/    the zeroth_hammer and ai_solve tactics
+  artifacts/                    what earlier runs found, for the next run
+  dbg/                          the module as printed, and a copy of the input
+  lakefile.toml, lean-toolchain
+```
+
+The certificate in `Data.lean` depends on the run:
+
+- with no certificate given and no route, the predicates are `sorry`;
+- with no route, it is the certificate given by `--invariant` and
+  `--ranking`;
+- with a route, it is a placeholder that stage 6 replaces.
+
+`--cert-file PATH.lean` writes a self-contained certificate instead, with
+the relational and scalar encodings beside it, and the run ends there.
+[What gets generated](#what-gets-generated) has the details.
+
+### 5. Decision procedure (`infer_route/`), untrusted
+
+`--infer NAME` runs one route against the generated project. A route is a
+module that exports a `ROUTE` row. The row says what the route may read and
+write in the project, which `artifacts/` it resumes from, and what it
+returns: predicates in SMT-LIB, predicates in Lean, or whole files. The run
+holds each answer to its row and believes nothing else about it.
+
+| route | LLM | returns | how it finds the certificate |
+|---|---|---|---|
+| `ai` | yes | Lean | one call proposes the invariant and the ranking function; a second call is asked to find them wrong |
+| `ai-cegis` (default `--infer`) | yes | SMT-LIB | each candidate is put to the obligations in cvc5, and a counterexample goes back into the next prompt |
+| `nuterm` | no | SMT-LIB | a ranking function trained on rollouts and certified by Farkas/CEGAR; the invariant comes from Houdini |
+| `sygus` | no | SMT-LIB | cvc5's SyGuS invariant track, over linear facts and congruences |
+| `smt-linear` | no | SMT-LIB | one cvc5 query per shape; a refuted query proves that no certificate of that shape exists |
+| `houdini` | no | SMT-LIB | facts read off simulated runs, kept only once cvc5 or Vampire proves them |
+| `vampire` | no | SMT-LIB | the certificate is left as holes in the obligations, and Vampire's answer fills them |
+| `fbk-proveit` | no | files | `lean-ltl-certifying`'s ic3ia toolchain, over an NA model of the module |
+
+[Common invocations](#common-invocations) shows the LLM routes. The others
+each have a section, from [`--infer nuterm`](#inferring-without-an-llm---infer-nuterm)
+to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-proveit).
+[Adding an Inference Route](#adding-an-inference-route-infer_route) says how
+to write a new one.
+
+### 6. Lean certificate (`cert.py`, `smt_query.py`, `tactics.py`, `smt_to_lean.py`)
+
+The route's answer becomes the project's certificate. Without a route,
+the same steps turn the given predicates into the certificate, before
+stage 4:
+
+- `predicate_terms` parses the predicates once, into cvc5 terms over the
+  module's encoding.
+- That parse is printed as Lean by `render_certificate`, and read for its
+  shape by `predicate_facts`.
+- Under `--smt-tactics cvc5`, it is also put to cvc5 for hints
+  (`solver_hints`).
+- `cert.prepare` joins these into a `LeanCertificate`: the definitions in
+  `Data.lean`, and the tactic plan in `Certificate.lean`.
+
+`--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
+wrong answer fails in seconds rather than in the build. verith then prints
+the certificate in the input's names.
+
+`fbk-proveit` is different: it returns files, and nothing is regenerated.
+It installs ic3ia's certificate and, unless `--fbk-equiv none` is given,
+`Certificate/Equivalence.lean`, which ties ic3ia's model back to the
+module.
+
+### 7. The check (`--build-cert`)
+
+`lake update` and `lake build Certificate` run in the project. This is the
+step the result rests on: Lean checks the certificate's obligations against
+the module's encoding. Lake reports a `sorry` as a warning and exits 0, so
+a `sorry` left in `Certificate/` also fails the run. Without `--build-cert`
+the run stops at the project, which can then be built by hand. See [Building
+the certificate](#building-the-certificate---build-cert).
+
+## Further reading
+
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md): the pipeline's known defects.
+- [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md): how the `fbk-proveit`
+  certificate is tied back to the module.
+- [SMT_ASSIST.md](SMT_ASSIST.md): what cvc5 does for the pipeline (the
+  obligation pre-check, sharing in the printer, the solver-informed
+  tactics), and what the synthesis routes were measured against.
+- [`tests/limits/`](../../tests/limits/README.md): the limit matrix those
+  routes are measured on, with its runners and baseline.
+- [`tutorials/verith.md`](../../../tutorials/verith.md): a walk through
+  every route on worked examples.
+
+The rest of this file is the reference, starting from the IR.
 
 ---
 
