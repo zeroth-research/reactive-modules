@@ -1,4 +1,10 @@
-"""`--infer smt-linear`: one cvc5 query per linear shape."""
+"""`--infer smt-linear`: one cvc5 query per linear shape.
+
+`engine` states the shapes -- the invariant's rows, the rank and its
+branches -- as templates, widening them in turn; `solve` answers each
+template, by one quantified query or, where cvc5 will not state that, by a
+counterexample-guided loop.
+"""
 
 from __future__ import annotations
 

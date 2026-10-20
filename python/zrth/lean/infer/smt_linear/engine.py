@@ -76,7 +76,7 @@ And one thing follows from a sort: **a bitvector column takes the query out
 of what cvc5 will state.**  Measured, the `exists c. forall s.` form comes
 back ``unknown (INCOMPLETE)`` in *one millisecond* for any width -- not a
 timeout, a refusal.  So there is a second engine, and it asks the same
-question with both halves quantifier-free (:meth:`SmtLinearEngine._cegis`).
+question with both halves quantifier-free (:mod:`.solve`).
 It is a fallback rather than the engine, because what the direct query
 proves is stronger: its ``unsat`` is about every integer coefficient, where
 the loop needs a bounded candidate space to terminate and its ``unsat`` is
@@ -89,10 +89,10 @@ from __future__ import annotations
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
 from ..engine import Engine
+from .solve import HOW_QUANTIFIED, Outcome, Template, decide
 from dataclasses import dataclass
 
 from ...smt.claim import SynthContext
-from ...smt.limits import bounded_solver, call_ms
 from ...smt.script import affine_smt, conjunction_smt, decimals
 from ...smt.obligations import (
     Frame,
@@ -106,7 +106,6 @@ from ...smt.obligations import (
 from ..common.synth import (
     Search,
     denominator_scale,
-    program_constants,
     program_rationals,
     readings,
     record,
@@ -127,54 +126,10 @@ READS = ("int", "bool", "bv", "real", "tuple")
 
 DEFAULT_ROWS = 2
 
-# How many counterexamples the fallback loop may collect before it gives up.
-# It is not the real leash -- the run's budget is, and it is checked every
-# iteration -- but a loop that cannot terminate needs a number. Measured: an
-# 8-bit counter's invariant takes 55 samples, so the cap is well clear of
-# what a small module needs and a big one runs out of budget long before it.
-DEFAULT_SAMPLES = 256
-
 # How many branch conditions a two-piece rank is tried on. Each one is a
 # query per invariant width, and they come property's and transition's own
 # comparisons first, which is where a rank changes what falls.
 MAX_SPLITS = 8
-
-_HOW_QUANTIFIED = (
-    "the query is `exists c. forall s. obligations(c)` over the "
-    "coefficients, and cvc5 came back unsat"
-)
-_HOW_CEGIS = (
-    "cvc5 cannot state that query for this module, so the same question ran "
-    "as a counterexample-guided loop -- propose coefficients that fit the "
-    "states seen so far, verify against the whole transition, add the "
-    "counterexample -- and the proposal became unsatisfiable after "
-    "{samples} counterexamples, which is the same proof one sample set at "
-    "a time"
-)
-
-
-@dataclass(frozen=True)
-class _Template:
-    """A shape with its coefficients left open, and what they must satisfy.
-
-    `build` states the obligations for *given* state and input terms, which
-    is what lets one template serve both engines: the quantified query
-    passes bound variables and wraps the result in a `forall`, and the
-    counterexample-guided loop passes concrete values and fresh constants.
-    """
-
-    unknowns: list                  # the cvc5 Int constants to solve for
-    build: object                   # (state, extl_l, extl_n) -> Bool term
-
-
-@dataclass(frozen=True)
-class _Verdict:
-    """What an engine answered, and what the answer is a claim about."""
-
-    answer: str                     # "sat" | "unsat" | "unknown"
-    values: "list[int] | None" = None
-    how: str = _HOW_QUANTIFIED
-    caveat: str = ""                # what narrows an `unsat`, if anything
 
 
 @dataclass(frozen=True)
@@ -348,7 +303,7 @@ class SmtLinearEngine(Engine):
         return shapes
 
     def _buchi_at(self, ctx: SynthContext, cols: list, given: "str | None",
-                  k: int, shape: "_RankShape") -> tuple["tuple[str, str] | None", "_Verdict"]:
+                  k: int, shape: "_RankShape") -> tuple["tuple[str, str] | None", "Outcome"]:
         """One query for `k` invariant rows *and* the rank together.
 
         `rule_buchi`'s ranking obligation, `hrank`, over the Lean ranking
@@ -425,8 +380,9 @@ class SmtLinearEngine(Engine):
                 return falls
             return tm.mkTerm(Kind.AND, *self._inductive(ctx, inv, f), falls)
 
-        verdict = self._decide(
-            ctx, _Template(unknowns=rows + [x for c in cs for x in c], build=build))
+        verdict = decide(
+            ctx, Template(unknowns=rows + [x for c in cs for x in c], build=build),
+            budget=self.budget, log=self.log)
         if verdict.answer != "sat":
             return None, verdict
         values = list(verdict.values)
@@ -554,7 +510,7 @@ class SmtLinearEngine(Engine):
             )
         return Search(
             "ranking", space,
-            how=last.how if last is not None else _HOW_QUANTIFIED,
+            how=last.how if last is not None else HOW_QUANTIFIED,
             exhausted=exhausted, detail=detail,
         ), inv_src
 
@@ -576,7 +532,7 @@ class SmtLinearEngine(Engine):
         """
         if given:
             self.log(f"[smt-linear] strengthening the given invariant: {given}")
-        decided, how, caveat = 0, _HOW_QUANTIFIED, ""
+        decided, how, caveat = 0, HOW_QUANTIFIED, ""
         for k in range(0 if given else 1, self.rows + 1):
             found, verdict = self._safety_at(ctx, cols, given, k)
             if found is not None:
@@ -649,7 +605,7 @@ class SmtLinearEngine(Engine):
 
     def _safety_at(
         self, ctx: SynthContext, cols: list, given: "str | None", k: int
-    ) -> tuple["str | None", "_Verdict"]:
+    ) -> tuple["str | None", "Outcome"]:
         """The invariant with `k` added rows, or why there is none."""
         tm = ctx.tm
         flat, inv = self._inv_rows(ctx, cols, given, k)
@@ -662,7 +618,8 @@ class SmtLinearEngine(Engine):
                 inv_imp_P(f, [("inv", inv)], ctx.prp).implication(tm),
             )
 
-        verdict = self._decide(ctx, _Template(unknowns=flat, build=build))
+        verdict = decide(ctx, Template(unknowns=flat, build=build),
+                         budget=self.budget, log=self.log)
         if verdict.answer != "sat":
             return None, verdict
         return self._rows_smt(cols, given, list(verdict.values), k), verdict
@@ -680,7 +637,7 @@ class SmtLinearEngine(Engine):
         )
 
     def _empty_rows(self, cols: list, given: "str | None", decided: int,
-                    undecided_at: int = 0, how: str = _HOW_QUANTIFIED,
+                    undecided_at: int = 0, how: str = HOW_QUANTIFIED,
                     caveat: str = "") -> Search:
         over = f" beyond the given `{given}`" if given else ""
         exhausted = decided > 0
@@ -709,151 +666,3 @@ class SmtLinearEngine(Engine):
         )
         return Search("inv", space + (caveat if exhausted else ""),
                       exhausted=exhausted, detail=detail, how=how)
-
-    # ══════════════════════════════════════════════════════════════════
-    # The engine
-    #
-    # Two ways of answering the same question, and the second exists
-    # because of a measurement: for a BitVec column cvc5 answers the
-    # quantified form `unknown (INCOMPLETE)` in *one millisecond* -- not a
-    # timeout, a refusal to state it. So a module whose state is a
-    # bitvector cannot be reached by the direct query at all, and the same
-    # question has to be asked in a form that stays quantifier-free.
-    # ══════════════════════════════════════════════════════════════════
-
-    def _decide(self, ctx: SynthContext, tpl: _Template) -> _Verdict:
-        """Solve `tpl`, by whichever engine can state it.
-
-        The quantified query first: it is one call, it is decided over
-        *every* integer coefficient, and for an integer state it answers in
-        milliseconds. Only when cvc5 will not state it does the loop run,
-        and what that loop proves is narrower -- which is why the verdict
-        carries the caveat rather than the caller having to remember.
-        """
-        verdict = self._quantified(ctx, tpl)
-        if verdict.answer != "unknown":
-            return verdict
-        bound = self._coefficient_bound(ctx)
-        self.log(
-            f"[smt-linear] cvc5 will not state the quantified query for this "
-            f"module; searching coefficients in [-{bound}, {bound}] by "
-            f"counterexample instead"
-        )
-        return self._cegis(ctx, tpl, bound)
-
-    def _quantified(self, ctx: SynthContext, tpl: _Template) -> _Verdict:
-        """`exists c. forall s, inputs. obligations(c)`, in one call."""
-        tm = ctx.tm
-        solver = bounded_solver(tm, call_ms(self.budget), produce_models="true")
-        solver.setLogic("ALL")
-        st, el, en = ctx.enc.bound("q_")
-        body = tpl.build(st, el, en)
-        quantified = st + el + en
-        solver.assertFormula(
-            tm.mkTerm(Kind.FORALL,
-                      tm.mkTerm(Kind.VARIABLE_LIST, *quantified), body)
-            if quantified else body
-        )
-        try:
-            result = solver.checkSat()
-        except RuntimeError as e:
-            raise Refused(
-                f"cvc5 could not state this module's transition against a "
-                f"linear template: {e}"
-            ) from e
-        if result.isSat():
-            return _Verdict("sat", [self._value(solver, x)
-                                    for x in tpl.unknowns])
-        return _Verdict("unsat" if result.isUnsat() else "unknown")
-
-    def _cegis(self, ctx: SynthContext, tpl: _Template, bound: int) -> _Verdict:
-        """The same question as a loop of quantifier-free queries.
-
-        *Propose* the coefficients against the states seen so far -- with
-        the state concrete every product `c * value` is a literal multiple,
-        so this is linear arithmetic whatever the module's own sorts are --
-        then *verify* the proposal against the whole transition, which is
-        quantifier-free once the coefficients are concrete. A
-        counterexample becomes the next sample.
-
-        Both answers are still proofs. `unsat` at the propose step means no
-        coefficients fit even finitely many states, so none fit everywhere;
-        `unsat` at the verify step is the obligation holding for every
-        state there is. What is *not* the same is the scope of the first
-        one: the loop needs a finite candidate space to terminate, so the
-        coefficients are bounded, and `caveat` says so wherever the answer
-        is written down.
-        """
-        tm = ctx.tm
-        samples: list = []
-        for step in range(DEFAULT_SAMPLES):
-            if self.budget is not None and self.budget.exhausted:
-                return _Verdict("unknown")
-            propose = bounded_solver(tm, call_ms(self.budget),
-                                     produce_models="true")
-            propose.setLogic("ALL")
-            for x in tpl.unknowns:
-                propose.assertFormula(
-                    tm.mkTerm(Kind.LEQ, x, tm.mkInteger(bound)))
-                propose.assertFormula(
-                    tm.mkTerm(Kind.GEQ, x, tm.mkInteger(-bound)))
-            for sample in samples:
-                propose.assertFormula(tpl.build(*sample))
-            answer = propose.checkSat()
-            if answer.isUnsat():
-                return _Verdict(
-                    "unsat",
-                    how=_HOW_CEGIS.format(samples=step),
-                    caveat=self._caveat(bound),
-                )
-            if not answer.isSat():
-                return _Verdict("unknown")
-            values = [propose.getValue(x) for x in tpl.unknowns]
-
-            verify = bounded_solver(tm, call_ms(self.budget),
-                                    produce_models="true")
-            verify.setLogic("ALL")
-            st, el, en = ctx.enc.fresh(f"cex{step}_")
-            verify.assertFormula(
-                tm.mkTerm(Kind.NOT,
-                          tpl.build(st, el, en).substitute(tpl.unknowns, values))
-            )
-            refuted = verify.checkSat()
-            if refuted.isUnsat():
-                return _Verdict(
-                    "sat",
-                    [int(v.getIntegerValue()) for v in values],
-                    how=_HOW_CEGIS.format(samples=step),
-                    caveat=self._caveat(bound),
-                )
-            if not refuted.isSat():
-                return _Verdict("unknown")
-            samples.append(
-                tuple([verify.getValue(x) for x in group]
-                      for group in (st, el, en))
-            )
-        return _Verdict("unknown")
-
-    def _coefficient_bound(self, ctx: SynthContext) -> int:
-        """How far the loop's coefficients may range.
-
-        Read off the program, like the grammar route's constants and for the
-        same reason: the coefficient that makes an invariant true is a bound
-        the module already mentions. Room to spare above it, because a
-        coefficient is not always a literal -- and not much room, because
-        the bound *is* the thing that makes the loop converge. Measured on
-        an 8-bit counter: 55 samples inside a tight bound, and no answer in
-        200 with a loose one.
-        """
-        consts = program_constants(ctx)
-        return max(16, 2 * max((abs(c) for c in consts), default=0) + 2)
-
-    def _caveat(self, bound: int) -> str:
-        return (
-            f" The coefficients were searched in [-{bound}, {bound}]: the "
-            f"counterexample loop needs a finite candidate space, so this is "
-            f"a proof about that space rather than about every integer."
-        )
-
-    def _value(self, solver, term) -> int:
-        return int(solver.getValue(term).getIntegerValue())
