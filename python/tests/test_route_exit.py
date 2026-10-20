@@ -26,7 +26,7 @@ import gc
 import json
 import sys
 
-import zrth.lean.main as entry
+import zrth.lean.pipeline as entry
 
 print("cvc5 loaded by import:", "cvc5" in sys.modules, flush=True)
 

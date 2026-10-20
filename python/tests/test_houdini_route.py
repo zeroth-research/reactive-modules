@@ -70,7 +70,7 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
     from zrth.lean.infer.houdini.engine import HoudiniEngine
 
     magic = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
-                            timeout=timeout, log=log or (lambda *_: None))
+                          timeout=timeout, log=log or (lambda *_: None))
     return magic.infer(Claim(prp=prp, kind=kind))
 
 
@@ -83,7 +83,7 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     from zrth.lean.infer.common.synth import columns
 
     magic = HoudiniEngine(module_at(fixture / f"{name}.py"),
-                            log=lambda *_: None)
+                          log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, Claim(prp=prp, kind=kind),
                                    route="houdini",
                                    takes=("int", "bool", "bv", "real", "tuple"))

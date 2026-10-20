@@ -271,7 +271,7 @@ def install_llm(script: str) -> None:
 
 
 def transcript(mod: Path, args: list[str], out: Path, name: str) -> str:
-    from zrth.lean.main import main as verith
+    from zrth.lean.pipeline import main as verith
 
     sys.argv = ["verith", str(mod), *args, "-o", str(out), "-p", name]
     so, se = io.StringIO(), io.StringIO()

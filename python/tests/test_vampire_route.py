@@ -73,8 +73,8 @@ def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
     from zrth.lean.infer.vampire.engine import VampireEngine
 
     magic = VampireEngine(module_at(fixture / f"{name}.py"),
-                            vampire=vampire or vampire_or_skip(),
-                            timeout=timeout, log=lambda *_: None)
+                          vampire=vampire or vampire_or_skip(),
+                          timeout=timeout, log=lambda *_: None)
     return magic.infer(Claim(prp=prp, kind=kind))
 
 
@@ -393,7 +393,7 @@ def test_a_real_component_reaches_the_templates():
     from zrth.lean.smt.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_lra_lin.py"),
-                            vampire="/nowhere", log=lambda *_: None)
+                          vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(= s0 0.0)", kind="buchi"),
                              route="vampire",
@@ -428,7 +428,7 @@ def test_a_bool_column_is_carried_rather_than_refused():
     from zrth.lean.smt.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_boolint.py"),
-                            vampire="/nowhere", log=lambda *_: None)
+                          vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(>= s1 0)", kind="safety"),
                              route="vampire",
@@ -452,7 +452,7 @@ def test_a_module_with_nothing_to_bound_is_refused():
     from zrth.lean.smt.claim import SynthContext
 
     magic = VampireEngine(module_at(FIXTURES / "twobit_lia.py"),
-                            vampire="/nowhere", log=lambda *_: None)
+                          vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(not (and s0 s1))", kind="safety"),
                              route="vampire",

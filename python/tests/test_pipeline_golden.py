@@ -337,7 +337,7 @@ def _index(path: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from zrth.lean.main import main
+    from zrth.lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]

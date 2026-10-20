@@ -16,7 +16,7 @@ certificate in. The picture's source is
 
 ## The pipeline, stage by stage
 
-`main.main` runs the stages in this order. Each one names the code that
+`pipeline.main` runs the stages in this order. Each one names the code that
 does it and the section of this file that covers it in full.
 
 ### 1. Input (`inputs/`)
@@ -533,7 +533,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`cli/`, `main.py`, `project/`)
+## `uv run verith` CLI (`cli/`, `pipeline/`, `project/`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.

@@ -908,7 +908,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
     claim = Claim(prp="(<= (ubv_to_int s0) 5)", kind="safety")
     with pytest.raises(Refused):
         SmtLinearEngine(module, rows=1, artifacts=store,
-                       log=lambda *_: None).infer(claim)
+                        log=lambda *_: None).infer(claim)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     if notes:                       # the loop decided it: then say how
         text = store.read(notes[0])

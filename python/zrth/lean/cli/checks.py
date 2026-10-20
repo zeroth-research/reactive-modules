@@ -64,7 +64,7 @@ def resolve_aliases(parser: argparse.ArgumentParser, args) -> None:
 
 
 def input_adapter(parser: argparse.ArgumentParser,
-                   args) -> InputAdapter | None:
+                  args) -> InputAdapter | None:
     """The format the input is read in: `--format`, else its suffix's."""
     if args.format:
         return adapter_by_name(args.format)
@@ -80,7 +80,7 @@ def input_adapter(parser: argparse.ArgumentParser,
 
 
 def check_input_options(parser: argparse.ArgumentParser, args,
-                         adapter: InputAdapter | None) -> None:
+                        adapter: InputAdapter | None) -> None:
     """A format's option is only meaningful for input in that format, as a
     route's is only with that route; and its row default is put back once
     the format is known."""

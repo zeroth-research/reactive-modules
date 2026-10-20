@@ -42,7 +42,7 @@ ai-local = [
 ]
 
 [project.scripts]
-verith = "zrth.lean.main:main"
+verith = "zrth.lean.pipeline:main"
 
 [build-system]
 requires = [

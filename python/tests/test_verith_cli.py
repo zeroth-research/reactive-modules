@@ -1,4 +1,4 @@
-"""Tests for the verith CLI (zrth.lean.main)."""
+"""Tests for the verith CLI (zrth.lean.pipeline)."""
 
 import os
 import subprocess
@@ -171,11 +171,11 @@ def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
 def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
-    from zrth.lean import main as m
+    from zrth.lean.pipeline import certify
     from zrth.lean.core.errors import Refused
 
     def said(route) -> str:
-        return m._refused(SimpleNamespace(route=route), Refused("why")).code
+        return certify.refused(SimpleNamespace(route=route), Refused("why")).code
 
     assert said(None) == "error: why"
     assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
@@ -264,7 +264,7 @@ def test_pre_check_checks_the_inferred_certificate():
 def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     """A route infers the invariant and the ranking function, never the
     property: that is the question it was asked."""
-    from zrth.lean import main as m
+    from zrth.lean.pipeline import certify
     from zrth.lean.artifacts import ArtifactStore
     from zrth.lean.core.certificate import Certificate, Claim
 
@@ -274,9 +274,9 @@ def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     # As `main` does it: once before the route, once after.
     store = ArtifactStore(dir=tmp_path / "run", kind="buchi", prp="(= s0 0)")
     claim = Claim(prp="(= s0 0)", kind="buchi")
-    m._record_predicates(store, claim, Certificate())
+    certify.record_predicates(store, claim, Certificate())
     cert = Certificate("(>= s0 0)", "s0")
-    m._record_predicates(store, claim, cert, inferred=True)
+    certify.record_predicates(store, claim, cert, inferred=True)
     what = recorded(store)
     assert set(what) == {"property", "inv", "ranking"}
     assert "Inferred" not in what["property"]
@@ -284,7 +284,7 @@ def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
 
     # And without the first record to fall back on.
     fresh = ArtifactStore(dir=tmp_path / "fresh", kind="buchi", prp="(= s0 0)")
-    m._record_predicates(fresh, claim, cert, inferred=True)
+    certify.record_predicates(fresh, claim, cert, inferred=True)
     what = recorded(fresh)
     assert "Inferred" not in what["property"]
     assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
@@ -638,33 +638,33 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     that would report a proof of `sorry`."""
     from types import SimpleNamespace
 
-    from zrth.lean import main as m
+    from zrth.lean.pipeline import outputs
     from zrth.lean.proof.render import LeanCertificate, LeanPredicates
 
     def lean(**defs):
         return LeanCertificate(LeanPredicates(**defs))
 
     built: list[Path] = []
-    monkeypatch.setattr(m, "build_certificate", built.append)
+    monkeypatch.setattr(outputs, "build_certificate", built.append)
     on = SimpleNamespace(build_cert=True)
 
-    m._build_cert(on, Path("/complete"), lean(prp="p", inv="i", ranking="r"))
+    outputs.build_cert(on, Path("/complete"), lean(prp="p", inv="i", ranking="r"))
     assert built == [Path("/complete")]
 
     with pytest.raises(SystemExit, match="no ranking"):
-        m._build_cert(on, Path("/p"), lean(prp="p", inv="i"))
+        outputs.build_cert(on, Path("/p"), lean(prp="p", inv="i"))
     with pytest.raises(SystemExit, match="no invariant, ranking"):
-        m._build_cert(on, Path("/p"), lean(prp="p"))
+        outputs.build_cert(on, Path("/p"), lean(prp="p"))
     # A safety certificate has no ranking to be missing.
-    m._build_cert(on, Path("/safe"), lean(kind="safety", prp="p", inv="i"))
+    outputs.build_cert(on, Path("/safe"), lean(kind="safety", prp="p", inv="i"))
     assert built == [Path("/complete"), Path("/safe")]
 
     # --fbk-proveit installs ic3ia's certificate, which nothing here
     # describes, so there is nothing to be complete about.
-    m._build_cert(on, Path("/proveit"), None)
+    outputs.build_cert(on, Path("/proveit"), None)
     assert built == [Path("/complete"), Path("/safe"), Path("/proveit")]
 
-    m._build_cert(SimpleNamespace(build_cert=False), Path("/off"), None)
+    outputs.build_cert(SimpleNamespace(build_cert=False), Path("/off"), None)
     assert len(built) == 3
 
 

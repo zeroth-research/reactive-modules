@@ -219,7 +219,7 @@ def check_module(
 
     Answering either means encoding into cvc5, so the answers are handed
     back and carried to the two files written from them
-    (:func:`write_na_model`, :func:`equivalence_lean`).  `main.py`'s call,
+    (:func:`write_na_model`, :func:`equivalence_lean`).  The pipeline's call,
     before the project is generated, is then the only encoding a whole run
     makes.
 
@@ -511,10 +511,10 @@ def run(
     route's answer are handed back for the pipeline to install.
 
     `prechecked` is what `check_module` returned to a caller that has
-    already made the check -- `main.py` does, before it generates the
+    already made the check -- the pipeline does, before it generates the
     project.  The check is repeated here when it is left out, because `run`
     is also called on its own; `pre_smt` is what it is repeated over, so a
-    direct caller gets the same refusals `main.py` gets early.
+    direct caller gets the same refusals the pipeline gets early.
 
     `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
     and the `--safety` property are both read on it.  A direct caller that

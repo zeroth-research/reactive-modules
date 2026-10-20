@@ -64,6 +64,10 @@ LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     # The command line: read off the input formats' and the routes' rows.
     "cli": (frozenset({"zrth.lean.cli"}), frozenset({
         "core", "artifacts", "smt", "inputs", "infer"})),
+    # `uv run verith`: every stage, in order.
+    "pipeline": (frozenset({"zrth.lean.pipeline"}), frozenset({
+        "core", "lowering", "artifacts", "codegen", "smt", "project", "proof",
+        "scaffold", "inputs", "infer", "cli"})),
 }
 
 

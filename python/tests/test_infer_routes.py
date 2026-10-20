@@ -517,13 +517,13 @@ def _row(returns="smt", kind="buchi", result=None):
 
 def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
                owns=()):
-    """Put one synthetic row through `main._infer`."""
-    from zrth.lean import main as m
+    """Put one synthetic row through `pipeline.certify.run_route`."""
+    from zrth.lean.pipeline import certify
     from zrth.lean.core.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
-    return m._infer(
+    return certify.run_route(
         settings,
         None,
         _handle(tmp_path, owns=owns),
@@ -783,10 +783,10 @@ def test_a_refusal_says_whether_anything_was_searched():
 def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
     """`NO-CERT` is three measurements in one name, and this is the one the
     prose is worst at: nothing ran, so there is no fact about the module."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
     kept = [a for a in store.list() if a.role == "note"]
     assert [a.status for a in kept] == ["declined"]
     assert "Tuple" in (store.dir / kept[0].name).read_text()
@@ -795,22 +795,22 @@ def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
 def test_a_search_that_ran_out_records_unknown(tmp_path):
     """Not a decline: a search did run, and that it did not finish is a fact
     about how hard this module is."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(),
-                  Refused("no ranking function", searched=True))
+    note_refusal(_NoteHandle(store), _NoteRoute(),
+                 Refused("no ranking function", searched=True))
     assert [a.status for a in store.list() if a.role == "note"] == ["unknown"]
 
 
 def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
     """`smt-linear`, `sygus`, `houdini` and `vampire` each leave a note with
     more in it than this one, and a second saying less is worse than none."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
     store.note("the space is empty\n", status="no_solution", what="x", why="y")
-    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
+    note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
     assert [a.status for a in store.list()
             if a.role == "note"] == ["no_solution"]
 
@@ -818,10 +818,10 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
     """An `ImportError` is about how the route was asked for. Filing it as a
     decline would read as a fact about a run that never started."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
     assert store.list() == ()
 
 
@@ -832,23 +832,23 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     about why no certificate came of it."""
     from types import SimpleNamespace
 
-    from zrth.lean import main as m
+    from zrth.lean.pipeline import certify
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer import InferResult
 
     def refuse(*a, **k):
         raise Refused("SMT→Lean: unsupported kind INTS_MODULUS")
 
-    monkeypatch.setattr(m, "_render", refuse)
+    monkeypatch.setattr(certify, "render", refuse)
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
         pre_check=None,
         route=SimpleNamespace(name="test-route", errors_self_named=False),
     )
     with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
-        m._regenerate(settings, None, _NoteHandle(store), store,
-                      Claim(prp="(= s0 0)", kind="safety"),
-                      InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
+        certify.regenerate(settings, None, _NoteHandle(store), store,
+                           Claim(prp="(= s0 0)", kind="safety"),
+                           InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
     notes = [a for a in store.list() if a.role == "note"]
     assert [a.status for a in notes] == ["unsupported"]
     assert "INTS_MODULUS" in (store.dir / notes[0].name).read_text()
@@ -860,7 +860,7 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
     import dataclasses
 
     from zrth.lean import inputs
-    from zrth.lean import main as m
+    from zrth.lean.pipeline import certify
     from zrth.lean.core.certificate import Certificate, Claim
 
     from pathlib import Path
@@ -877,8 +877,8 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
         )
         settings = parse_args([str(fixture), "--buchi", "(= (X @intf.0) 0)"])
         settings.route = row
-        m._infer(settings, problem.module, _handle(tmp_path),
-                 Claim(prp="(= s0 0)", kind="buchi"), Certificate(), None,
+        certify.run_route(settings, problem.module, _handle(tmp_path),
+                          Claim(prp="(= s0 0)", kind="buchi"), Certificate(), None,
                  problem=problem)
         (inp,) = seen
         if reads_source:

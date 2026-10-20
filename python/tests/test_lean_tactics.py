@@ -445,14 +445,14 @@ def test_a_real_state_keeps_norm_num_in_prep():
 # The plan is about the predicates the certificate carries
 #
 # A route answers after the project is first generated, when there was no
-# invariant to plan from. `main._render` plans again from the answer;
-# without it an inferred certificate is planned for predicates it does not
-# have.
+# invariant to plan from. `pipeline.certify.render` plans again from the
+# answer; without it an inferred certificate is planned for predicates it
+# does not have.
 # ══════════════════════════════════════════════════════════════════════
 
 
 class _Settings:
-    """The two fields `_render` reads, without building a whole CLI parse."""
+    """The two fields `render` reads, without building a whole CLI parse."""
 
     def __init__(self, smt_tactics="cvc5"):
         from zrth.lean.smt.limits import SmtBudget
@@ -484,15 +484,15 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     after the route has answered."""
     pytest.importorskip("cvc5")
     from zrth.lean.core.certificate import Certificate, Claim
-    from zrth.lean.main import _render
+    from zrth.lean.pipeline.certify import render
 
     module = _countdown()
     claim = Claim(prp="(= s0 0)")
     settings = _Settings(smt_tactics)
     # Before: the property is all there is to read the shape of.
-    before = _render(settings, module, claim, Certificate(), hints=False)
-    after = _render(settings, module, claim, Certificate(inv, ranking),
-                    hints=verbatim is None, restated=True, verbatim=verbatim)
+    before = render(settings, module, claim, Certificate(), hints=False)
+    after = render(settings, module, claim, Certificate(inv, ranking),
+                   hints=verbatim is None, restated=True, verbatim=verbatim)
     return module, before, after
 
 
