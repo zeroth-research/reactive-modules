@@ -3,10 +3,10 @@ module's terms define (`ConstantRegistry`)."""
 
 from __future__ import annotations
 
-from fractions import Fraction
 
 from zrth import BitVec, Bool, Int, Real, Sort, Term, Wire
-from .sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
+from .ir.sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
+from .ir.values import decimal_fraction
 
 
 # ======================================================================
@@ -55,16 +55,6 @@ def constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
     if name is not None:
         return name
     return tensor_to_lean_inline(term.itype._0, w)
-
-
-def decimal_fraction(value) -> Fraction:
-    """`value` as an exact fraction, a float read by its decimal form:
-    `0.1` is 1/10, what the number was written as and what Lean makes of
-    a decimal literal. The SMT encoding builds its constants from this
-    too, so the two state the same number."""
-    if isinstance(value, float):
-        return Fraction(repr(value))
-    return Fraction(value)
 
 
 def lean_int(value) -> str:

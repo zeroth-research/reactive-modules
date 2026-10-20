@@ -6,7 +6,7 @@ elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 cvc5's own tuple in `smt.encode`. Those were seven independent walks over the
 same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
-all go through `layout.flat_layout`, and this is the test that says so.
+all go through `ir.layout.flat_layout`, and this is the test that says so.
 
 The shapes here are synthetic on purpose. Mutating `flat_indices` to
 column-major and running the fast suite fails exactly one existing test:
@@ -27,8 +27,8 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
-from zrth.lean.layout import (
+from zrth.lean.ir.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from zrth.lean.ir.layout import (
     product_accessor,
     flat_indices,
     flat_size,
@@ -294,7 +294,7 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
 
 
 def test_every_sort_is_two_dimensional_so_one_reading_suffices():
-    """`sorts.sort_shape` reads a shape as `(m, n)` and nothing else: the
+    """`ir.sorts.sort_shape` reads a shape as `(m, n)` and nothing else: the
     Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is no other
     case for an encoding to read differently. A 1xn wire's Lean type,
     element order, rebuilt matrix and recon lemma all agree on it."""

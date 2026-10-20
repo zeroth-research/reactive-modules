@@ -8,7 +8,7 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.sorts import (
+from zrth.lean.ir.sorts import (
     dtype_shape,
     is_scalar_shape,
     itype_name,
@@ -17,7 +17,7 @@ from zrth.lean.sorts import (
     is_scalar_wire,
     flat_element_type,
 )
-from zrth.lean.layout import flat_indices, flat_layout
+from zrth.lean.ir.layout import flat_indices, flat_layout
 from zrth.lean.literals import (
     ConstantRegistry,
     constant_expr,
@@ -25,7 +25,7 @@ from zrth.lean.literals import (
     tensor_to_lean_scalar,
     tensor_to_lean_inline,
 )
-from zrth.lean.ops import lean_gap, mat_emitter, scalar_emitter
+from zrth.lean.ir.ops import lean_gap, mat_emitter, scalar_emitter
 
 from zrth import Wire
 
@@ -42,7 +42,7 @@ def lean_gaps(ctx) -> list[str]:
     encoding -- and that is what the limit matrix's only `GEN-FAIL` was. A
     module that generates has nothing to report here, because an operator
     with no matrix form has no emitter in the other two Lean columns either
-    (:func:`ops.lean_gap`), so this cannot refuse anything that works.
+    (:func:`ir.ops.lean_gap`), so this cannot refuse anything that works.
     """
     out, seen = [], set()
     for block in ("init", "update"):

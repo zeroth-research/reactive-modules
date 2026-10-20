@@ -22,8 +22,8 @@ from zrth.lean.native import (
     translate_terms_scalar,
     reachable_terms,
 )
-from zrth.lean.sorts import dtype_to_lean_type
-from zrth.lean.layout import product_accessor, flat_layout
+from zrth.lean.ir.sorts import dtype_to_lean_type
+from zrth.lean.ir.layout import product_accessor, flat_layout
 from zrth.lean.context import LeanContext, bind_wires
 from zrth.lean.translate._shared import (
     has_block,

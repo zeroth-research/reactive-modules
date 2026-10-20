@@ -6,8 +6,8 @@ are keyed by."""
 
 from __future__ import annotations
 
-from ..layout import flat_layout
-from ..sorts import wire_shape
+from ..ir.layout import flat_layout
+from ..ir.sorts import wire_shape
 
 
 def scalar_element(tm, term, shape, i: int, j: int):

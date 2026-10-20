@@ -13,8 +13,8 @@ from cvc5 import Kind
 
 from zrth import Wire, Sort
 from ..core.errors import Refused
-from ..sorts import dtype_shape, is_scalar_shape, wire_shape
-from ..layout import product_accessor
+from ..ir.sorts import dtype_shape, is_scalar_shape, wire_shape
+from ..ir.layout import product_accessor
 from ..literals import lean_bitvec, lean_int, lean_real
 from ..smt.terms import min_max_of, selector_index, state_dependent
 

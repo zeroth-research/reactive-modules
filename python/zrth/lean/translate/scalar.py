@@ -8,13 +8,13 @@ from zrth.lean.native import (
     build_tuple,
     argmax_scalar_name,
 )
-from zrth.lean.sorts import (
+from zrth.lean.ir.sorts import (
     dtype_to_lean_type,
     flat_element_type,
     itype_name,
     wire_shape,
 )
-from zrth.lean.layout import flat_size, mat_from_scalars, flat_layout
+from zrth.lean.ir.layout import flat_size, mat_from_scalars, flat_layout
 from zrth.lean.context import LeanContext
 from zrth.lean.translate._shared import (
     prepend_recon,

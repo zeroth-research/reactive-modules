@@ -22,11 +22,11 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.sorts import itype_name
+from zrth.lean.ir.sorts import itype_name
 from zrth.lean.context import LeanContext
 from zrth.lean.native import lean_gaps
-from zrth.lean import ops
-from zrth.lean.ops import (
+from zrth.lean.ir import ops
+from zrth.lean.ir.ops import (
     COLUMNS,
     OPS,
     Inline,
@@ -78,7 +78,7 @@ def test_no_row_outlives_its_theory():
     for op in OPS:
         for theory_name in op.theories:
             assert op.name in _variant_names(_THEORIES[theory_name]), (
-                f"ops.py has a row for {theory_name}.{op.name}, which that "
+                f"ir/ops.py has a row for {theory_name}.{op.name}, which that "
                 "theory does not define"
             )
 
@@ -154,7 +154,7 @@ def test_the_smt_column_is_emitters_and_refusals_only():
 
 # Every (theory, variant, column) with no emitter. Closing one of these is a
 # line removed here; opening a new one is a line added, which is the point —
-# `ops.py` records *why* each is open, and this says how many there are.
+# `ir/ops.py` records *why* each is open, and this says how many there are.
 _KNOWN_GAPS = {
     # Nondeterministic choice: nullary, and every encoding here is a
     # function of the read wires.
@@ -219,12 +219,12 @@ def test_the_coverage_gaps_are_the_known_ones():
         "the coverage matrix moved: "
         f"new gaps {sorted(gaps - _KNOWN_GAPS)}, "
         f"closed gaps {sorted(_KNOWN_GAPS - gaps)}. "
-        "Run `python -m zrth.lean.ops` to see the whole matrix."
+        "Run `python -m zrth.lean.ir.ops` to see the whole matrix."
     )
 
 
 def test_the_matrix_prints():
-    """`python -m zrth.lean.ops` is how the table is meant to be read."""
+    """`python -m zrth.lean.ir.ops` is how the table is meant to be read."""
     text = ops.format_matrix()
     assert "ULt" in text and "gaps:" in text
     for theory in _THEORIES:
@@ -302,7 +302,7 @@ def test_a_module_with_no_lean_form_says_which_wire_and_why():
     """The reason the table records, about the module rather than the table.
 
     Met during codegen this is `No Lean expression mapping for:
-    Uninterpreted (matrix form)` -- a sentence about `ops.py`, raised half
+    Uninterpreted (matrix form)` -- a sentence about `ir/ops.py`, raised half
     way through a file, for a user who asked about a module."""
     gaps = lean_gaps(LeanContext(_uninterp_module()))
     assert len(gaps) == 1

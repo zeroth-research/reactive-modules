@@ -4,7 +4,7 @@ import pytest
 import torch
 from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.sorts import itype_name
+from zrth.lean.ir.sorts import itype_name
 from zrth.lean.context import LeanContext
 from zrth.lean.proof.render import generate_certificate_lean
 from zrth.lean.project import generate_main_lean

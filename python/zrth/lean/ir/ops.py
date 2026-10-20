@@ -28,7 +28,7 @@ about every column. A cell is either an emitter or one of
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
   forgotten. That reason is what the caller is told.
 
-`python -m zrth.lean.ops` prints the matrix, gaps and all.
+`python -m zrth.lean.ir.ops` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `LIA`/`LRA`/`BV` in both
 directions, so a variant added to a theory fails the suite until it has a
 row, and a row no theory backs fails it too.
@@ -47,13 +47,13 @@ from typing import TYPE_CHECKING, Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .core.errors import Refused
+from ..core.errors import Refused
 from .sorts import itype_name
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
 
-    from .smt.encode import SmtOp
+    from ..smt.encode import SmtOp
 
 
 # ══════════════════════════════════════════════════════════════════════

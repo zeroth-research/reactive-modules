@@ -11,7 +11,7 @@ collapses to the scalar sort `t` — this matches the common Lean use of
 `Mat t 1 1` for scalar values.
 
 What this module owns is that representation. *Which* term each op builds
-is the `smt` column of the op table in `ops.py`, one cell per variant;
+is the `smt` column of the op table in `ir/ops.py`, one cell per variant;
 `translate_terms` walks the IR and hands each op an `SmtOp` to build with.
 """
 
@@ -24,9 +24,9 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
-from ..sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
-from ..literals import decimal_fraction
-from ..ops import smt_emitter
+from ..ir.sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
+from ..ir.values import decimal_fraction
+from ..ir.ops import smt_emitter
 
 
 def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:
@@ -97,7 +97,7 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
     if isinstance(dt, Int):
         return tm.mkInteger(int(raw))
     if isinstance(dt, Real):
-        # The number Lean's literal states (`literals.decimal_fraction`);
+        # The number Lean's literal states (`ir.values.decimal_fraction`);
         # `mkReal(float)` reads `str()` and fails on `1e-07`.
         q = decimal_fraction(float(raw))
         return tm.mkReal(q.numerator, q.denominator)
@@ -245,7 +245,7 @@ def _bool_or_bv1(tm: cvc5.TermManager, pred: cvc5.Term, want_bv1: bool) -> cvc5.
 class SmtOp:
     """One term being translated, and every handle its emitter needs.
 
-    The emitters live in `ops.py`, one cell of the op table, and that module
+    The emitters live in `ir/ops.py`, one cell of the op table, and that module
     must not import cvc5 — the Lean path has to keep working where cvc5 is
     absent. So everything cvc5 arrives here: the term manager, the `Kind`
     enum as `K`, and thin wrappers over this module's matrix primitives.
@@ -338,7 +338,7 @@ def translate_terms(
     cvc5 terms. The returned dict is a superset including every computed
     wire.
 
-    Every variant is dispatched through `ops.OPS` — constants included — so
+    Every variant is dispatched through `ir.ops.OPS` — constants included — so
     what this encoder covers is one column of that table rather than the
     shape of an if/elif chain, and a variant it does not cover is refused
     with the reason the table records.

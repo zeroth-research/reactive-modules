@@ -95,7 +95,7 @@ def test_the_lean_encoding_takes_the_rounds_the_module_takes(
 def test_a_wrong_lean_emitter_is_caught(tmp_path, sync_core_templates, monkeypatch):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
-    from zrth.lean import ops
+    from zrth.lean.ir import ops
 
     for key, row in list(ops._BY_KEY.items()):
         if key[1] == "Sub":

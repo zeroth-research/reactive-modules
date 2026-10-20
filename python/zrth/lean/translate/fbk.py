@@ -129,8 +129,8 @@ discover.
 import re
 from typing import NamedTuple
 
-from zrth.lean.sorts import flat_element_type
-from zrth.lean.layout import flat_layout
+from zrth.lean.ir.sorts import flat_element_type
+from zrth.lean.ir.layout import flat_layout
 from zrth.lean.context import LeanContext
 from zrth.lean.native import reachable_terms
 from zrth.lean.translate._shared import has_block
@@ -280,7 +280,7 @@ def check_na_supported(
 #
 # One VMT variable per *element*, not per wire. A wire holding a 3-vector
 # becomes `var_k, var_k+1, var_k+2`, in the row-major order `mat_select`
-# packs a matrix into a cvc5 tuple -- `layout.flat_layout` owns that order
+# packs a matrix into a cvc5 tuple -- `ir.layout.flat_layout` owns that order
 # for every encoding, and `tests/test_lean_flat_layout.py` is what keeps the
 # slot arithmetic here and the element selection there in step.
 #

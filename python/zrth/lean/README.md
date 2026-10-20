@@ -215,12 +215,12 @@ topologically-sorted dataflow graph.
 | File | Role |
 |------|------|
 | `core/errors.py` | `Refused`, the error a run is refused with |
-| `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
-| `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
+| `ir/sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
+| `ir/layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
 | `literals.py` | Constants as Lean text, `ConstantRegistry` |
 | `context.py` | `LeanContext`, what every encoding of one module shares |
 | `common.py` | Re-exports the five above, for importers not migrated yet |
-| `ops.py` | The op table: one row per theory variant, one column per backend |
+| `ir/ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` (with `fbk_bool.py`, cvc5 terms as the `Bool` Lean `lean2vmt` reads) |
@@ -234,7 +234,7 @@ topologically-sorted dataflow graph.
 
 ---
 
-## Type Mapping (`sorts.py`)
+## Type Mapping (`ir/sorts.py`)
 
 `dtype_to_lean_type(wire, simple_types=False)` maps wire types to Lean:
 
@@ -286,7 +286,7 @@ Lean function body as a string of `let` bindings followed by the output tuple:
   (x6, x5)
 ```
 
-Each term is looked up in the op table's `mat` column (`ops.mat_emitter`,
+Each term is looked up in the op table's `mat` column (`ir.ops.mat_emitter`,
 keyed by theory and variant name).  Operations produce `Mat T 1 1` values
 even for scalar results — conditions extract `0 0`, boolean ops wrap in
 `fun _ _ => ...`.  Non-scalar ops (`MatMul`, `Linear`, `ReLU`) use their
@@ -1337,15 +1337,15 @@ spurious counterexample". That is the SAT path (`vmt2lean -m sat`), not the
 
 ---
 
-## Adding a New Op (`ops.py`)
+## Adding a New Op (`ir/ops.py`)
 
 Every backend dispatches through one table, so an op is added in one place:
-a row in `ops.OPS` giving its name, the theories that expose it, and a cell
+a row in `ir.ops.OPS` giving its name, the theories that expose it, and a cell
 for each of `mat`, `scalar`, `box` and `smt`.  A cell is an emitter, or
 `ViaMat`/`Inline`/`Unsupported` saying why it is not one — `Unsupported`'s
 reason is what the caller is told when it hits the gap.
 
-`python -m zrth.lean.ops` prints the whole matrix and every gap in it.
+`python -m zrth.lean.ir.ops` prints the whole matrix and every gap in it.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.

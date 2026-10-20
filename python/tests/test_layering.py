@@ -34,10 +34,7 @@ PACKAGE = sorted(LEAN.rglob("*.py"))
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "core": (frozenset({"zrth.lean.core"}), frozenset()),
-    "ir": (frozenset({
-        "zrth.lean.sorts", "zrth.lean.layout", "zrth.lean.literals",
-        "zrth.lean.ops",
-    }), frozenset({"core"})),
+    "ir": (frozenset({"zrth.lean.ir"}), frozenset({"core"})),
     "artifacts": (frozenset({"zrth.lean.artifacts"}), frozenset({"core"})),
     "smt": (frozenset({"zrth.lean.smt"}), frozenset({"core", "ir", "artifacts"})),
 }

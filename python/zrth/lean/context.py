@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zrth import Module, Real, Var, Wire, X
-from .layout import product_accessor
+from .ir.layout import product_accessor
 from .literals import ConstantRegistry
 
 

@@ -4,7 +4,7 @@ copy template library files, and generate a diagram Lean file.
 """
 
 from zrth.lean.core.errors import Refused
-from zrth.lean.sorts import flat_element_type, wire_shape
+from zrth.lean.ir.sorts import flat_element_type, wire_shape
 from zrth.lean.context import LeanContext
 
 from zrth.lean.proof.render import (
