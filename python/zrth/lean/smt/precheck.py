@@ -88,13 +88,11 @@ class ModuleQueries:
     """A cvc5 view of one module together with its certificate predicates.
 
     `source` is the module or its `smt.encoding.ModuleEncoding`; a run gets these
-    from `ModuleEncoding.queries`, which builds one per claim and certificate.
-    Construct with `build`, which returns `None` rather than raising when the
-    module or the predicates are outside what the encoder covers -- the whole
-    point is that the caller can carry on without cvc5. A caller that cannot
-    carry on -- `predicate_terms`, whose terms *are* what the Lean is
-    printed from -- constructs directly and reports what went wrong:
-    `Refused` for a predicate, anything else for the module.
+    from `ModuleEncoding.queries`, which builds one per claim and certificate,
+    through `predicate_terms`, which refuses a predicate that does not parse
+    by its role and anything else as the module's. A predicate the claim or
+    the certificate leaves out is `None` here, and every reader states
+    nothing for it.
     """
 
     def __init__(self, source, claim: Claim, cert: Certificate | None = None):
@@ -114,14 +112,6 @@ class ModuleQueries:
         self.ranking = enc.parse(cert.ranking, "ranking", want="Int")
         self.init_pre = enc.parse(claim.init_pre, "pre")
         self.update_pre = enc.parse(claim.update_pre, "pre")
-
-    @classmethod
-    def build(cls, source, claim: Claim,
-              cert: Certificate | None = None) -> "ModuleQueries | None":
-        try:
-            return cls(source, claim, cert)
-        except Exception:
-            return None
 
     # ── plumbing ──────────────────────────────────────────────────────
 

@@ -145,9 +145,9 @@ def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
 
 def test_the_same_net_without_sharing_shows_what_it_costs():
     from zrth.lean.proof.from_smt import smt_to_lean_nat
-    from zrth.lean.smt.precheck import ModuleQueries
+    from zrth.lean.smt.precheck import predicate_terms
 
-    q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=_dense(4)))
+    q = predicate_terms(_int_module(), Claim(), Certificate(ranking=_dense(4)))
     plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
     assert plain.count("(max ") == 30
     assert "let " not in plain
@@ -155,10 +155,10 @@ def test_the_same_net_without_sharing_shows_what_it_costs():
 
 def test_sharing_never_makes_the_output_longer():
     from zrth.lean.proof.from_smt import smt_to_lean_nat
-    from zrth.lean.smt.precheck import ModuleQueries
+    from zrth.lean.smt.precheck import predicate_terms
 
     for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
-        q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=smt))
+        q = predicate_terms(_int_module(), Claim(), Certificate(ranking=smt))
         wires = q.msmt.ctrl_next
         assert len(smt_to_lean_nat(q.ranking, wires, share=True)) <= len(
             smt_to_lean_nat(q.ranking, wires, share=False)

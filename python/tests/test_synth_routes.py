@@ -651,10 +651,9 @@ def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
     `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
     """
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt.precheck import ModuleQueries, Status
+    from zrth.lean.smt.precheck import Status, predicate_terms
 
-    q = ModuleQueries.build(module_of(name), claim, cert)
-    assert q is not None, "the predicates should be readable for this module"
+    q = predicate_terms(module_of(name), claim, cert)
     return [
         v.name
         for v in q.check_obligations(SmtBudget())
@@ -832,10 +831,9 @@ def bv_counter(width: int, top: int):
 
 def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt.precheck import ModuleQueries, Status
+    from zrth.lean.smt.precheck import Status, predicate_terms
 
-    q = ModuleQueries.build(module, claim, cert)
-    assert q is not None
+    q = predicate_terms(module, claim, cert)
     return [v.name for v in q.check_obligations(SmtBudget())
             if v.status is not Status.HOLDS]
 

@@ -17,7 +17,7 @@ from zrth.analyzer import convert_method
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.core.errors import Refused
 from zrth.lean.smt.limits import SmtBudget
-from zrth.lean.smt.precheck import ModuleQueries, Status, pre_check
+from zrth.lean.smt.precheck import Status, pre_check, predicate_terms
 from zrth.lean.proof.facts import predicate_facts, solver_hints
 
 
@@ -45,8 +45,7 @@ GOOD = Certificate(inv="(and (>= s0 0) (<= s0 100))", ranking="s0")
 
 
 def _status(cert, name):
-    q = ModuleQueries.build(countdown(), CLAIM, cert)
-    assert q is not None
+    q = predicate_terms(countdown(), CLAIM, cert)
     by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     return by_name[name]
 
@@ -76,7 +75,7 @@ def test_a_non_inductive_invariant_is_refuted_at_the_step():
 
 def test_obligations_needing_absent_predicates_are_not_checked():
     """No ranking and no property, so only the two invariant obligations."""
-    q = ModuleQueries.build(countdown(), Claim(), Certificate(inv=GOOD.inv))
+    q = predicate_terms(countdown(), Claim(), Certificate(inv=GOOD.inv))
     assert [v.name for v in q.check_obligations(SmtBudget())] == [
         "init_inv",
         "step_inv",
@@ -84,7 +83,7 @@ def test_obligations_needing_absent_predicates_are_not_checked():
 
 
 def test_no_invariant_means_nothing_to_check():
-    q = ModuleQueries.build(countdown(), CLAIM)
+    q = predicate_terms(countdown(), CLAIM)
     assert q.check_obligations(SmtBudget()) == []
 
 
@@ -97,7 +96,7 @@ SAFE = Certificate(inv="(and (>= s0 0) (<= s0 100))")
 
 def test_a_safety_certificate_is_checked_against_rule_globally():
     """`G P` needs `inv -> P`, and has no ranking function to rank."""
-    q = ModuleQueries.build(countdown(), SAFE_CLAIM, SAFE)
+    q = predicate_terms(countdown(), SAFE_CLAIM, SAFE)
     verdicts = q.check_obligations(SmtBudget())
     assert [v.name for v in verdicts] == ["init_inv", "step_inv", "inv_imp_P"]
     assert {v.status for v in verdicts} == {Status.HOLDS}
@@ -107,7 +106,7 @@ def test_an_invariant_too_weak_for_the_property_is_refuted():
     """Inductive and true at init, but it admits a state where `P` is false
     -- which a Buchi certificate would not care about at all."""
     claim = Claim(prp="(<= s0 50)", kind="safety")
-    q = ModuleQueries.build(countdown(), claim, SAFE)
+    q = predicate_terms(countdown(), claim, SAFE)
     by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     assert by_name["init_inv"].status is Status.HOLDS
     assert by_name["step_inv"].status is Status.HOLDS
@@ -117,7 +116,7 @@ def test_an_invariant_too_weak_for_the_property_is_refuted():
 
 def test_a_safety_certificate_never_states_hrank():
     """Even handed a ranking function, `G P` has no obligation about it."""
-    q = ModuleQueries.build(countdown(), SAFE_CLAIM, replace(SAFE, ranking="s0"))
+    q = predicate_terms(countdown(), SAFE_CLAIM, replace(SAFE, ranking="s0"))
     names = [v.name for v in q.check_obligations(SmtBudget())]
     assert "hrank" not in names and "inv_imp_P" in names
 
@@ -126,7 +125,7 @@ def test_a_safety_certificate_never_states_hrank():
 
 
 def test_a_spent_phase_budget_yields_unknown_not_an_exception():
-    q = ModuleQueries.build(countdown(), CLAIM, GOOD)
+    q = predicate_terms(countdown(), CLAIM, GOOD)
     verdicts = q.check_obligations(SmtBudget(per_call_ms=5000, phase_ms=0))
     assert {v.status for v in verdicts} == {Status.UNKNOWN}
     assert all("budget" in v.detail for v in verdicts)
@@ -147,16 +146,18 @@ def test_a_phase_can_be_refilled():
     assert not b.exhausted
 
 
-# ── failure is never fatal ───────────────────────────────────────────
+# ── a failure is said where it is ────────────────────────────────────
 
 
-def test_an_unparseable_predicate_gives_no_queries_rather_than_raising():
+def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
     bad = Certificate(inv="(this is not smt")
-    assert ModuleQueries.build(countdown(), Claim(), bad) is None
+    with pytest.raises(Refused, match="--invariant: cannot read"):
+        predicate_terms(countdown(), Claim(), bad)
 
 
-def test_an_unencodable_module_gives_no_queries_rather_than_raising():
-    """`Uninterpreted` has no SMT translation; `build` must swallow that."""
+def test_an_unencodable_transition_fails_only_the_obligations_it_is_in():
+    """`Uninterpreted` has no SMT translation, and the module is encoded
+    lazily: parsing the predicates does not touch the transition."""
     x = Var(Int([1, 1]))
     y = Wire(Int([1, 1]))
     module = Module.sequential(
@@ -165,7 +166,7 @@ def test_an_unencodable_module_gives_no_queries_rather_than_raising():
         # `Uninterpreted` is a lone write (a source) or a lone read.
         [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])],
     )
-    q = ModuleQueries.build(module, CLAIM, GOOD)
+    q = predicate_terms(module, CLAIM, GOOD)
     by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
     # Encoding is lazy, so the failure lands on exactly the obligations that
     # touch the untranslatable transition -- `init` does not.
@@ -233,7 +234,7 @@ def test_pre_check_names_the_refuted_obligations():
 
 def _facts(**fields):
     return predicate_facts(
-        ModuleQueries.build(countdown(), Claim(), Certificate(**fields)))
+        predicate_terms(countdown(), Claim(), Certificate(**fields)))
 
 
 def _relu(e: str) -> str:
@@ -280,7 +281,7 @@ def test_branch_points_do_not_move_when_the_printer_shares():
     """
     from zrth.lean.proof.from_smt import smt_to_lean_nat
 
-    q = ModuleQueries.build(countdown(), Claim(), Certificate(ranking=_dense(5)))
+    q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(5)))
     unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
     shared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=True)
     assert unshared.count("(max ") == 62
@@ -338,7 +339,7 @@ def test_floors_are_read_off_a_shared_term_once():
 
 
 def _hints(cert, budget=None, claim=CLAIM):
-    q = ModuleQueries.build(countdown(), claim, cert)
+    q = predicate_terms(countdown(), claim, cert)
     return solver_hints(q, budget or SmtBudget())
 
 
@@ -377,11 +378,11 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     contributes `hrank`."""
     from zrth.lean.proof.facts import _obligation_labels
 
-    buchi = ModuleQueries.build(countdown(), CLAIM, GOOD)
+    buchi = predicate_terms(countdown(), CLAIM, GOOD)
     assert [name for name, _ in _obligation_labels(buchi, buchi.frame("h_"))
             ] == ["step_inv", "hrank"]
 
-    safe = ModuleQueries.build(countdown(), SAFE_CLAIM, SAFE)
+    safe = predicate_terms(countdown(), SAFE_CLAIM, SAFE)
     assert [name for name, _ in _obligation_labels(safe, safe.frame("h_"))
             ] == ["step_inv", "inv_imp_P"]
 
@@ -404,7 +405,7 @@ def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
     from zrth.lean.proof.render import print_hints
 
-    q = ModuleQueries.build(countdown(), CLAIM,
+    q = predicate_terms(countdown(), CLAIM,
                             replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
     printed = print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
     assert "($v)" in printed.determined[0][0]

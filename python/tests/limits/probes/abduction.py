@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 
 from zrth.lean.core.certificate import Certificate, Claim
-from zrth.lean.smt.precheck import ModuleQueries
+from zrth.lean.smt.precheck import predicate_terms
 
 CASES = [
     ("m_countdown", "(>= s0 1)"),
@@ -30,7 +30,7 @@ CASES = [
 
 def abduce(modname: str, inv: str) -> str:
     module = importlib.import_module(f"mods.{modname}").module()
-    q = ModuleQueries.build(module, Claim(), Certificate(inv=inv))
+    q = predicate_terms(module, Claim(), Certificate(inv=inv))
     if q is None:
         return "<cvc5 could not encode this module>"
     solver = cvc5.Solver(q.tm)
