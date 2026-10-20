@@ -173,8 +173,8 @@ from ..smt.record import found, note
 from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
 from ..smt.vampire import run_vampire
+from ..smt.claim import SynthContext
 from .synth import (
-    SynthContext,
     columns,
     denominator_scale,
     floor_real,

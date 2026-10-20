@@ -120,6 +120,7 @@ from itertools import product
 
 from ..certificate import Certificate, Claim
 from ..errors import PredicateRefused, Refused
+from ..smt.claim import SynthContext
 from ..smt.solvers import (
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,
@@ -134,7 +135,6 @@ from ..smt.script import smt_int, smt_real
 from ..smt.terms import free_constants
 from .synth import (
     Column,
-    SynthContext,
     affine_smt,
     columns,
     component_slots,

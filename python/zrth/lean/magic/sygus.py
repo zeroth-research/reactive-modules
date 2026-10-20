@@ -67,18 +67,10 @@ from __future__ import annotations
 from ..certificate import Certificate, Claim
 from ..errors import Refused
 from . import TA2Magic
+from ..smt.claim import READING_KINDS, SynthContext
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.obligations import initial, transition
-from .synth import (
-    READING_KINDS,
-    Search,
-    SynthContext,
-    body_of,
-    readings,
-    moduli,
-    program_constants,
-    record,
-)
+from .synth import Search, body_of, readings, moduli, program_constants, record
 
 try:
     import cvc5                                      # type: ignore

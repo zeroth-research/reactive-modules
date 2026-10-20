@@ -91,6 +91,7 @@ from ..errors import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 
+from ..smt.claim import SynthContext
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.script import decimals
 from ..smt.obligations import (
@@ -103,7 +104,6 @@ from ..smt.obligations import (
 )
 from .synth import (
     Search,
-    SynthContext,
     affine_smt,
     conjunction_smt,
     denominator_scale,

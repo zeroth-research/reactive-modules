@@ -229,7 +229,7 @@ topologically-sorted dataflow graph.
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
 | `proof/` | The rest of the certificate's Lean: `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`); `tactics`, the plan read off them |
-| `magic/synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
+| `magic/synth.py` | What a searching route reads a module as: its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use |
 | `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
 
 ---

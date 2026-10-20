@@ -47,7 +47,7 @@ def _module(path: Path):
 
 def _context(path: Path, kind: str, prp: str, route: str):
     from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.magic.synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     ctx = SynthContext.build(_module(path), Claim(prp=prp, kind=kind),
                              route=route,

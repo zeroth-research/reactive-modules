@@ -56,7 +56,7 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A module's context, obligations and branches, without asking anything."""
     from zrth.lean.smt.obligations import Obligations
     from zrth.lean.magic.vampire import Question, split
-    from zrth.lean.magic.synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
                              Claim(prp=prp, kind=kind),
@@ -390,7 +390,7 @@ def test_a_real_component_reaches_the_templates():
     Getting as far as looking for the prover is getting past both gates.
     """
     from zrth.lean.magic.vampire import TA2MagicVampire, template
-    from zrth.lean.magic.synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     magic = TA2MagicVampire(module_at(LIMITS / "m_lra_lin.py"),
                             vampire="/nowhere", log=lambda *_: None)
@@ -425,7 +425,7 @@ def test_a_bool_column_is_carried_rather_than_refused():
     the gate.
     """
     from zrth.lean.magic.vampire import TA2MagicVampire, template
-    from zrth.lean.magic.synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     magic = TA2MagicVampire(module_at(LIMITS / "m_boolint.py"),
                             vampire="/nowhere", log=lambda *_: None)
@@ -449,7 +449,7 @@ def test_a_module_with_nothing_to_bound_is_refused():
     invariant would be `true`, which is inductive and proves nothing, so
     the module is turned away up front rather than searched."""
     from zrth.lean.magic.vampire import TA2MagicVampire
-    from zrth.lean.magic.synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     magic = TA2MagicVampire(module_at(FIXTURES / "twobit_lia.py"),
                             vampire="/nowhere", log=lambda *_: None)
