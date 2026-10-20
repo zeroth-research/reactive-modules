@@ -885,3 +885,12 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
             assert inp.source == problem.source and inp.names == problem.names
         else:
             assert inp.source is None and inp.names is None
+
+
+def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
+    from zrth.lean.core.errors import Refused, require
+
+    assert require("json", "--anything").dumps(1) == "1"
+    with pytest.raises(Refused, match=r"--infer x needs the `zrth_no_such` "
+                                      r"package.*uv pip install zrth_no_such"):
+        require("zrth_no_such", "--infer x")

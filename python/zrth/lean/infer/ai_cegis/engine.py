@@ -20,7 +20,7 @@ except ImportError:
 from zrth import Module
 
 from ...core.certificate import Certificate, Claim
-from ...core.errors import Refused
+from ...core.errors import Refused, require
 from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from ...smt.obligations import (
@@ -81,11 +81,7 @@ class AiCegisEngine(Engine):
         log=print,
     ):
         self.source = source
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer ai-cegis needs the `cvc5` package, which is not "
-                "importable. Install with: uv pip install cvc5"
-            )
+        require("cvc5", "--infer ai-cegis")
         self.module = module
         # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
         self.budget = budget

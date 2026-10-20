@@ -247,11 +247,6 @@ class SmtLinearEngine(Engine):
         log=print,
         encoding=None,
     ):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer smt-linear needs the `cvc5` package, which is not "
-                "importable. Install with: uv pip install cvc5"
-            )
         self.module = module
         # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.

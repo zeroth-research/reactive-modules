@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from ..core.errors import Refused
+from ..core.errors import Refused, require
 from .obligations import Query
 from .limits import bounded_solver
 from .script import decimals, script
@@ -258,14 +258,7 @@ class Cvc5Solver(Solver):
         super().__init__(seconds=seconds, log=log)
         # Lazily, so that the route table above can name this class without
         # a bare `verith` run paying for the import.
-        try:
-            from cvc5 import Kind                    # type: ignore
-        except ImportError as e:                     # pragma: no cover
-            raise Refused(
-                "--houdini-solver cvc5 needs the `cvc5` package, which is "
-                "not importable. Install with: uv pip install cvc5"
-            ) from e
-        self.kind = Kind
+        self.kind = require("cvc5", "--houdini-solver cvc5").Kind
         self.tm = tm
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:

@@ -129,11 +129,6 @@ class SygusEngine(Engine):
         log=print,
         encoding=None,
     ):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer sygus needs the `cvc5` package, which is not "
-                "importable. Install with: uv pip install cvc5"
-            )
         if grammar not in GRAMMARS:
             raise Refused(
                 f"--sygus-grammar takes one of {', '.join(GRAMMARS)}; "

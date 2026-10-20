@@ -913,12 +913,6 @@ class VampireEngine(Engine):
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
                  artifacts=None, log=print, encoding=None):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer vampire needs the `cvc5` package to encode the "
-                "module, which is not importable. Install with: "
-                "uv pip install cvc5"
-            )
         self.module = module
         # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.

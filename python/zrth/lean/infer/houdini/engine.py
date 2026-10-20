@@ -1058,12 +1058,6 @@ class HoudiniEngine(Engine):
     def __init__(self, module, *, solver=DEFAULT_SOLVER,
                  timeout: float = DEFAULT_TIMEOUT, artifacts=None, log=print,
                  encoding=None):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer houdini needs the `cvc5` package to encode the "
-                "module, which is not importable. Install with: "
-                "uv pip install cvc5"
-            )
         self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
         # The run's `smt.encoding.lazy` encoding; a library caller's module gets

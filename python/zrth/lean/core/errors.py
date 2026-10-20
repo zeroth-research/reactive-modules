@@ -54,3 +54,23 @@ class PredicateRefused(Refused):
 
     def __str__(self) -> str:
         return f"{self.flag}: {self.message}"
+
+
+def require(package: str, who: str):
+    """`package`, imported -- or a refusal saying `who` needs it and how to
+    install it.
+
+    A missing package is about how the run was asked for, not about the
+    module, and the `ImportError` from wherever it happened to be imported
+    first says neither which flag wanted it nor what to do.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(package)
+    except ImportError as e:
+        raise Refused(
+            f"{who} needs the `{package}` package, which is not importable. "
+            f"Install with: uv pip install {package}"
+        ) from e
+

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.certificate import Claim
-from ..core.errors import Refused
+from ..core.errors import Refused, require
 from .encoding import encoding_of
 
 
@@ -102,13 +102,7 @@ class SynthContext:
         arithmetic and so asks for `real`; `--infer smt-linear` reads a
         Real through a floor and asks for it too.
         """
-        try:
-            import cvc5                              # noqa: F401
-        except ImportError:                          # pragma: no cover
-            raise Refused(
-                f"--infer {route} needs the `cvc5` package, which is not "
-                f"importable. Install with: uv pip install cvc5"
-            ) from None
+        require("cvc5", f"--infer {route}")
 
         if claim.prp is None:
             raise Refused(
