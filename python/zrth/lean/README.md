@@ -33,7 +33,7 @@ The adapter returns an `inputs.Problem`: the module, the source text, the
 names, and the claims the input states. A new input format is a new
 `InputAdapter` in `inputs/`.
 
-### 2. The claim (`cli.py`, `inputs/names.py`)
+### 2. The claim (`cli/`, `inputs/names.py`)
 
 The property goes under the flag of its proof rule:
 
@@ -533,7 +533,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`cli.py`, `main.py`, `project/`)
+## `uv run verith` CLI (`cli/`, `main.py`, `project/`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -1362,7 +1362,7 @@ Every way verith can be handed a certificate is one row of
 package, `infer/<name>/`: its `__init__.py` exports `ROUTE` (an
 `InferRoute`), its `engine.py` is what the row runs, and its entry in the
 `ROUTES` tuple of `infer/__init__.py` is the only line written elsewhere.
-`cli.py` reads the rows, so the `--infer` choices, the help text, every
+`cli/` reads the rows, so the `--infer` choices, the help text, every
 cross-flag rule and the dispatch all follow from the row rather than from
 an edit apiece.  The row imports its engine inside `run`, so
 `verith --help` imports none of them; no route imports another, and an

@@ -191,10 +191,10 @@ def column_docs():
     drop a column whenever a results file is rendered on a machine without
     the binary it names -- and take that column's measured cells with it.
     """
-    from zrth.lean.cli import _SEED_FLAGS
+    from zrth.lean.cli import SEED_FLAGS
     from zrth.lean.infer import ROUTES
 
-    flag_of = {field: flag for field, _attr, flag in _SEED_FLAGS}
+    flag_of = {field: flag for field, _attr, flag in SEED_FLAGS}
     by_name = {r.name: r for r in ROUTES}
 
     out = []

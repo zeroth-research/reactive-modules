@@ -55,10 +55,15 @@ LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
               frozenset({"core", "lowering", "codegen", "smt", "project"})),
     "scaffold": (frozenset({"zrth.lean.project.scaffold"}), frozenset({
         "core", "lowering", "codegen", "project", "proof"})),
+    # The input formats; one encodes a module through `smt` as it reads it.
+    "inputs": (frozenset({"zrth.lean.inputs"}), frozenset({"core", "smt"})),
     # The routes, their engines and the registry over them.
     "infer": (frozenset({"zrth.lean.infer"}), frozenset({
         "core", "lowering", "artifacts", "codegen", "smt", "project",
         "proof", "scaffold"})),
+    # The command line: read off the input formats' and the routes' rows.
+    "cli": (frozenset({"zrth.lean.cli"}), frozenset({
+        "core", "artifacts", "smt", "inputs", "infer"})),
 }
 
 
