@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def _resolve(opts: dict):
-    from ..fbk_proveit import resolve_project
+    from ..fbk.proveit import resolve_project
 
     return resolve_project(opts["proveit_dir"])
 
@@ -26,7 +26,7 @@ def _check_project_name(settings, opts) -> "str | None":
     `import 1projNA` is "unexpected token; expected identifier", four steps
     later and in generated code.
     """
-    from ..fbk_proveit import na_module_name
+    from ..fbk.proveit import na_module_name
 
     name = settings.project_name
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_']*", name):
@@ -39,7 +39,7 @@ def _check_project_name(settings, opts) -> "str | None":
 
 
 def _precheck(module, opts, config, claim, smt):
-    from ..fbk_proveit import ProveItError, check_module
+    from ..fbk.proveit import ProveItError, check_module
 
     try:
         return check_module(
@@ -59,7 +59,7 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
     """What this route needs of the lakefile: the checkout required, and the
     NA model declared as a lean_lib.  Without the two, the certificate this
     route installs is a file lake reaches and cannot elaborate."""
-    from ..fbk_proveit import na_module_name
+    from ..fbk.proveit import na_module_name
     from ..project import LakefileParts, LeanLib, Require
 
     return LakefileParts(
@@ -98,8 +98,8 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
 
 
 def _run(inp: InferInput) -> InferResult:
-    from ..fbk_proveit import ProveItError
-    from ..fbk_proveit import run as run_proveit
+    from ..fbk.proveit import ProveItError
+    from ..fbk.proveit import run as run_proveit
 
     try:
         files = run_proveit(

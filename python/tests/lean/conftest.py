@@ -457,9 +457,9 @@ def generate_lean_files(sync_core_templates) -> None:
     # `lake update` per case.
     from zrth.lean.proof.render import generate_data_lean
     from zrth.lean.context import LeanContext
-    from zrth.lean.fbk_proveit import property_to_bool_lean
-    from zrth.lean.translate.fbk import atom_to_lean_na
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.fbk.proveit import property_to_bool_lean
+    from zrth.lean.fbk.na import atom_to_lean_na
+    from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
 
     def _strip(src: str) -> str:
         out, in_doc = [], False

@@ -1,6 +1,6 @@
 """The proof that the FBK model is the module.
 
-`translate/fbk.py` writes a model for `lean2vmt`, and the certificate that
+`fbk/na.py` writes a model for `lean2vmt`, and the certificate that
 comes back is about *that model*. Every other encoding in this package
 carries an equivalence theorem to the functional one and would be worthless
 without it; this route had none, so a mistranslation anywhere in
@@ -45,7 +45,7 @@ from zrth.lean.lean_names import (
     DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
 )
 from zrth.lean.translate._shared import scalar_eq_name
-from zrth.lean.translate.fbk import SlotBodies, check_na_shape, check_na_supported
+from zrth.lean.fbk.na import SlotBodies, check_na_shape, check_na_supported
 
 
 
@@ -107,7 +107,7 @@ def atom_to_lean_fbk_bridge(
 ) -> str:
     """Emit the bridge file for `ctx`.
 
-    `na_module` is the Lean module name of the NA model (`fbk_proveit.na_module_name`).
+    `na_module` is the Lean module name of the NA model (`fbk.proveit.na_module_name`).
 
     `bodies` are the slot texts the model was written from -- the same ones,
     because the theorem below is about *that* file. Pass what
@@ -129,7 +129,7 @@ def atom_to_lean_fbk_bridge(
     slot_bodies = bodies if bodies is not None else check_na_supported(ctx, simplify)
     upd = slot_bodies.update
     # `INIT` says nothing about a slot the module starts at an unconstrained
-    # input, so there is no `Init_k` to unfold for one (`fbk._free_init_slots`)
+    # input, so there is no `Init_k` to unfold for one (`fbk.na._free_init_slots`)
     # -- unless `--pre` put it back under a constraint, which is a conjunct
     # over the slots rather than a body for any one of them.
     pinned = [k for k in range(n) if k not in slot_bodies.free_init]
@@ -267,7 +267,7 @@ def atom_to_lean_fbk_bridge(
             + (", Definition.PRE, init_pre" if has_pre else ""),
             # Every slot's `var_k`, not only the pinned ones': a slot that
             # starts at an input another slot took first is pinned *to* that
-            # slot (`fbk._free_init_slots`), which is free.
+            # slot (`fbk.na._free_init_slots`), which is free.
             _lemmas(*(f"Definition.Init_{k}" for k in pinned),
                     *(f"Definition.var_{k}" for k in range(n))),
             from_hyps=has_pre,

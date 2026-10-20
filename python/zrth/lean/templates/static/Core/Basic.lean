@@ -194,7 +194,7 @@ theorem rule_buchi {State: Type u} {Label : Type v}
 /-- Every run of `A` is a run of `B`, so a `G`-property of `B` is one of `A`.
 
     The `--fbk-proveit` route ends in a certificate about a *model* -- the NA
-    encoding `translate/fbk.py` writes and `lean2vmt` reads. This is what
+    encoding `fbk/na.py` writes and `lean2vmt` reads. This is what
     carries that back to the module: `f` maps a module state to the model's
     slots, `hinit`/`hstep` say the model admits every module step, and the
     property comes back through `f`. Only one direction is needed, because a

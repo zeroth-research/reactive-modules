@@ -28,7 +28,7 @@ from the same body producer over the same reachable terms, so they are
 syntactically equal.  A cvc5-printed body is the same transition spelled
 differently — `-1 + x` for `x - 1`, an equality for an `ite` — so the NA
 model emits no theorem block here and has its slots related to the module
-semantically instead, which is what `fbk_bridge.py` discharges.
+semantically instead, which is what `fbk/bridge.py` discharges.
 """
 
 from dataclasses import dataclass

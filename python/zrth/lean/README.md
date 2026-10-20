@@ -223,7 +223,8 @@ topologically-sorted dataflow graph.
 | `ir/ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` (with `fbk_bool.py`, cvc5 terms as the `Bool` Lean `lean2vmt` reads) |
+| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py` |
+| `fbk/` | The `--infer fbk-proveit` route's machinery: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`proveit`) |
 | `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
@@ -1219,7 +1220,7 @@ gives the project two lakefile entries:
 | lakefile entry | resolves |
 |---|---|
 | `[[require]] name = "LTL_Certifying", path = <checkout>` | `import LTLCertifying.Safety.Lemmas` and its two siblings. A path require because the route already holds the checkout, and because that checkout pins `cslib` and `smt` to the revisions the generated project already requires — the two package sets resolve as one |
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk_proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk.proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
 
 `import Smt` needs nothing new — verith's own route already requires
 `smt` — and neither does the cvc5 shared library the `smt` tactic dlopens:
@@ -1230,7 +1231,7 @@ Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--safety` is required.
 
-### Encoding 6 — NA, for the FBK toolchain (`translate/fbk.py`)
+### Encoding 6 — NA, for the FBK toolchain (`fbk/na.py`)
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
 specific Lean shape. This encoding is emitted only for that route, and is
@@ -1275,7 +1276,7 @@ describe the module:
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
-The transition itself is not written by `translate/fbk.py`. Each state slot's
+The transition itself is not written by `fbk/na.py`. Each state slot's
 next value is `smt.encode`'s term for that element — the encoder `--pre-check`
 and `--infer ai-cegis` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
@@ -1310,7 +1311,7 @@ with `processHeader`, so they must already exist as oleans, and `lake exe
 lean2vmt` builds only the executable (whose own imports are just `Lean`).
 The model imports `Cslib.Computability.Automata.NA.Basic` and nothing else —
 `M`'s type is all it needs — so that pre-build is one target;
-`NA_IMPORTS` and `fbk_proveit._LAKE_TARGETS` are the same list, pinned by a
+`NA_IMPORTS` and `fbk.proveit._LAKE_TARGETS` are the same list, pinned by a
 test, because drift between them leaves `lean2vmt` unable to elaborate.
 Second, the installed certificate is by default **written but not
 compiled** — not because the project cannot compile it (it can: the lakefile
@@ -1510,7 +1511,7 @@ If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
 `translate/_skeleton.py`, as `Rel`, `ScalarRel` (both in
-`translate/relational.py`) and the NA model (`translate/fbk.py`) do.  It is
+`translate/relational.py`) and the NA model (`fbk/na.py`) do.  It is
 parameterised on the type builder, the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a

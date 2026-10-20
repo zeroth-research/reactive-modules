@@ -45,12 +45,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-from .context import LeanContext
-from .lean_names import (
+from ..context import LeanContext
+from ..lean_names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
-from .project import stream
-from .translate.fbk import (
+from ..project import stream
+from .na import (
     NA_IMPORTS,
     NAUnsupported,
     SlotBodies,
@@ -214,7 +214,7 @@ def check_module(
 
     `--pre` is checked here for the same reason and not a weaker one: which
     preconditions this encoding can carry depends on the module's slots
-    (`fbk.pre_over_slots`), so it is a question only the encoding can answer,
+    (`fbk.na.pre_over_slots`), so it is a question only the encoding can answer,
     and answering it after the project is written answers it too late.
 
     Answering either means encoding into cvc5, so the answers are handed
@@ -227,7 +227,7 @@ def check_module(
     `--pre` are read on its term manager.  A caller with none gets an
     encoding of `module` of its own.
     """
-    from .smt.encoding import ModuleEncoding
+    from ..smt.encoding import ModuleEncoding
 
     if encoding is None:
         encoding = ModuleEncoding(module)
@@ -363,8 +363,8 @@ def _parse(module, src: str, flag: str, encoding=None):
     function's whole reason for taking one.
     """
     # lazy: keeps cvc5 off the critical path of a bare run
-    from .smt.encoding import ModuleEncoding
-    from .smt.predicates import parse_predicate
+    from ..smt.encoding import ModuleEncoding
+    from ..smt.predicates import parse_predicate
 
     if encoding is None:
         encoding = ModuleEncoding(module)
@@ -381,7 +381,7 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
-    ``translate/fbk.py`` binds it -- one slot per *element*, so a wire wider
+    ``fbk/na.py`` binds it -- one slot per *element*, so a wire wider
     than 1x1 is read through the tuple selectors the property already uses
     (`((_ tuple.select 2) s0)`), resolved to the slot that element lives in.
     Both sides get that map from `na.slot_accessors`, which is what keeps
@@ -390,9 +390,9 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     The layout comes from the module's own wires. `encoding` is the run's
     `ModuleEncoding`, which the property is read on.
     """
-    from .context import LeanContext
-    from .translate.fbk_bool import smt_to_lean_bool
-    from .translate.fbk import slot_accessors
+    from ..context import LeanContext
+    from .to_bool import smt_to_lean_bool
+    from .na import slot_accessors
 
     term = _parse(module, property_smt, "--safety", encoding)
     try:
@@ -528,7 +528,7 @@ def run(
     check_toolchain(python)
 
     if encoding is None:
-        from .smt.encoding import ModuleEncoding
+        from ..smt.encoding import ModuleEncoding
 
         encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
@@ -595,7 +595,7 @@ def equivalence_lean(
     """The proof that the model is the module, as the text of its file.
 
     The certificate `proveit.py` installs is about the NA model. This is the
-    file that carries it back to the module -- see `translate/fbk_bridge.py`.
+    file that carries it back to the module -- see `fbk/bridge.py`.
 
     Lake reaches it through the `Certificate` lean_lib's glob, not through
     the root `Certificate.lean`'s import list, and that is not a detail:
@@ -607,7 +607,7 @@ def equivalence_lean(
     `module_safety` takes the model-side statement as a hypothesis rather
     than reading it out of the certificate.
     """
-    from .translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from .bridge import atom_to_lean_fbk_bridge
 
     return atom_to_lean_fbk_bridge(
         ctx,

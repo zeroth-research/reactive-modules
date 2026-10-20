@@ -38,7 +38,7 @@ from zrth.lean.ir.layout import (
 from zrth.lean.context import LeanContext
 from zrth.lean.native import product_type_scalar
 from zrth.lean.translate._shared import scalar_bindings_with_recon
-from zrth.lean.translate.fbk import slot_accessors
+from zrth.lean.fbk.na import slot_accessors
 from zrth.lean.translate.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
@@ -260,7 +260,7 @@ def test_na_model_init_is_the_matrix_read_row_major():
     tuple, `smt.slots.scalar_element`'s selection, and the slot numbering this module
     owns. Transpose any one of them and the constants come back permuted.
     """
-    from zrth.lean.translate.fbk import atom_to_lean_na
+    from zrth.lean.fbk.na import atom_to_lean_na
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_na(ctx, "true", module_name="matrix")
@@ -284,7 +284,7 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
     docstring said "without either consulting the other" — and a
     disagreement makes `bridge_k` an obligation about the wrong element.
     """
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_fbk_bridge(ctx, na_module="NA")

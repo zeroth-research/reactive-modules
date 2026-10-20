@@ -726,7 +726,7 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
     """`owns` is the truth about what a route writes, and `path()` refuses
     anything undeclared -- so a renamed `PROVEIT_DIR` must not leave the row
     declaring a directory `fbk_proveit` no longer uses."""
-    from zrth.lean.fbk_proveit import PROVEIT_DIR
+    from zrth.lean.fbk.proveit import PROVEIT_DIR
 
     owns = route_by_name("fbk-proveit").owns
     assert f"{PROVEIT_DIR}/" in owns

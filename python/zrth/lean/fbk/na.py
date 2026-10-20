@@ -437,7 +437,7 @@ def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
     precondition, and if no `l` satisfies it then the same conjunct makes
     `INIT` empty and the model has no runs to report.
     """
-    from .fbk_bool import smt_to_lean_bool
+    from .to_bool import smt_to_lean_bool
 
     acc = {
         **_input_markers(ctx.extl_next, "e"),
@@ -486,7 +486,7 @@ def _slot_bodies(
     """
     from ..smt.encoding import encoding_of
     from ..smt.slots import slot_terms
-    from .fbk_bool import smt_to_lean_bool
+    from .to_bool import smt_to_lean_bool
 
     # An input reading is marked rather than translated: it has no Lean form
     # in this encoding, and what the caller does about one depends on where
@@ -538,7 +538,7 @@ def atom_to_lean_na(
 
     `property_lean` is a Bool-valued Lean expression over the same
     `(var_i state)` bindings this encoding uses — see
-    ``translate.fbk_bool.smt_to_lean_bool``.
+    ``fbk.to_bool.smt_to_lean_bool``.
 
     `pre_lean` is `--pre` in those same bindings (:func:`pre_over_slots`), or
     `""` for a module that was given none. It becomes one more conjunct of
@@ -604,7 +604,7 @@ def atom_to_lean_na(
     # here in `abbrev`, `Bool`, `==` and `&&`, which is what `lean2vmt`
     # reads, and with no `*_eq` theorem block: a cvc5-printed body is the
     # module's transition spelled differently, not syntactically equal to the
-    # Lean one, so this route relates the two semantically (`fbk_bridge.py`).
+    # Lean one, so this route relates the two semantically (`fbk/bridge.py`).
     syn = RelSyntax(
         body_decl="abbrev",
         rel_decl="abbrev",
