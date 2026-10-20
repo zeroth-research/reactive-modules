@@ -8,7 +8,7 @@ and four backends turn that name into something they can emit:
 | `mat`    | `native.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
 | `scalar` | `native.translate_terms_scalar` | args -> Lean expr (bare)     |
 | `box`    | `circ.translate_terms_circ`     | a `Box` combinator name      |
-| `smt`    | `smt_encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
+| `smt`    | `smt.encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
 
 These were six dicts and an if/elif chain — one per backend, doubled for the
 BV forms — with nothing relating them. A test can see a *dead* key (one no
@@ -36,7 +36,7 @@ row, and a row no theory backs fails it too.
 This module never imports cvc5, on purpose: `native.py` and `circ.py`
 import *it*, and the Lean path has to keep working where cvc5 is absent
 (see `magic/cegis.py`'s guarded import). The SMT emitters reach cvc5 only
-through the `SmtOp` context `smt_encode` hands them — `op.K` is
+through the `SmtOp` context `smt.encode` hands them — `op.K` is
 `cvc5.Kind`.
 """
 
@@ -53,7 +53,7 @@ from .sorts import itype_name
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
 
-    from .smt_encode import SmtOp
+    from .smt.encode import SmtOp
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -132,7 +132,7 @@ class Op:
 # ══════════════════════════════════════════════════════════════════════
 #  SMT emitters
 #
-#  Everything cvc5 arrives through `op` (see `smt_encode.SmtOp`), including
+#  Everything cvc5 arrives through `op` (see `smt.encode.SmtOp`), including
 #  the `Kind` enum as `op.K`.
 # ══════════════════════════════════════════════════════════════════════
 
@@ -426,7 +426,7 @@ OPS: tuple[Op, ...] = (
         LIA_LRA,
         mat=Unsupported(
             "no Lean form; nothing has asked for one. The NA route does not "
-            "need it — it prints the `smt_encode` term through "
+            "need it — it prints the `smt.encode` term through "
             "`smt_to_lean_bool` as `!(a == b)` (tests/test_lean_fbk.py)."
         ),
         scalar=_SEE_MAT,

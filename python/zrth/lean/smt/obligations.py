@@ -290,7 +290,7 @@ def _same(tm, lhs: list, rhs: list):
 class Frame:
     """An inline frame: fresh constants, and the encoded round from them.
 
-    `enc` is the run's `smt.run.ModuleEncoding`; `init_pre` and
+    `enc` is the run's `smt.encoding.ModuleEncoding`; `init_pre` and
     `update_pre` are over the parser's inputs, as it reads them. `succ`,
     `entry` and the preconditions are built on first use, so a statement
     that never reads one never encodes it.

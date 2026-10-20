@@ -22,7 +22,7 @@ def scalar_element(tm, term, shape, i: int, j: int):
     """
     from cvc5 import Kind
 
-    from ..smt_encode import mat_select
+    from .encode import mat_select
 
     if shape.is_scalar:
         return term

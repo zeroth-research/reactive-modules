@@ -76,7 +76,7 @@ if TYPE_CHECKING:
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
 
-    Stated over the run's `smt.run.ModuleEncoding`, the front end the
+    Stated over the run's `smt.encoding.ModuleEncoding`, the front end the
     pre-check and the prompt routes read predicates through: the property
     arrives as SMT-LIB over ``s0..sN-1`` and that is the namespace every
     predicate this package reads or writes is in, so a certificate found
@@ -124,7 +124,7 @@ class SynthContext:
     def build(cls, source, claim: Claim, *, route: str,
               takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
         """The context, or the reason this module is not one `route` reads.
-        `source` is the module, its encoding or a `smt.run.lazy` factory.
+        `source` is the module, its encoding or a `smt.encoding.lazy` factory.
 
         ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
         is the same tuple :func:`readings` is given -- a route that declines
@@ -145,7 +145,7 @@ class SynthContext:
                 f"--infer {route} needs the `cvc5` package, which is not "
                 f"importable. Install with: uv pip install cvc5"
             )
-        from .smt.run import encoding_of
+        from .smt.encoding import encoding_of
 
         if claim.prp is None:
             raise Refused(
@@ -259,7 +259,7 @@ def component_slots(ctx: "SynthContext", i: int) -> list[tuple]:
 
     A scalar component is one slot, `None` -- it *is* the scalar, and there
     is no selector to write. A matrix-shaped one is a slot per element, in
-    the order `smt_encode.wire_sort` laid the tuple out: flat, `m*n`
+    the order `smt.encode.wire_sort` laid the tuple out: flat, `m*n`
     elements of one scalar sort, row by row. Flat is why this is one level
     and not a recursion -- a 2-D component is `(Tuple Int Int ...)`, never a
     tuple of tuples -- and it is the same order `smt_to_lean` renders the

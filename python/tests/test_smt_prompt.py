@@ -12,7 +12,7 @@ from pathlib import Path
 import cvc5
 import pytest
 
-from zrth.lean.smt_module import ModuleSMT
+from zrth.lean.smt.module import ModuleSMT
 from zrth.lean.smt_prompt import (
     CegisPromptEnv,
     _NotPredicate,

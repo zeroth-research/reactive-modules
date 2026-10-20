@@ -225,7 +225,7 @@ def test_fbk_bridge_builds(generate_lean_files, name):
 
     The certificate that route installs is about the *model*; this is the
     file that carries it back. Two independent translators are on the two
-    sides of `bridge_k` -- `smt_encode` + cvc5 against
+    sides of `bridge_k` -- `smt.encode` + cvc5 against
     `translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
     a translation defect in either shows up as an unclosed goal.
     """

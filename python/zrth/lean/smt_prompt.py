@@ -21,8 +21,8 @@ import cvc5
 from cvc5 import Kind
 
 from .sorts import wire_shape
-from .smt_encode import wire_sort
-from .smt_module import ModuleSMT
+from .smt.encode import wire_sort
+from .smt.module import ModuleSMT
 
 
 def _wire_rc(wire) -> tuple[int, int]:

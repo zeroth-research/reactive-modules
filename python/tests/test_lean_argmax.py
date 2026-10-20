@@ -25,7 +25,7 @@ import torch
 
 from zrth import Int, Term, Module, LIA, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.smt_encode import _argmax_flat, MatShape, elem_sort
+from zrth.lean.smt.encode import _argmax_flat, MatShape, elem_sort
 
 
 # (row, expected) — expected is torch's answer, computed below to keep the

@@ -1,7 +1,7 @@
 """Bounded cvc5 queries about a module and its certificate.
 
 `verith` already builds a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`) but, outside the `--infer ai-cegis` loop, never asks
+(`smt.module.ModuleSMT`) but, outside the `--infer ai-cegis` loop, never asks
 the solver anything: cvc5 is used only to parse the SMT-LIB predicates and
 hand them to the Lean printer. That leaves the two questions that matter
 unanswered before a `lake build` that takes tens of seconds --
@@ -33,7 +33,7 @@ from .certificate import Certificate, Claim, LeanAnswer
 from .errors import Refused
 from .smt import obligations as ob
 from .smt.limits import call_ms
-from .smt.run import encoding_of
+from .smt.encoding import encoding_of
 from .smt.script import script
 from .smt.terms import ite_conditions, nodes, state_dependent
 
@@ -91,7 +91,7 @@ _VERDICT_STATUS = {
 class ModuleQueries:
     """A cvc5 view of one module together with its certificate predicates.
 
-    `source` is the module or its `smt.run.ModuleEncoding`; a run gets these
+    `source` is the module or its `smt.encoding.ModuleEncoding`; a run gets these
     from `ModuleEncoding.queries`, which builds one per claim and certificate.
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
@@ -104,7 +104,7 @@ class ModuleQueries:
     def __init__(self, source, claim: Claim, cert: Certificate | None = None):
         enc = encoding_of(source)
         # Weak: `enc.queries` memoises this, and a cycle through the owner of
-        # a `TermManager` is finalised in arbitrary order (`smt_module._LIVE`).
+        # a `TermManager` is finalised in arbitrary order (`smt.module._LIVE`).
         self.enc = weakref.proxy(enc)
         self.tm = enc.tm
         self.msmt = enc.msmt
@@ -406,7 +406,7 @@ def pre_check(smt, claim: Claim, answer: "Certificate | LeanAnswer | None",
               budget: SmtBudget, log=print, artifacts=None) -> list[Verdict]:
     """Run the obligation pre-check and report it in a few lines.
 
-    `smt` is the module, its encoding or a `smt.run.lazy` factory for one.
+    `smt` is the module, its encoding or a `smt.encoding.lazy` factory for one.
     Never raises: a module cvc5 cannot encode, or an answer it cannot read,
     reports one line and generation carries on exactly as it would have.
 
@@ -455,7 +455,7 @@ def predicate_terms(
 ) -> "ModuleQueries":
     """`claim` and `cert` parsed against the module: what the Lean is printed
     from, and what `predicate_facts` and `solver_hints` read. `smt` is the
-    module, its encoding or a `smt.run.lazy` factory for one.
+    module, its encoding or a `smt.encoding.lazy` factory for one.
 
     A predicate that does not parse is refused by its role; anything
     else is the module's, and refused as that.

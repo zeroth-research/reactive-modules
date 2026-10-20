@@ -4,7 +4,7 @@
 comes back is about *that model*. Every other encoding in this package
 carries an equivalence theorem to the functional one and would be worthless
 without it; this route had none, so a mistranslation anywhere in
-`smt_encode`, `smt.slots`, cvc5's rewriter or `smt_to_lean_bool`
+`smt.encode`, `smt.slots`, cvc5's rewriter or `smt_to_lean_bool`
 produced a model that parses, model-checks, and describes a different
 system.
 
@@ -223,7 +223,7 @@ def atom_to_lean_fbk_bridge(
     lines += [
         "-- ── semantic: two independent translators agree ──────────────────",
         "--",
-        "-- The left side came through `smt_encode` and cvc5, the right",
+        "-- The left side came through `smt.encode` and cvc5, the right",
         "-- through `translate_terms_scalar`. `rfl` closes the easy ones and",
         "-- nothing else; the rest is what this file exists for.",
         "",

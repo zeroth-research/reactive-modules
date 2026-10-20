@@ -226,7 +226,7 @@ topologically-sorted dataflow graph.
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
 | `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
-| `smt/` | What the cvc5 routes and the pre-check share: the run's one encoding of the module (`run.ModuleEncoding`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
+| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt_query.py` | `--pre-check` and `--smt-tactics`: `ModuleQueries`, `pre_check`, `solver_hints` |
 | `smt_synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
 | `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
@@ -1268,14 +1268,14 @@ describe the module:
 | state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
 | — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
 | — | a ctrl wire *wider* than 1×1 is fine too, and used to be the largest refusal here: the state is flattened to one VMT variable per **element**, so `R_k` compares two scalars where it once would have compared two tuples |
-| an op `smt_encode` has no term for (`Transpose`, `Uninterpreted`) | the transition is `smt_encode`'s term for each element, printed by `smt_to_lean_bool` — no term, no model |
+| an op `smt.encode` has no term for (`Transpose`, `Uninterpreted`) | the transition is `smt.encode`'s term for each element, printed by `smt_to_lean_bool` — no term, no model |
 | an op the Bool printer cannot render | same boundary from the other side: the printer raises rather than emit something `exprToSMT` would misread. `Linear`, `Argmax`, `Max`/`Min`, `Xor` and `Ne` all pass it — as an affine sum, a nested `ite` chain, `max`/`min`, `!(a == b)` and a negated equality — which is why they are no longer refused |
 | — | `Ne`, `ReLU`, `Max` and `Min` need a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min` |
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
 The transition itself is not written by `translate/fbk.py`. Each state slot's
-next value is `smt_encode`'s term for that element — the encoder `--pre-check`
+next value is `smt.encode`'s term for that element — the encoder `--pre-check`
 and `--infer ai-cegis` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
 answers about the same module are one encoding rather than two readings, and

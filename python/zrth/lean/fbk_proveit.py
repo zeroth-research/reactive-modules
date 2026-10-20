@@ -227,7 +227,7 @@ def check_module(
     `--pre` are read on its term manager.  A caller with none gets an
     encoding of `module` of its own.
     """
-    from .smt.run import ModuleEncoding
+    from .smt.encoding import ModuleEncoding
 
     if encoding is None:
         encoding = ModuleEncoding(module)
@@ -363,7 +363,7 @@ def _parse(module, src: str, flag: str, encoding=None):
     function's whole reason for taking one.
     """
     # lazy: keeps cvc5 off the critical path of a bare run
-    from .smt.run import ModuleEncoding
+    from .smt.encoding import ModuleEncoding
     from .smt_prompt import parse_predicate
 
     if encoding is None:
@@ -528,7 +528,7 @@ def run(
     check_toolchain(python)
 
     if encoding is None:
-        from .smt.run import ModuleEncoding
+        from .smt.encoding import ModuleEncoding
 
         encoding = ModuleEncoding(module)
     ctx = LeanContext(module)

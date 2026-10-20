@@ -2,7 +2,7 @@
 
 The cvc5 bindings segfault at interpreter shutdown when a `TermManager` is
 finalised out of order with the solvers and terms made from it, which is
-what `smt_module.keep_alive` is for. That failure is invisible in process:
+what `smt.module.keep_alive` is for. That failure is invisible in process:
 the run has printed everything and the certificate is on disk, and only the
 exit status says -11. So the routes are run one after another in one child
 process, which then exits normally, and its status is the check.

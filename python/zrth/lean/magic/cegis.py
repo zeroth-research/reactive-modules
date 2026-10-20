@@ -32,7 +32,7 @@ from ..smt.obligations import (
     step_inv,
 )
 from ..smt.limits import bounded_solver, call_ms
-from ..smt.run import encoding_of
+from ..smt.encoding import encoding_of
 from ..smt_prompt import PromptResult, prompt_inv_ranking
 
 
@@ -90,7 +90,7 @@ class TA2MagicCEGIS(TA2Magic):
         # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
         self.budget = budget
         self.log = log
-        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.max_attempts = max_attempts

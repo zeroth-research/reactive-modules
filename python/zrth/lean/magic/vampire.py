@@ -918,7 +918,7 @@ class TA2MagicVampire(TA2Magic):
                 "uv pip install cvc5"
             )
         self.module = module
-        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.exe = vampire

@@ -3,7 +3,7 @@
 Everything below `Mat` turns a list of wires into a flat tuple of scalar
 elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 `ScalarRel` slices, the NA model's `var_k`, the bridge's `toSlots`, and
-cvc5's own tuple in `smt_encode`. Those were seven independent walks over the
+cvc5's own tuple in `smt.encode`. Those were seven independent walks over the
 same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
 all go through `layout.flat_layout`, and this is the test that says so.
@@ -111,7 +111,7 @@ def test_span_needs_the_wire_not_a_position(wires):
 
 
 def test_slot_order_is_the_smt_tuple_order(wires):
-    """Slot `k` of a wire is element `i*n + j` of `smt_encode`'s cvc5 tuple.
+    """Slot `k` of a wire is element `i*n + j` of `smt.encode`'s cvc5 tuple.
 
     `smt_to_lean_bool` resolves the NA model's reads through `slot_accessors`
     while the term it prints selects with `mat_select`, so these two orders
@@ -256,7 +256,7 @@ def _matrix_module() -> Module:
 def test_na_model_init_is_the_matrix_read_row_major():
     """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
 
-    The whole chain in one assertion: the Python tensor, `smt_encode`'s cvc5
+    The whole chain in one assertion: the Python tensor, `smt.encode`'s cvc5
     tuple, `smt.slots.scalar_element`'s selection, and the slot numbering this module
     owns. Transpose any one of them and the constants come back permuted.
     """

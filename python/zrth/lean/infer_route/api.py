@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
     from ..cert import LeanCertificate
     from ..context import LeanContext
-    from ..smt.run import ModuleEncoding
+    from ..smt.encoding import ModuleEncoding
 
 
 # ══════════════════════════════════════════════════════════════════════════

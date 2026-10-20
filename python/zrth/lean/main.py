@@ -123,7 +123,7 @@ from .project import (
     write_encoding,
 )
 from .smt.record import note
-from .smt.run import lazy
+from .smt.encoding import lazy
 from .smt_query import pre_check, predicate_terms, solver_hints
 from .translate import ModuleToLean4
 
@@ -276,7 +276,7 @@ def _render(settings: Settings, smt, claim: "Claim | None",
             cert: Certificate, *, hints: bool, restated: bool = False,
             verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
     """The certificate as codegen takes it. `None` without a claim: a bare
-    run asks cvc5 nothing. `smt` is the run's `smt.run.lazy` encoding.
+    run asks cvc5 nothing. `smt` is the run's `smt.encoding.lazy` encoding.
 
     The predicates are parsed once, and that one parse is printed as Lean,
     read for its shape (`predicate_facts`) and, with `hints` under

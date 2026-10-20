@@ -24,9 +24,9 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
-from .sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
-from .literals import decimal_fraction
-from .ops import smt_emitter
+from ..sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
+from ..literals import decimal_fraction
+from ..ops import smt_emitter
 
 
 def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:

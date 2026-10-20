@@ -198,7 +198,7 @@ def test_a_float_constant_in_scientific_notation_encodes():
     builds the constant from the same exact fraction the Lean literal
     states."""
     import cvc5
-    from zrth.lean.smt_encode import translate_terms
+    from zrth.lean.smt.encode import translate_terms
 
     w = Wire(Real([1, 1]))
     term = Term(LRA.Real(torch.tensor([[1e-07]], dtype=torch.float64)), [w], [])

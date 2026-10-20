@@ -227,4 +227,4 @@ Paths are relative to `python/zrth/lean/`.
   ```
 
   The route no longer reaches it, because a ReLU now comes from
-  `smt_encode` as an `ite`, but any producer of `Max.max` does.
+  `smt.encode` as an `ite`, but any producer of `Max.max` does.

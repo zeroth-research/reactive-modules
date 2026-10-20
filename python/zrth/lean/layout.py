@@ -67,7 +67,7 @@ class FlatLayout:
     this can do about that class of mistake is refuse to hand out the
     per-wire view by position: :meth:`span` takes the wire itself.
 
-    The row-major order is not a free choice. `smt_encode` packs `Mat t m n`
+    The row-major order is not a free choice. `smt.encode` packs `Mat t m n`
     into a cvc5 tuple at index `i*n + j`, and `smt_to_lean_bool` resolves the
     model's slot reads through it, so a column-major walk here would describe
     a transposed module. Only the NA route has a fixture wide enough to

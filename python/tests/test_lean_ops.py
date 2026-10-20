@@ -251,7 +251,7 @@ def _bv_ult_module() -> Module:
 def test_an_op_only_cvc5_has_still_encodes_for_cvc5():
     import cvc5
 
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
 
     msmt = ModuleSMT(tm=cvc5.TermManager(), module=_bv_ult_module())
     state = msmt.update_state(

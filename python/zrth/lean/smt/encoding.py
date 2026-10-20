@@ -20,7 +20,7 @@ class ModuleEncoding:
     The transition is translated on first use over the parser's `s*`, `el*`
     and `e*`, and every other state or input is substituted into it; a
     module with no encoding raises the same error on every use. Retained
-    until exit (`smt_module.keep_alive`), and nothing it owns refers back
+    until exit (`smt.module.keep_alive`), and nothing it owns refers back
     to it: a cycle through a `TermManager`'s owner is finalised in
     arbitrary order.
     """
@@ -28,7 +28,7 @@ class ModuleEncoding:
     def __init__(self, module):
         import cvc5
 
-        from ..smt_module import ModuleSMT, keep_alive
+        from .module import ModuleSMT, keep_alive
         from ..smt_prompt import CegisPromptEnv
 
         self.module = module

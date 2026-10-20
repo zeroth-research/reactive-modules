@@ -50,7 +50,7 @@ statenext` against a tuple — and 11 of the limit matrix's 77 cases were
 refused by it.
 
 The body of each slot is *not* written by this module.  It is
-`smt_encode`'s term for that element — the encoder `--pre-check` and
+`smt.encode`'s term for that element — the encoder `--pre-check` and
 `--infer ai-cegis` already run on — printed by `smt_to_lean_bool`, whose
 fragment is chosen to be what `lean2vmt` reads.  Three things follow:
 
@@ -184,7 +184,7 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # that parses and does not describe the module. The allowlist was what stood
 # between that and a silently wrong model.
 #
-# The transition is now built by `smt_encode` (the encoder `--pre-check` and
+# The transition is now built by `smt.encode` (the encoder `--pre-check` and
 # `--infer ai-cegis` already run on) and printed by `smt_to_lean_bool`, which
 # raises on anything outside the fragment `lean2vmt` reads rather than
 # printing it. Two consequences: `Linear` and the rest come through as the
@@ -260,7 +260,7 @@ def check_na_supported(
     check_na_shape(ctx)
 
     # The one check that cannot be made by inspection: encode the module and
-    # print it. Whatever `smt_encode` or `smt_to_lean_bool` refuses is what
+    # print it. Whatever `smt.encode` or `smt_to_lean_bool` refuses is what
     # this encoding cannot express, and their messages name the op or the
     # SMT kind. Cheap -- the same work the emission does, on modules small
     # enough that `lake` dominates either way.
@@ -478,13 +478,13 @@ def _slot_bodies(
     only prints them. Callers go through :func:`check_na_supported` and
     pass the result along rather than calling this again.
 
-    The transition comes from `smt_encode` -- the encoder `--pre-check` and
+    The transition comes from `smt.encode` -- the encoder `--pre-check` and
     `--infer ai-cegis` already run on, so the model `lean2vmt` reads and the
     obligations cvc5 answers are the same encoding, not two readings of one
     module -- and is printed by `smt_to_lean_bool`, whose fragment is chosen
     to be what `lean2vmt` translates.
     """
-    from ..smt.run import encoding_of
+    from ..smt.encoding import encoding_of
     from ..smt.slots import slot_terms
     from ..smt_to_lean import smt_to_lean_bool
 

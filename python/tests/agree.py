@@ -203,8 +203,8 @@ def _value(term) -> object:
 def disagreements_smt(module, *, seed: int = 0) -> list[str]:
     """Each round of `runs(module)` where the encoded round, evaluated by
     cvc5's rewriter at the same state and inputs, lands somewhere else."""
-    from zrth.lean.smt.run import ModuleEncoding
-    from zrth.lean.smt_encode import tensor_const
+    from zrth.lean.smt.encoding import ModuleEncoding
+    from zrth.lean.smt.encode import tensor_const
 
     rounds = runs(module, seed=seed)
     try:

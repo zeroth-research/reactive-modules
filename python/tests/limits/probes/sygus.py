@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 from cvc5 import Kind
 
-from zrth.lean.smt_module import ModuleSMT
+from zrth.lean.smt.module import ModuleSMT
 from zrth.lean.smt_prompt import CegisPromptEnv, parse_predicate
 
 CASES = [

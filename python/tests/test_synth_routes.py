@@ -516,7 +516,7 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     arrives in the message verbatim and is framed as established rather than
     as feedback about an attempt.
     """
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
     from zrth.lean.smt_prompt import CegisPromptEnv, prompt_inv_ranking
     import cvc5
 
@@ -539,7 +539,7 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
 
 def test_the_cegis_prompt_fences_the_source_as_lean():
     """`ai-cegis` is handed the project's Lean encoding, as `ai` is."""
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
     from zrth.lean.smt_prompt import CegisPromptEnv, prompt_inv_ranking
     import cvc5
 
@@ -561,7 +561,7 @@ def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
     cvc5 parses an empty source to a null term, and `getSort()` on one raises
     a `RuntimeError` from inside the binding -- which `TA2MagicCEGIS`'s loop does
     not catch, so the whole route died on one bad reply."""
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
     from zrth.lean.smt_prompt import CegisPromptEnv, PromptParseError, prompt_inv_ranking
     import cvc5
 

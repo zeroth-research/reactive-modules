@@ -578,7 +578,7 @@ def test_an_op_with_no_scalar_lean_form_is_still_encoded():
     """`Xor` has no `_SCALAR_OP` entry and used to be refused for it.
 
     The transition no longer goes through the scalar *Lean* printer, so
-    "has a scalar Lean form" stopped being the question: `smt_encode` gives
+    "has a scalar Lean form" stopped being the question: `smt.encode` gives
     the term and `smt_to_lean_bool` prints `Xor` as `!(a == b)`, which is
     inside the fragment lean2vmt reads.
     """
@@ -588,7 +588,7 @@ def test_an_op_with_no_scalar_lean_form_is_still_encoded():
 
 
 def test_an_op_the_encoder_has_no_term_for_aborts():
-    """The boundary is now `smt_encode` and the Bool printer, and it is the
+    """The boundary is now `smt.encode` and the Bool printer, and it is the
     *reason* they give that reaches the user -- `Transpose` has no SMT
     term at all, so no VMT model can be built from it."""
     v = Var(Int([1, 3]))
@@ -641,7 +641,7 @@ def test_an_element_of_a_wide_wire_reads_its_own_slot():
 
 # ── the emitted transition means what the module means ──────────────────────
 #
-# The slot bodies come from `smt_encode` and are printed by
+# The slot bodies come from `smt.encode` and are printed by
 # `smt_to_lean_bool`, so the arithmetic is not re-implemented here -- but the
 # *flattening* is: which slot an element lands in, and which element of a
 # wire's next value a slot's `effect_k` computes. Getting that wrong produces
@@ -1187,8 +1187,8 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     on the run's one `ModuleEncoding`; none of them builds a term manager of
     its own."""
     from zrth.lean.fbk_proveit import check_module
-    from zrth.lean.smt.run import ModuleEncoding
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.encoding import ModuleEncoding
+    from zrth.lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

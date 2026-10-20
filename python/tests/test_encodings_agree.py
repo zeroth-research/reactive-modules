@@ -1,6 +1,6 @@
 """The module's encodings agree with what the module does.
 
-`smt_encode` turns a module into cvc5 terms, which every SMT route, the
+`smt.encode` turns a module into cvc5 terms, which every SMT route, the
 pre-check and the fbk bridge reason about; `native.py` turns it into Lean,
 which every certificate is a theorem about. Nothing relates the two except
 that they were written to mean the same thing. The equivalence theorems
@@ -47,7 +47,7 @@ def test_a_wrong_emitter_is_caught(monkeypatch):
     proves nothing about the encodings that pass it."""
     import dataclasses
 
-    from zrth.lean import smt_encode
+    from zrth.lean.smt import encode as smt_encode
 
     real = smt_encode.smt_emitter
 

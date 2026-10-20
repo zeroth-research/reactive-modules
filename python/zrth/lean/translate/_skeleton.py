@@ -13,7 +13,7 @@ They vary on three axes, and this module is parameterised on exactly those:
    or the NA model's per-slot element type.  :attr:`RelSyntax.slot_ty` is the
    half of it a slot needs.
 2. **body producer** — `translate_terms_lean`, `translate_terms_scalar`, or
-   `smt_encode` + `smt_to_lean_bool`.  This is not a parameter: each emitter
+   `smt.encode` + `smt_to_lean_bool`.  This is not a parameter: each emitter
    hands :func:`emit_rel_block` the body text it produced.  That is also what
    lets the three disagree about what a *slot is* — one per wire for
    `Rel`/`ScalarRel`, one per element for the NA model — since the skeleton

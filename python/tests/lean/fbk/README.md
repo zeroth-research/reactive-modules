@@ -181,7 +181,7 @@ deliberately not inductive — the case matrix's own negative control,
 refuted here with a counterexample in 5 s.
 
 Of the 18 refusals, 11 are `Real` state, 4 external input wires, 2 an op
-`smt_encode` has no term for (`Transpose`, `Uninterpreted`), and 1 a
+`smt.encode` has no term for (`Transpose`, `Uninterpreted`), and 1 a
 property outside the Bool fragment (`mod`).
 
 The two `m_vec32` cases are `lean-fail`: they encode, and ic3ia proves

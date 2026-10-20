@@ -255,7 +255,7 @@ class TA2MagicLinear(TA2Magic):
                 "importable. Install with: uv pip install cvc5"
             )
         self.module = module
-        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.rows = max(1, int(rows))

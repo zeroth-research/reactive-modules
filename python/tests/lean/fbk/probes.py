@@ -121,7 +121,7 @@ HAND_WRITTEN = [
     #    as long as the model spelled it `Max.max 0 (x - 1)`: the VMT was
     #    right and ic3ia proved it, and `smt` then died on the `Max` left in
     #    the model -- "incorrect number of universe levels Max". The NA
-    #    encoding now takes its transition from `smt_encode`, where a ReLU
+    #    encoding now takes its transition from `smt.encode`, where a ReLU
     #    is an `ite`, so no `Max` reaches Lean and the certificate checks.
     #    The bug is still there (TODO.md keeps the reproducer);
     #    this route no longer walks into it.
@@ -193,7 +193,7 @@ PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN + HARDER
 # transition itself. A wire wider than 1x1 now becomes one state slot per
 # element instead of being refused (`m_mixed`, `m_relu_*`, `m_vec32`), and
 # an op with no scalar *Lean* form is no longer a problem because no scalar
-# Lean is emitted: `smt_encode` gives the term and `smt_to_lean_bool` prints
+# Lean is emitted: `smt.encode` gives the term and `smt_to_lean_bool` prints
 # it, so `Linear` arrives as its affine sum and `Argmax` as nested `ite`s
 # (`m_argmax`, `m_max`, `m_min`). What is left is what neither component can
 # express at all.
@@ -203,7 +203,7 @@ REJECTED = {
     "m_lra_lin":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_lra_two":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_relu_lra":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
-    "m_transpose":  ("verith",   "smt_encode has no term for Transpose"),
-    "m_uninterp":   ("verith",   "smt_encode has no term for Uninterpreted"),
+    "m_transpose":  ("verith",   "smt.encode has no term for Transpose"),
+    "m_uninterp":   ("verith",   "smt.encode has no term for Uninterpreted"),
     "m_relu_input": ("lean2vmt", "models only state/statenext, no inputs"),
 }

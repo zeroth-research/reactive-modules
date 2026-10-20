@@ -38,8 +38,8 @@ def _internal(module, spec) -> str:
 
     from zrth import X
 
-    from ..smt_encode import translate_terms, wire_sort
-    from ..smt_module import keep_alive
+    from ..smt.encode import translate_terms, wire_sort
+    from ..smt.module import keep_alive
 
     tm = cvc5.TermManager()
     keep_alive(tm)

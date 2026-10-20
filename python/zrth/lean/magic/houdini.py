@@ -1079,7 +1079,7 @@ class TA2MagicHoudini(TA2Magic):
             )
         self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
-        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.timeout = float(timeout)

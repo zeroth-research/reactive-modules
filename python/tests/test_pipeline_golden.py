@@ -263,7 +263,7 @@ RUNS = [
 ]
 
 # `ModuleSMT`s built per run. The pre-check, both renderings and a route on
-# `InferInput.smt` share the run's `smt.run.lazy` encoding.
+# `InferInput.smt` share the run's `smt.encoding.lazy` encoding.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1, "smt_linear": 1, "houdini": 1, "nuterm": 1,
@@ -380,7 +380,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

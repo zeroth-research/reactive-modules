@@ -148,7 +148,7 @@ class TA2MagicSygus(TA2Magic):
                 f"{grammar!r} is not one"
             )
         self.module = module
-        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.grammar = grammar

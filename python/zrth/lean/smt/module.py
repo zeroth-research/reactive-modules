@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import cvc5
 
 from zrth import Wire, Var, Module, X
-from .smt_encode import translate_terms, wire_sort
+from .encode import translate_terms, wire_sort
 
 
 # Everything cvc5 mints, kept alive for the process's lifetime: the bindings
