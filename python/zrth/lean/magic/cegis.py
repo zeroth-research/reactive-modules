@@ -33,7 +33,7 @@ from ..smt.obligations import (
 )
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.encoding import encoding_of
-from ..smt_prompt import PromptResult, prompt_inv_ranking
+from .cegis_prompt import PromptResult, prompt_inv_ranking
 
 
 @dataclass

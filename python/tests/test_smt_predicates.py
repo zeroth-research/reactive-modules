@@ -13,8 +13,8 @@ import cvc5
 import pytest
 
 from zrth.lean.smt.module import ModuleSMT
-from zrth.lean.smt_prompt import (
-    CegisPromptEnv,
+from zrth.lean.smt.predicates import (
+    PredicateParser,
     _NotPredicate,
     _pyeval,
     _pyeval_namespace,
@@ -24,12 +24,12 @@ from zrth.lean.smt_prompt import (
 MODS = Path(__file__).parent / "limits" / "mods"
 
 
-def _env(name: str) -> CegisPromptEnv:
+def _env(name: str) -> PredicateParser:
     """A parser context for one `tests/limits` fixture module."""
     spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return CegisPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
+    return PredicateParser(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
 
 
 @pytest.mark.parametrize(

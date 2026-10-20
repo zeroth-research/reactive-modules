@@ -353,7 +353,7 @@ def unpatched(cert: str, *counts: int) -> "list[str]":
 def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
-    Read through `encoding`'s `CegisPromptEnv` (an encoding of `module` of
+    Read through `encoding`'s `PredicateParser` (an encoding of `module` of
     the caller's own when it has none): the symbols are the module's, so the
     two flags that come through here -- `--safety` and `--pre` -- read `s0`,
     `e0`, `el0` as the same things the rest of the package does.
@@ -364,7 +364,7 @@ def _parse(module, src: str, flag: str, encoding=None):
     """
     # lazy: keeps cvc5 off the critical path of a bare run
     from .smt.encoding import ModuleEncoding
-    from .smt_prompt import parse_predicate
+    from .smt.predicates import parse_predicate
 
     if encoding is None:
         encoding = ModuleEncoding(module)

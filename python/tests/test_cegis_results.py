@@ -16,7 +16,10 @@ from zrth.analyzer import convert_method
 from zrth.lean.magic import cegis
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.magic.cegis import TA2MagicCEGIS
-from zrth.lean.smt_prompt import CEGIS_GENERATE_SYSTEM, CEGIS_SAFETY_SYSTEM
+from zrth.lean.magic.cegis_prompt import (
+    CEGIS_GENERATE_SYSTEM,
+    CEGIS_SAFETY_SYSTEM,
+)
 
 
 class _Result:

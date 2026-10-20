@@ -2,7 +2,7 @@
 
 Every predicate here is SMT-LIB source over the state `s0..sN-1` and the
 inputs `e0..` (awaited) / `el0..` (latched) -- the text
-`smt_prompt.parse_predicate` reads. The Python predicate DSL is accepted at
+`smt.predicates.parse_predicate` reads. The Python predicate DSL is accepted at
 the CLI and library edge only; Lean is produced from these in one place,
 `cert.render_certificate`.
 

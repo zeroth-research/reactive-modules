@@ -25,7 +25,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth.lean.smt.module import ModuleSMT
-from zrth.lean.smt_prompt import CegisPromptEnv, parse_predicate
+from zrth.lean.smt.predicates import PredicateParser, parse_predicate
 
 CASES = [
     ("m_countdown", "(= s0 0)", "(and (>= s0 0) (<= s0 100))"),
@@ -39,7 +39,7 @@ def synth_rank(modname: str, prp_src: str, inv_src: str) -> str:
     module = importlib.import_module(f"mods.{modname}").module()
     tm = cvc5.TermManager()
     msmt = ModuleSMT(tm=tm, module=module)
-    env = CegisPromptEnv(msmt)
+    env = PredicateParser(msmt)
     prp = parse_predicate(env, prp_src)
     inv = parse_predicate(env, inv_src)
     sv = env.state_vars

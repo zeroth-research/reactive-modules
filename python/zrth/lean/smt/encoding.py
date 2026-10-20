@@ -29,12 +29,12 @@ class ModuleEncoding:
         import cvc5
 
         from .module import ModuleSMT, keep_alive
-        from ..smt_prompt import CegisPromptEnv
+        from .predicates import PredicateParser
 
         self.module = module
         self.tm = cvc5.TermManager()
         self.msmt = ModuleSMT(tm=self.tm, module=module)
-        self.env = CegisPromptEnv(self.msmt)
+        self.env = PredicateParser(self.msmt)
         self._parsed: dict = {}
         self._blocks: dict = {}
         self._queries: dict = {}
@@ -73,7 +73,7 @@ class ModuleEncoding:
             return None
         hit = self._parsed.get(src)
         if hit is None:
-            from ..smt_prompt import parse_predicate
+            from .predicates import parse_predicate
 
             try:
                 hit = parse_predicate(self.env, src)
