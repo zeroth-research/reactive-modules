@@ -1,142 +1,170 @@
 """Stochastic Petri nets as reactive modules, without writing the blocks.
 
-A transition and a place are modules; you compose them like any other modules. The arcs
-are variables shared between them: a transition fires its `event`, which the places it
-touches take as an input or an output; a transition with input places reads their `count`s
-and fires only when all hold a token, so a join is atomic:
+A transition and a place are modules; you compose them like any other modules. An arc is
+the variables between a transition and a place: the event the transition toggles when it
+fires, and for an arc from a place to a transition the Bool the place keeps equal to "there
+are tokens here for it". A production arc goes from a transition into a place (the place's
+input, the transition's output); a consumption arc goes from a place to the transition that
+takes the token (the place's output, the transition's input):
 
-    from zrth import Clock, Var, Module as compose
-    from zrth.petri import Place, Transition
+    from zrth import Module as compose
+    from zrth.petri import Arc, Place, Transition
     from zrth.simulate import simulate
 
-    t = Var(Clock())                                  # the time reference the clocks run against
-    birth, death = Transition(rate=2.0, t=t), Transition(rate=1.0, t=t)
-    queue = Place(initial=0, inputs=[birth.event], outputs=[death.event])
+    bth, dth = Arc("production"), Arc("consumption")
+    birth, death = Transition(rate=2.0, outputs=[bth]), Transition(rate=1.0, inputs=[dth])
+    queue = Place(initial=0, inputs=[bth], outputs=[dth])
     net = compose(birth, death, queue)
 
-    trace = simulate(net, t=t, horizon=100.0, seed=1)
+    trace = simulate(net, horizon=100.0, seed=1)
     trace.series(queue.count)
 
-A variable is created by the module that owns it unless passed in (`event=`, `count=`),
-which is how a transition and a place that each need the other's variable are written:
-declare the shared variables first, then the modules. A transition's clock is its own
-business: it is private, reachable as `transition.clock` for plotting a trace.
-
-    part, machine, ev = Var(Nat()), Var(Nat()), Var(Event())
-    work = Transition(rate=1.0, t=t, event=ev, inputs=[part, machine])
-    parts = Place(initial=3, count=part, outputs=[ev])
-    machines = Place(initial=1, count=machine, outputs=[ev])
-
 A transition owns a clock, armed with an exponential delay at its rate and run down against
-the time reference while it is non-negative; whenever it expires the clock is re-armed, and
-the transition fires if every input place holds a token (an expiry on an empty place is a
-lost attempt; for exponential rates this is the same process as a clock that waits). A place
-owns a token count and applies the firings: one token in per firing input, one out per
-firing output, never below zero. Two transitions firing in one round on a place with one
-token consume in declaration order, the second firing dropped there.
+the time reference `TIME` (`t=` for another) while it is non-negative; whenever it expires
+the clock is re-armed, and the transition fires if every input arc is enabled (an expiry
+otherwise is a lost attempt; for exponential rates this is the same process as a clock that
+waits). The clock is private, reachable as `transition.clock` to plot a trace. A place owns
+its token count: one token in per firing input, one out per firing output, never below
+zero, and it keeps each output arc's `enabled` equal to the count being non-zero, in the
+same round the count changes. Two transitions firing in one round on a place with one token
+consume in the order of `outputs`, the second firing dropped there.
 
-Only plain stochastic nets for now: every arc moves one token; read and inhibitor arcs,
-weights and capacities wait for a comparison on token counts in the theory.
+Enabling and inhibitor arcs, and a multiplicity other than one, wait for a comparison on
+token counts in the theory; a rate given by a variable waits for the theory too.
 """
 
-import inspect
-
 from .zrth import SPN, Var
-from .sort import Clock, Event, Nat
+from .sort import Bool, Clock, Event, Nat
 from .sugar import Module, d, exp, fired, ite
 
+TIME = Var(Clock())
+"""The time reference every clock runs against unless told otherwise: a net's one external."""
 
-def _signature(names):
-    kind = inspect.Parameter.POSITIONAL_OR_KEYWORD
-    return inspect.Signature([inspect.Parameter(n, kind) for n in names])
-
-
-def _var(v, sort, what):
-    if v is None:
-        return Var(sort)
-    if not isinstance(v, Var) or v.dtype != sort:
-        raise TypeError(f"{what} is a Var({sort}), got {v!r}")
-    return v
+KINDS = ("production", "consumption", "enabling", "inhibitor")
 
 
-def _vars(vs, sort, what):
-    vs = tuple(_var(v, sort, what) for v in vs)
-    if len(set(vs)) != len(vs):
-        raise ValueError(f"a variable appears twice among the {what}")
-    return vs
+class Arc:
+    """An arc of the net. `fired` is the event its transition toggles when it fires; on an
+    arc from a place to a transition `enabled` is the Bool the place writes."""
+
+    def __init__(self, kind, multiplicity=1):
+        if kind not in KINDS:
+            raise TypeError(f"an arc's kind is one of {KINDS}, got {kind!r}")
+        if kind in ("enabling", "inhibitor"):
+            raise NotImplementedError(f"{kind} arcs wait for the comparison on token counts")
+        if multiplicity != 1:
+            raise NotImplementedError("a multiplicity waits for the comparison on token counts")
+        self.kind, self.multiplicity = kind, multiplicity
+        self.fired = Var(Event())
+        self.enabled = None if kind == "production" else Var(Bool([1, 1]))
+
+    @property
+    def to_place(self) -> bool:
+        return self.kind == "production"
+
+    def __repr__(self):
+        return f"Arc({self.kind!r}, #{self.fired.id})"
+
+
+def _arcs(arcs, to_place, what):
+    arcs = tuple(arcs)
+    for a in arcs:
+        if not isinstance(a, Arc):
+            raise TypeError(f"{what} are arcs, got {a!r}")
+        if a.to_place != to_place:
+            raise TypeError(f"{what} cannot be a {a.kind} arc")
+    if len(set(arcs)) != len(arcs):
+        raise ValueError(f"an arc appears twice among the {what}")
+    return arcs
+
+
+def _build(cls, blocks, **config):
+    """The module of `blocks` (`init`/`next`/`flow`), as an instance of a subclass of `cls`."""
+    return Module.__new__(type(cls.__name__, (cls,), blocks), theory=SPN, **config)
 
 
 class Transition(Module):
-    """A stochastic transition. `event` is its variable, `clock` its private one, `t` the
-    time reference, `inputs` the counts of the places it takes a token from."""
+    """A stochastic transition: `inputs` are the arcs it takes tokens through, `outputs` the
+    arcs it produces through; it fires `arc.fired` on every one of them."""
 
-    def __new__(cls, rate, *, t, inputs=(), event=None, name=None):
+    def __new__(cls, rate, *, t=TIME, inputs=(), outputs=(), name=None):
+        if isinstance(rate, Var):
+            raise NotImplementedError("a rate given by a variable waits for the theory")
         if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
             raise TypeError(f"a transition's rate is a positive number, got {rate!r}")
+        if not isinstance(t, Var) or t.dtype != Clock():
+            raise TypeError(f"the time reference is a Var(Clock()), got {t!r}")
+        inputs = _arcs(inputs, False, "a transition's inputs")
+        outputs = _arcs(outputs, True, "a transition's outputs")
+        if not inputs and not outputs:
+            raise TypeError("a transition needs at least one arc")
         rate = float(rate)
-        t = _var(t, Clock(), "the time reference")
-        inputs = _vars(inputs, Nat(), "inputs")
-        clock, event = Var(Clock()), _var(event, Event(), "event")
+        clock = Var(Clock())
+        events = [a.fired for a in inputs + outputs]
+        k = len(events)
 
-        def init(self, t, *counts):
-            return exp(rate), False
+        # the variables bind positionally: clk, *events, t, *enabled
+        def init(self, t, *enabled):
+            return exp(rate), *[False] * k
 
-        def next(self, clk, ev, t, *counts):
+        def next(self, clk, *rest):
+            events, enabled = rest[:k], rest[k + 1 :]
             expired = clk == 0
             fires = expired
-            for n in counts:
-                fires = fires & (n != 0)
-            return ite(expired, exp(rate), clk), ite(fires, ~ev, ev)
+            for e in enabled:
+                fires = fires & e
+            return ite(expired, exp(rate), clk), *[ite(fires, ~ev, ev) for ev in events]
 
-        def flow(self, clk, ev, t, *counts):
-            return ite(clk >= 0, -1 * d(t), None), 0
+        def flow(self, clk, *rest):
+            return ite(clk >= 0, -1 * d(rest[k]), None), *[0] * k
 
-        # sugar binds the variables positionally and checks the arity, so the methods
-        # declare one parameter per input place
-        names = [f"n{i}" for i in range(len(inputs))]
-        init.__signature__ = _signature(["self", "t", *names])
-        next.__signature__ = _signature(["self", "clk", "ev", "t", *names])
-        flow.__signature__ = _signature(["self", "clk", "ev", "t", *names])
-        built = type(cls.__name__, (cls,), {"init": init, "next": next, "flow": flow})
-        self = Module.__new__(
-            built, ctrl=(clock, event), extl=(t, *inputs), hide={clock}, theory=SPN
+        self = _build(
+            cls,
+            {"init": init, "next": next, "flow": flow},
+            ctrl=(clock, *events),
+            extl=(t, *[a.enabled for a in inputs]),
+            hide={clock},
         )
-        self.rate, self.t, self.name, self.inputs = rate, t, name, inputs
-        self.clock, self.event = clock, event
+        self.rate, self.t, self.name = rate, t, name
+        self.inputs, self.outputs, self.clock = inputs, outputs, clock
         return self
 
     def __repr__(self):
-        return f"Transition({self.name or self.event.id}, rate={self.rate})"
+        return f"Transition({self.name or self.clock.id}, rate={self.rate})"
 
 
 class Place(Module):
-    """A place. `count` is its variable; `inputs` and `outputs` are the events of the
-    transitions that put a token in and take one out."""
+    """A place: `count` is its token count, `inputs` the arcs tokens come in through,
+    `outputs` the arcs they leave through, whose `enabled` it writes."""
 
-    def __new__(cls, initial=0, *, inputs=(), outputs=(), count=None, name=None):
+    def __new__(cls, initial=0, *, inputs=(), outputs=(), name=None):
         if isinstance(initial, bool) or not isinstance(initial, int) or initial < 0:
             raise TypeError(f"a place holds a non-negative number of tokens, got {initial!r}")
-        inputs, outputs = _vars(inputs, Event(), "inputs"), _vars(outputs, Event(), "outputs")
+        inputs = _arcs(inputs, True, "a place's inputs")
+        outputs = _arcs(outputs, False, "a place's outputs")
         if not inputs and not outputs:
             raise TypeError("a place needs at least one input or output")
-        count = _var(count, Nat(), "count")
+        count = Var(Nat())
+        k = len(outputs)
 
+        # the variables bind positionally: n, *enabled, *events (inputs' then outputs')
         def init(self, *events):
-            return initial
+            return initial, *[initial != 0] * k
 
-        def next(self, n, *events):
-            acc = n
+        def next(self, n, *rest):
+            events = rest[k:]
             for ev in events[: len(inputs)]:
-                acc = ite(fired(ev), acc + 1, acc)
+                n = ite(fired(ev), n + 1, n)
             for ev in events[len(inputs) :]:
-                acc = ite(fired(ev) & (acc != 0), acc - 1, acc)
-            return acc
+                n = ite(fired(ev) & (n != 0), n - 1, n)
+            return n, *[n != 0] * k
 
-        names = [f"e{i}" for i in range(len(inputs) + len(outputs))]
-        init.__signature__ = _signature(["self", *names])
-        next.__signature__ = _signature(["self", "n", *names])
-        built = type(cls.__name__, (cls,), {"init": init, "next": next})
-        self = Module.__new__(built, ctrl=(count,), extl=inputs + outputs, theory=SPN)
+        self = _build(
+            cls,
+            {"init": init, "next": next},
+            ctrl=(count, *[a.enabled for a in outputs]),
+            extl=tuple(a.fired for a in inputs + outputs),
+        )
         self.initial, self.name, self.count = initial, name, count
         self.inputs, self.outputs = inputs, outputs
         return self

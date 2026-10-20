@@ -1,83 +1,127 @@
-"""Stochastic Petri nets through `zrth.petri`: transitions and places are modules composed
-like any other, the birth-death net equals the hand-written example, and places net their
-arcs."""
+"""Stochastic Petri nets through `zrth.petri`: arcs carry the firing and the enabling,
+transitions and places are modules composed like any other, the birth-death net equals the
+hand-written example, and places net their arcs."""
 
 import pytest
 
 from zrth import SPN, Clock, Event, Nat, Var
 from zrth import Module as compose
-from zrth.petri import Place, Transition
+from zrth.petri import TIME, Arc, Place, Transition
 from zrth.simulate import simulate
 from zrth.sugar import Module, d, ite
 
 
-def birth_death(lam=2.0, mu=1.0):
-    t = Var(Clock())
-    birth, death = Transition(rate=lam, t=t, name="b"), Transition(rate=mu, t=t, name="d")
-    queue = Place(initial=0, inputs=[birth.event], outputs=[death.event], name="n")
-    net = compose(birth, death, queue)
-    return net, t, queue, birth, death
+def birth_death(lam=2.0, mu=1.0, t=TIME):
+    bth, dth = Arc("production"), Arc("consumption")
+    birth = Transition(rate=lam, t=t, outputs=[bth], name="b")
+    death = Transition(rate=mu, t=t, inputs=[dth], name="d")
+    queue = Place(initial=0, inputs=[bth], outputs=[dth], name="n")
+    return compose(birth, death, queue), queue, birth, death, bth, dth
 
 
 def _ops(block):
     return sorted(type(t.itype).__name__.removeprefix("SPN_") for t in block)
 
 
+def _fired(trace, i, arc):
+    return trace.states[i][arc.fired] != trace.before[i][arc.fired]
+
+
 def test_birth_death_is_the_example_net():
-    """The same net as `examples/birth_death.py`: the transitions op for op, the place by
-    its behaviour (it folds its arcs; the example spells the two cases out)."""
+    """The example's net, with the enabling of the death as an explicit Bool: the birth
+    transition op for op, and the same seeded run."""
     from zrth.examples import birth_death as bd
 
-    net, t, queue, birth, death = birth_death()
-    for ours, theirs in zip(list(net.atoms)[:2], list(bd.system.atoms)[:2]):
-        for block in ("init", "update", "delay"):
-            assert _ops(getattr(ours, block)) == _ops(getattr(theirs, block))
-    assert net.open() and set(net.extl) == {t}
+    net, queue, birth, death, bth, dth = birth_death()
+    for block in ("init", "update", "delay"):
+        assert _ops(getattr(birth.atoms[0], block)) == _ops(getattr(bd.birth.atoms[0], block))
+    assert net.open() and set(net.extl) == {TIME}
     assert set(net.prvt) == {birth.clock, death.clock}
-    assert set(net.intf) == {birth.event, death.event, queue.count}
+    assert set(net.intf) == {bth.fired, dth.fired, dth.enabled, queue.count}
+
+    ours = simulate(net, horizon=50.0, seed=3)
+    theirs = simulate(bd.system, t=bd.t, horizon=50.0, seed=3)
+    assert ours.times == theirs.times and ours.series(queue.count) == theirs.series(bd.n)
+
+
+def test_arcs_carry_the_firing_and_the_enabling():
+    prod, cons = Arc("production"), Arc("consumption")
+    assert prod.to_place and prod.enabled is None and prod.fired.dtype == Event()
+    assert not cons.to_place and cons.enabled is not None and cons.multiplicity == 1
+    with pytest.raises(TypeError, match="kind"):
+        Arc("teleport")
+    for kind in ("enabling", "inhibitor"):
+        with pytest.raises(NotImplementedError, match="token counts"):
+            Arc(kind)
+    with pytest.raises(NotImplementedError, match="multiplicity"):
+        Arc("consumption", multiplicity=2)
 
 
 def test_a_transition_and_a_place_are_modules():
     t = Var(Clock())
-    tr = Transition(rate=1.5, t=t)
+    a = Arc("production")
+    tr = Transition(rate=1.5, t=t, outputs=[a])
     assert isinstance(tr, Transition) and tr.rate == 1.5 and tr.t is t
-    assert set(tr.ctrl) == {tr.clock, tr.event} and set(tr.extl) == {t}
-    assert list(tr.prvt) == [tr.clock] and list(tr.intf) == [tr.event]
-    pl = Place(initial=3, inputs=[tr.event])
+    assert set(tr.ctrl) == {tr.clock, a.fired} and set(tr.extl) == {t}
+    assert list(tr.prvt) == [tr.clock] and list(tr.intf) == [a.fired]
+    pl = Place(initial=3, inputs=[a])
     assert isinstance(pl, Place) and pl.initial == 3 and set(pl.ctrl) == {pl.count}
-    assert set(pl.extl) == {tr.event} and pl.inputs == (tr.event,) and pl.outputs == ()
-    assert "Transition(" in repr(tr) and "Place(" in repr(pl)
+    assert set(pl.extl) == {a.fired} and pl.inputs == (a,) and pl.outputs == ()
+    assert "Transition(" in repr(tr) and "Place(" in repr(pl) and "Arc(" in repr(a)
 
 
-def test_a_seeded_run_matches_the_example():
-    from zrth.examples import birth_death as bd
+def test_the_time_reference_defaults_to_TIME():
+    net, queue, birth, *_ = birth_death()
+    assert birth.t is TIME and list(net.extl) == [TIME]
+    other = Var(Clock())
+    net2, *_ = birth_death(t=other)
+    assert list(net2.extl) == [other]
+    assert simulate(net2, horizon=5.0, seed=1).times == simulate(net, horizon=5.0, seed=1).times
 
-    net, t, queue, *_ = birth_death()
-    ours = simulate(net, t=t, horizon=50.0, seed=3)
-    theirs = simulate(bd.system, t=bd.t, horizon=50.0, seed=3)
-    assert ours.times == theirs.times and ours.series(queue.count) == theirs.series(bd.n)
-    assert ours.times[-1] == 50.0 and ours.series(queue.count)[-1] > 0
+
+def test_enabled_follows_the_count_in_the_same_round():
+    net, queue, birth, death, bth, dth = birth_death()
+    trace = simulate(net, horizon=30.0, seed=4)
+    for s in trace.states:
+        assert s[dth.enabled] == (s[queue.count] != 0)
+    deaths = [i for i in range(1, len(trace)) if _fired(trace, i, dth)]
+    assert deaths and all(trace.before[i][dth.enabled] for i in deaths)
 
 
 def test_a_place_nets_several_arcs():
     # two producers into one place, one consumer out of it
-    t = Var(Clock())
-    a, b, c = (Transition(rate=1.0, t=t) for _ in range(3))
-    p = Place(inputs=[a.event, b.event], outputs=[c.event])
+    ins, out = (Arc("production"), Arc("production")), Arc("consumption")
+    a, b = (Transition(rate=1.0, outputs=[arc]) for arc in ins)
+    c = Transition(rate=1.0, inputs=[out])
+    p = Place(inputs=ins, outputs=[out])
     net = compose(a, b, c, p)
     assert set(net.prvt) == {a.clock, b.clock, c.clock}
-    trace = simulate(net, t=t, horizon=200.0, seed=5)
+    trace = simulate(net, horizon=200.0, seed=5)
     n = trace.series(p.count)
     assert all(v >= 0 for v in n)
     for i in range(1, len(trace)):
-        fired = lambda tr: trace.states[i][tr.event] != trace.before[i][tr.event]
-        expected = n[i - 1] + fired(a) + fired(b)
-        expected -= 1 if fired(c) and expected > 0 else 0
+        expected = n[i - 1] + _fired(trace, i, ins[0]) + _fired(trace, i, ins[1])
+        expected -= 1 if _fired(trace, i, out) and expected > 0 else 0
         assert n[i] == expected
 
 
+def test_a_join_fires_only_when_every_input_is_enabled():
+    part, machine, done = Arc("consumption"), Arc("consumption"), Arc("production")
+    work = Transition(rate=1.0, inputs=[part, machine], outputs=[done])
+    assert set(work.extl) == {TIME, part.enabled, machine.enabled}
+    parts = Place(initial=3, outputs=[part])
+    machines = Place(initial=1, outputs=[machine])
+    finished = Place(inputs=[done])
+    trace = simulate(compose(work, parts, machines, finished), horizon=50.0, seed=2)
+    # the machine is consumed by the first firing, then every expiry is a lost attempt
+    assert trace.series(finished.count)[-1] == 1
+    assert trace.series(parts.count)[-1] == 2 and trace.series(machines.count)[-1] == 0
+    assert len(trace) > 3
+    assert all(s[work.clock] > 0 for s in trace.states)  # re-armed at every expiry
+
+
 def test_a_place_composes_with_any_module():
-    # a place awaiting a hand-written transition's event: the arc is just the event
+    # a place awaiting a hand-written transition's event through an arc
     class Tick(Module):
         def init(self, t):
             return 1.0, False
@@ -89,60 +133,35 @@ def test_a_place_composes_with_any_module():
         def flow(self, clk, ev, t):
             return ite(clk >= 0, -1 * d(t), None), 0
 
-    t, clk, ev = Var(Clock()), Var(Clock()), Var(Event())
-    tick = Tick(theory=SPN, ctrl=(clk, ev), extl=(t,))
-    p = Place(inputs=[ev])
-    trace = simulate(compose(tick, p), t=t, horizon=3.5)
+    arc = Arc("production")
+    clk = Var(Clock())
+    tick = Tick(theory=SPN, ctrl=(clk, arc.fired), extl=(TIME,))
+    p = Place(inputs=[arc])
+    trace = simulate(compose(tick, p), horizon=3.5)
     assert trace.series(p.count) == [0, 1, 2, 3, 3]
 
 
-def test_a_join_fires_only_when_every_input_holds_a_token():
-    # parts and one machine feed `work`; the shared variables are declared first
-    t = Var(Clock())
-    part, machine, ev = Var(Nat()), Var(Nat()), Var(Event())
-    work = Transition(rate=1.0, t=t, event=ev, inputs=[part, machine])
-    assert work.event is ev and set(work.extl) == {t, part, machine}
-    parts = Place(initial=3, count=part, outputs=[ev])
-    machines = Place(initial=1, count=machine, outputs=[ev])
-    done = Place(inputs=[ev])
-    assert parts.count is part
-    trace = simulate(compose(work, parts, machines, done), t=t, horizon=50.0, seed=2)
-    # the machine is consumed by the first firing, then every expiry is a lost attempt
-    assert trace.series(done.count)[-1] == 1
-    assert trace.series(part)[-1] == 2 and trace.series(machine)[-1] == 0
-    assert len(trace) > 3  # the clock kept re-arming after the machine was gone
-
-
-def test_a_lost_attempt_re_arms_the_clock():
-    t = Var(Clock())
-    empty = Var(Nat())
-    tr = Transition(rate=1.0, t=t, inputs=[empty])
-    src = Place(initial=0, count=empty, outputs=[tr.event])
-    trace = simulate(compose(tr, src), t=t, horizon=20.0, seed=1)
-    assert len(trace) > 5 and all(not v for v in trace.series(tr.event))
-    assert all(s[tr.clock] > 0 for s in trace.states)  # re-armed at every expiry
-
-
 def test_bad_arguments_raise():
-    t = Var(Clock())
+    prod, cons = Arc("production"), Arc("consumption")
     with pytest.raises(TypeError, match="rate"):
-        Transition(rate=0, t=t)
+        Transition(rate=0, outputs=[prod])
+    with pytest.raises(NotImplementedError, match="variable"):
+        Transition(rate=Var(Clock()), outputs=[prod])
     with pytest.raises(TypeError, match="time reference"):
-        Transition(rate=1.0, t=Var(Clock(1)))
-    with pytest.raises(TypeError, match="inputs"):
-        Transition(rate=1.0, t=t, inputs=[Var(Event())])
-    with pytest.raises(TypeError, match="event"):
-        Transition(rate=1.0, t=t, event=Var(Nat()))
-    with pytest.raises(TypeError):
-        Transition(rate=1.0, t=t, clock=Var(Clock()))
+        Transition(rate=1.0, t=Var(Clock(1)), outputs=[prod])
+    with pytest.raises(TypeError, match="at least one arc"):
+        Transition(rate=1.0)
+    with pytest.raises(TypeError, match="cannot be a production"):
+        Transition(rate=1.0, inputs=[prod])
+    with pytest.raises(TypeError, match="cannot be a consumption"):
+        Place(inputs=[cons])
+    with pytest.raises(TypeError, match="are arcs"):
+        Place(inputs=[Var(Event())])
     with pytest.raises(TypeError, match="tokens"):
-        Place(initial=-1, inputs=[Var(Event())])
-    with pytest.raises(TypeError, match="inputs"):
-        Place(inputs=[Var(Nat())])
-    with pytest.raises(TypeError, match="count"):
-        Place(inputs=[Var(Event())], count=Var(Clock()))
+        Place(initial=-1, inputs=[prod])
     with pytest.raises(TypeError, match="at least one"):
         Place()
-    ev = Var(Event())
     with pytest.raises(ValueError, match="twice"):
-        Place(inputs=[ev, ev])
+        Place(inputs=[prod, prod])
+    with pytest.raises(TypeError):
+        Place(inputs=[prod], count=Var(Nat()))
