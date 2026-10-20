@@ -61,3 +61,20 @@ def test_a_model_smv_would_read_otherwise_is_an_input_error(tmp_path):
     garbage.write_text("this is not SMV\n")
     with pytest.raises(inputs.InputError, match="is not SMV verith reads"):
         inputs.load(garbage, format="smv")
+
+
+def test_an_input_option_its_format_requires_has_to_be_given():
+    """As a route's required option is: a format that cannot read its input
+    without an option says so at parse time, not halfway through loading."""
+    import argparse
+    from dataclasses import replace
+
+    from zrth.lean.cli.checks import check_input_options
+    from zrth.lean.core.options import Opt
+
+    smv = replace(inputs.adapter_by_name("smv"),
+                  options=(Opt(("--needed",), {}, required=True),))
+    parser = argparse.ArgumentParser()
+    with pytest.raises(SystemExit):
+        check_input_options(parser, argparse.Namespace(needed=None), smv)
+    check_input_options(parser, argparse.Namespace(needed="x"), smv)

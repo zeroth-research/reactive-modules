@@ -83,8 +83,8 @@ def input_adapter(parser: argparse.ArgumentParser,
 def check_input_options(parser: argparse.ArgumentParser, args,
                         adapter: InputAdapter | None) -> None:
     """A format's option is only meaningful for input in that format, as a
-    route's is only with that route; and its row default is put back once
-    the format is known."""
+    route's is only with that route; one its row requires has to be given;
+    and its row default is put back once the format is known."""
     stray = [
         (a, o) for a in ADAPTERS for o in a.options
         if a is not adapter and given(o, args)
@@ -97,7 +97,12 @@ def check_input_options(parser: argparse.ArgumentParser, args,
             f"{', '.join(flags)} {verb} only meaningful for "
             f"{' or '.join(formats)} input"
         )
-    put_defaults(adapter.options if adapter else (), args)
+    if adapter is None:
+        return
+    absent = [o.flags[-1] for o in missing(adapter.options, args)]
+    if absent:
+        parser.error(f"{adapter.name} input requires {', '.join(absent)}")
+    put_defaults(adapter.options, args)
 
 
 def check_route_options(
