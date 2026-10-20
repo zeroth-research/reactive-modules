@@ -126,7 +126,7 @@ from ...smt.solvers import DEFAULT_TIMEOUT, Solver
 from ..engine import Engine
 from .modes import mode_bounds
 from ...smt.obligations import Candidate, Obligations
-from ...smt.record import found, note
+from ...artifacts.record import found, note
 from ...smt.script import smt_int, smt_real
 from ...smt.terms import free_constants
 from ..common.synth import (

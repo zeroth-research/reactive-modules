@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...smt.record import found
+from ...artifacts.record import found
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 

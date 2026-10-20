@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 
 from ...core.errors import Refused
 from ...smt.claim import SynthContext, reading_kind
-from ...smt.record import found, note
+from ...artifacts.record import found, note
 from ...smt.script import decimals, smt_int, smt_lit
 from ...smt.terms import free_constants, literals, nodes
 
@@ -546,7 +546,7 @@ class Search:
 def record(store, search: Search) -> None:
     """Leave `search` in `artifacts/` for the next run.
 
-    A found predicate is written as its own role (`smt.record.found`). An
+    A found predicate is written as its own role (`artifacts.found`). An
     empty space is written as a note, because what it is worth is what it
     *says*, and `no_solution` is the status that tells a consumer the
     saying was proved.

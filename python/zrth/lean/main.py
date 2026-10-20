@@ -119,7 +119,7 @@ from .project.scaffold import (
     write_encoding,
 )
 from .project.build import LakeBuildError, build_certificate
-from .smt.record import note
+from .artifacts.record import note
 from .smt.encoding import lazy
 from .smt.precheck import pre_check, predicate_terms
 from .proof.facts import solver_hints
