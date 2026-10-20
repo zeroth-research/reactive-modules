@@ -42,10 +42,12 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
 from ...codegen.context import LeanContext
+from ...core.certificate import Claim
 from ...project.names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
@@ -487,24 +489,36 @@ def _why(out: str) -> str:
     return "  (see the output above)"
 
 
+@dataclass(frozen=True)
+class ProveIt:
+    """How `proveit.py` is run: the `lean-ltl-certifying` checkout it is
+    part of, the ic3ia it calls (`None`: the checkout's own) and the Python
+    it runs under (`None`: this one); and the two choices about what is
+    handed to it -- the NA model simplified through cvc5 or not
+    (`--fbk-simplify`), and the proof that the model is the module written
+    or not (`--fbk-equiv`)."""
+
+    checkout: str | Path
+    ic3ia: str | None = None
+    python: str | None = None
+    simplify: bool = True
+    equivalence: bool = True
+
+
 def run(
-    *,
-    ltl_project: str | Path,
+    proveit: ProveIt,
     module,
+    claim: Claim,
+    *,
     path: Callable[[str], Path],
     project_name: str,
-    property_smt: str,
-    pre_smt: str | None = None,
-    ic3ia: str | None = None,
-    python: str | None = None,
-    simplify: bool = True,
-    equivalence: bool = True,
     prechecked: NAEncoding | None = None,
     encoding=None,
     log: Callable = print,
 ) -> dict[str, str]:
-    """Run the whole route and return the certificate it made, and the proof
-    that the model is the module, as text by project-relative path.
+    """Run the whole route on `claim`, a `--safety` one, and return the
+    certificate it made, and the proof that the model is the module, as
+    text by project-relative path.
 
     Only `ProveIt/` is written here, through `path` (the project handle's),
     because `proveit.py` works on files; the two Lean files that are the
@@ -513,18 +527,19 @@ def run(
     `prechecked` is what `check_module` returned to a caller that has
     already made the check -- the pipeline does, before it generates the
     project.  The check is repeated here when it is left out, because `run`
-    is also called on its own; `pre_smt` is what it is repeated over, so a
-    direct caller gets the same refusals the pipeline gets early.
+    is also called on its own; the claim's `--pre` is what it is repeated
+    over, so a direct caller gets the same refusals the pipeline gets early.
 
     `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
     and the `--safety` property are both read on it.  A direct caller that
     passes none gets one `run` makes, so the two still share it.
     """
-    python = python or sys.executable
-    root = resolve_project(ltl_project)
+    python = proveit.python or sys.executable
+    simplify = proveit.simplify
+    root = resolve_project(proveit.checkout)
     # Resolve before anything expensive: a bad --ic3ia would otherwise
     # surface only after the model is written and lake has run.
-    ic3ia = resolve_ic3ia(ic3ia)
+    ic3ia = resolve_ic3ia(proveit.ic3ia)
     check_toolchain(python)
 
     if encoding is None:
@@ -533,10 +548,11 @@ def run(
         encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
     if prechecked is None:
-        prechecked = check_module(module, simplify, pre_smt, encoding)
+        prechecked = check_module(module, simplify, claim.init_pre, encoding)
     bodies, pre_lean = prechecked
 
-    property_lean = property_to_bool_lean(module, property_smt, encoding=encoding)
+    property_lean = property_to_bool_lean(module, str(claim.prp),
+                                          encoding=encoding)
     model = write_na_model(
         path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
@@ -576,7 +592,7 @@ def run(
             f"its template may have changed under this patch")
 
     files = {cert_file(PROOF): text}
-    if equivalence:
+    if proveit.equivalence:
         files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,

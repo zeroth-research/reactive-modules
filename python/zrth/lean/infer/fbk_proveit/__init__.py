@@ -114,20 +114,20 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import ProveItError
+    from .engine import ProveIt, ProveItError
     from .engine import run as run_proveit
 
+    proveit = ProveIt(
+        checkout=inp.config,
+        ic3ia=inp.opts["ic3ia"],
+        simplify=inp.opts["fbk_simplify"] == "cvc5",
+        equivalence=inp.opts["fbk_equiv"] == "lean",
+    )
     try:
         files = run_proveit(
-            ltl_project=inp.config,
-            module=inp.module,
+            proveit, inp.module, inp.claim,
             path=inp.project.path,
             project_name=inp.project.name,
-            property_smt=str(inp.claim.prp),
-            pre_smt=inp.claim.init_pre,
-            ic3ia=inp.opts["ic3ia"],
-            simplify=inp.opts["fbk_simplify"] == "cvc5",
-            equivalence=inp.opts["fbk_equiv"] == "lean",
             prechecked=inp.prechecked,
             encoding=inp.smt(),
             log=inp.log,
