@@ -65,8 +65,7 @@ def load(path: str | Path, opts: Mapping[str, Any] | None = None,
             f"cannot tell the format of {path} from its suffix (have: "
             f"{', '.join(_BY_NAME)})"
         )
-    opts = {**{o.dest: o.kwargs.get("default") for o in adapter.options},
-            **(opts or {})}
+    opts = {**{o.dest: o.default for o in adapter.options}, **(opts or {})}
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Diagram file not found: {path.resolve()}")

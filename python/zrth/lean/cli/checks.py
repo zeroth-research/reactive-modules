@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 
 from ..artifacts import ARTIFACTS_DIR
+from ..core.options import given, missing, put_defaults
 from ..inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
 from ..infer import InferRoute, all_route_aliases, shared_route_options
 from .settings import SEED_FLAGS, Settings
@@ -86,7 +87,7 @@ def check_input_options(parser: argparse.ArgumentParser, args,
     the format is known."""
     stray = [
         (a, o) for a in ADAPTERS for o in a.options
-        if a is not adapter and getattr(args, o.dest, None) is not None
+        if a is not adapter and given(o, args)
     ]
     if stray:
         flags = [o.flags[-1] for _, o in stray]
@@ -96,9 +97,7 @@ def check_input_options(parser: argparse.ArgumentParser, args,
             f"{', '.join(flags)} {verb} only meaningful for "
             f"{' or '.join(formats)} input"
         )
-    for o in adapter.options if adapter else ():
-        if getattr(args, o.dest, None) is None and "default" in o.kwargs:
-            setattr(args, o.dest, o.kwargs["default"])
+    put_defaults(adapter.options if adapter else (), args)
 
 
 def check_route_options(
@@ -109,17 +108,13 @@ def check_route_options(
     Given without it, the flag would do nothing -- which is the failure mode
     worth reporting: the run would succeed having ignored what was asked.
     """
-    # Every route option is parsed with `default=None`, so `None` is "not
-    # given" -- including for an option whose row default is a real value.
-    # An option passed the same value its row defaults to still counts as
-    # given, which is what makes "only meaningful with" honest.
     # An option several routes declare is stray only when *none* of them
     # was selected: `--vampire` is meaningful to two routes and a no-op
     # under the other five.
     stray = [
         (owners, o)
         for o, owners in shared_route_options()
-        if route not in owners and getattr(args, o.dest, None) is not None
+        if route not in owners and given(o, args)
     ]
     if stray:
         flags = [o.flags[-1] for _, o in stray]
@@ -131,20 +126,12 @@ def check_route_options(
         )
     if route is None:
         return
-    missing = [
-        o.flags[-1]
-        for o in route.options
-        if o.required and getattr(args, o.dest, None) in (None, "")
-    ]
-    if missing:
+    absent = [o.flags[-1] for o in missing(route.options, args)]
+    if absent:
         parser.error(
-            f"--infer {route.name} requires {', '.join(missing)}"
+            f"--infer {route.name} requires {', '.join(absent)}"
         )
-    # A route option's default has to survive the group's `default=None`
-    # override, which is there so "given" is distinguishable from "not".
-    for o in route.options:
-        if getattr(args, o.dest, None) is None and "default" in o.kwargs:
-            setattr(args, o.dest, o.kwargs["default"])
+    put_defaults(route.options, args)
 
 
 def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> None:
