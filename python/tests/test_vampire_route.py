@@ -489,6 +489,54 @@ def test_vampire_derives_a_countdowns_invariant():
     assert cert.ranking is None
 
 
+def _answering(monkeypatch, *answers):
+    """Vampire, as the engine sees it: each question answered in turn with
+    one of `answers` -- the holes' values -- and no binary run."""
+    from zrth.lean.infer.vampire.answers import Answers, Derived
+
+    queue = list(answers)
+    monkeypatch.setattr(
+        Answers, "ask",
+        lambda self, script, holes: Derived((queue.pop(0),), 0.0)
+        if queue else None)
+
+
+def test_an_answer_is_read_back_into_the_template_and_checked(monkeypatch):
+    """Without a binary: Vampire's numbers put back into the template, as
+    the certificate, once cvc5 has checked it against the module."""
+    from zrth.lean.infer.vampire.engine import VampireEngine
+
+    _answering(monkeypatch, (0, 100))
+    cert = VampireEngine(module_at(LIMITS / "m_countdown.py"),
+                         vampire="/nowhere", log=lambda *_: None,
+                         ).infer(Claim(prp="(<= s0 100)", kind="safety"))
+    assert cert.inv == "(and (<= 0 s0) (<= s0 100))"
+
+
+def test_a_rank_is_asked_for_over_the_invariant_answered_first(monkeypatch):
+    """`--buchi` is two questions: the invariant's holes, then the rank's
+    -- here `s0`, a coefficient of one and no constant."""
+    from zrth.lean.infer.vampire.engine import VampireEngine
+
+    _answering(monkeypatch, (0, 100), (1, 0))
+    cert = VampireEngine(module_at(LIMITS / "m_countdown.py"),
+                         vampire="/nowhere", log=lambda *_: None,
+                         ).infer(Claim(prp="(= s0 0)", kind="buchi"))
+    assert (cert.inv, cert.ranking) == ("(and (<= 0 s0) (<= s0 100))", "s0")
+
+
+def test_an_answer_the_module_refutes_is_not_emitted(monkeypatch):
+    """`0 <= s0 <= 50` is not inductive for a countdown from 100, and the
+    check says so before anything is handed on."""
+    from zrth.lean.infer.vampire.engine import VampireEngine
+
+    _answering(monkeypatch, (0, 50))
+    with pytest.raises(Refused, match="derived no inductive invariant"):
+        VampireEngine(module_at(LIMITS / "m_countdown.py"),
+                      vampire="/nowhere", log=lambda *_: None,
+                      ).infer(Claim(prp="(<= s0 100)", kind="safety"))
+
+
 def test_what_vampire_answers_is_checked_before_it_is_emitted():
     """An answer literal is the substitution *a* refutation used, and this
     route wrote the question. So a certificate that does not satisfy the

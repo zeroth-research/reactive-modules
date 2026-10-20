@@ -202,24 +202,24 @@ class VampireEngine(Engine):
                                  route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
-        self.ctx = ctx
-        self.width = len(columns(ctx))
-        self.ob = ob = Obligations(ctx)
+        width = len(columns(ctx))
+        ob = Obligations(ctx)
         entry = split(ctx, ob.init, "the initial state")
         step = split(ctx, ob.next, "the round")
+        # Everything a step below reads of the module is the question's:
+        # its context, its obligations and its scale -- `_read_back` prints
+        # the same floor the question put in the conjecture, so there is
+        # one of them and not two.
         q = Question(ctx, ob, entry, step)
-        # The question owns the scale; `_read_back` prints the same floor it
-        # put in the conjecture, so there is one of them and not two.
-        self.scale = q.scale
         bounded = len(weighable(ctx))
-        carried = ("" if bounded == self.width else
-                   f" ({self.width - bounded} carried unbounded)")
+        carried = ("" if bounded == width else
+                   f" ({width - bounded} carried unbounded)")
         self.log(f"[vampire] {len(step)} branch(es) of the round, "
                  f"{len(entry)} of the initial state, "
-                 f"{bounded} of {self.width} column(s) bounded{carried}")
-        if self.scale != 1:
+                 f"{bounded} of {width} column(s) bounded{carried}")
+        if q.scale != 1:
             self.log(f"[vampire] Real column(s): the rank reads them "
-                     f"through a floor after scaling by {self.scale}")
+                     f"through a floor after scaling by {q.scale}")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
         derive = self._safety if claim.is_safety else self._ranked
@@ -235,7 +235,7 @@ class VampireEngine(Engine):
                      f"({asker.spent:.1f} s spent)")
         self.log(f"[vampire] {asker.calls} Vampire call(s), "
                  f"{asker.spent:.1f} s")
-        return self._none(claim, tried, asker)
+        return self._none(claim, tried, asker, width)
 
     def _safety(self, q: Question, tpl: Template, asker: Answers,
                 claim: Claim) -> "Certificate | None":
@@ -244,15 +244,15 @@ class VampireEngine(Engine):
         `inv -> prp` is what pins the coefficients down, which is why this
         is one question where `--buchi` is two.
         """
-        script = q.conjecture(tpl, self.ctx.prp)
+        script = q.conjecture(tpl, q.ctx.prp)
         self.log(f"[vampire] template {tpl.name}: {len(tpl.holes)} holes, "
                  f"{len(script)} chars")
         answer = asker.ask(script, len(tpl.holes))
         if answer is None:
             return None
         for named in self._alternatives(answer, tpl.holes, asker):
-            inv, _ = self._read_back(tpl, named, claim)
-            if self._checks_out(inv, None, claim):
+            inv, _ = self._read_back(q, tpl, named, claim)
+            if self._checks_out(q, inv, None, claim):
                 return self._emit(inv, None, tpl)
         return None
 
@@ -280,15 +280,15 @@ class VampireEngine(Engine):
         if answer is None:
             return None
         for inv_named in self._alternatives(answer, tpl.holes, asker):
-            ranks = asker.ask(q.rank_conjecture(tpl, self.ctx.prp, inv_named),
+            ranks = asker.ask(q.rank_conjecture(tpl, q.ctx.prp, inv_named),
                               len(tpl.rank))
             if ranks is None:
                 self.log("[vampire] no ranking over that invariant")
                 continue
             for named in self._alternatives(ranks, tpl.rank, asker):
-                inv, rank = self._read_back(tpl, {**inv_named, **named},
+                inv, rank = self._read_back(q, tpl, {**inv_named, **named},
                                             claim)
-                if self._checks_out(inv, rank, claim):
+                if self._checks_out(q, inv, rank, claim):
                     return self._emit(inv, rank, tpl)
         return None
 
@@ -314,7 +314,7 @@ class VampireEngine(Engine):
 
     # --- what the answer means --------------------------------------------
 
-    def _read_back(self, tpl: Template, named: dict,
+    def _read_back(self, q: Question, tpl: Template, named: dict,
                    claim: Claim) -> tuple:
         """The template with Vampire's numbers in it, as SMT-LIB."""
         facts = []
@@ -331,14 +331,14 @@ class VampireEngine(Engine):
         # `(to_int ...)` -- the same floor `_rank` put in the question,
         # because `hrank` lands in `Nat` -- and a module carrying a column
         # no row bounds still pairs each coefficient with its own column.
-        cols = columns(self.ctx)
-        reads = [floor_real_src(cols[i].src, cols[i].sort, self.scale)
+        cols = columns(q.ctx)
+        reads = [floor_real_src(cols[i].src, cols[i].sort, q.scale)
                  for i in tpl.at]
         rank = affine_smt(named[tpl.rank[-1]],
                           [named[c] for c in tpl.rank[:-1]], reads)
         return inv, rank
 
-    def _checks_out(self, inv_src: str, rank_src: "str | None",
+    def _checks_out(self, q: Question, inv_src: str, rank_src: "str | None",
                     claim: Claim) -> bool:
         """The four obligations, restated and put to cvc5.
 
@@ -347,7 +347,7 @@ class VampireEngine(Engine):
         against the module's own encoding before anything is emitted, the
         same way `--pre-check cvc5` would check one supplied by hand.
         """
-        ob, ctx = self.ob, self.ctx
+        ob, ctx = q.ob, q.ctx
         try:
             facts = [Candidate(inv_src, ctx.enc.parse(inv_src, "invariant"))]
             rank = (None if rank_src is None
@@ -463,13 +463,13 @@ class VampireEngine(Engine):
             found(self.artifacts, "ranking", rank_src,
                   what=f"The ranking function this run found. {what}")
 
-    def _none(self, claim: Claim, tried, asker):
+    def _none(self, claim: Claim, tried, asker, width: int):
         what = ("inductive invariant implying the property" if claim.is_safety
                 else "invariant and ranking function")
         detail = (
             f"Vampire was asked for one as the coefficients of "
             f"{' and '.join(tried) or 'no'} template(s), over "
-            f"{self.width} column(s), in {asker.calls} call(s) taking "
+            f"{width} column(s), in {asker.calls} call(s) taking "
             f"{asker.spent:.1f} s. An answer literal comes back only when a "
             f"refutation pins the coefficients down, so this is not a proof "
             f"that no certificate of this shape exists -- a longer "
