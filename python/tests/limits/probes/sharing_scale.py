@@ -13,8 +13,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.smt_query import ModuleQueries, predicate_facts
-from zrth.lean.smt_to_lean import smt_to_lean_nat
+from zrth.lean.smt.precheck import ModuleQueries
+from zrth.lean.proof.facts import predicate_facts
+from zrth.lean.proof.from_smt import smt_to_lean_nat
 
 
 def relu(e: str) -> str:

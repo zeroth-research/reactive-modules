@@ -264,7 +264,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
                  floors: tuple = ()) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
-    `facts` is `smt_query.PredicateFacts` when the predicates came from
+    `facts` is `proof.facts.PredicateFacts` when the predicates came from
     SMT-LIB and cvc5 could parse them: the same questions answered against
     the terms rather than against the printed Lean. It is `None` for
     predicates compiled from Python IR, and then everything below falls back
@@ -336,7 +336,7 @@ class TacticPlan:
     max_rec_depth: int
     max_heartbeats: int
     features: Features
-    # `smt_query.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
+    # `proof.facts.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
     # something to add; `None` otherwise, and every property below degrades
     # to the tactic the plan would have emitted without it.
     hints: object | None = None

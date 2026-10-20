@@ -9,6 +9,7 @@ as its tree, a deep term is exponential.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Iterable, Iterator
 
 ORDERS = ("pre", "lifo")
@@ -90,3 +91,58 @@ def ite_conditions(roots: Iterable, *, order: str = "pre",
             cond = node[0]
             out.setdefault(key(cond), cond)
     return list(out.values())
+
+
+@functools.cache
+def _min_max_table() -> dict:
+    """`ite (a ≥ b) a b` is `max a b`, `ite (a ≥ b) b a` is `min a b`, and
+    so on for each strict/non-strict comparison. The flag says whether the
+    branches are in the same order as the comparison's operands. Built on
+    first use: the keys are cvc5 kinds."""
+    from cvc5 import Kind
+
+    return {
+        (Kind.GEQ, True): "max", (Kind.GT, True): "max",
+        (Kind.LEQ, True): "min", (Kind.LT, True): "min",
+        (Kind.GEQ, False): "min", (Kind.GT, False): "min",
+        (Kind.LEQ, False): "max", (Kind.LT, False): "max",
+    }
+
+
+def min_max_of(t) -> str | None:
+    """`"min"` / `"max"` if this `ite` is really one, else None.
+
+    The printer (`proof.from_smt`) folds such an `ite` into `min`/`max`, and
+    feature detection (`proof.facts`) asks the same question here rather
+    than counting `max` in the printer's output and thereby depending on it.
+    """
+    from cvc5 import Kind
+
+    if t.getKind() != Kind.ITE or not t.getSort().isInteger():
+        return None
+    cond = t[0]
+    kind = cond.getKind()
+    if kind not in (Kind.GEQ, Kind.GT, Kind.LEQ, Kind.LT):
+        return None
+    lhs, rhs = cond[0], cond[1]
+    then_, else_ = t[1], t[2]
+    if lhs == then_ and rhs == else_:
+        in_order = True
+    elif lhs == else_ and rhs == then_:
+        in_order = False
+    else:
+        return None
+    return _min_max_table()[(kind, in_order)]
+
+
+def selector_index(sel) -> int:
+    """Extract the flat projection index from a tuple-selector term.
+
+    cvc5 auto-generates selector symbols like `__cvc5_tuple_N_stor_K` where
+    K is the field index. We parse K from the symbol.
+    """
+    sym = sel.getSymbol()
+    # e.g. '__cvc5_tuple_2_stor_0' → 0
+    if "_stor_" in sym:
+        return int(sym.rsplit("_stor_", 1)[1])
+    raise ValueError(f"Cannot extract selector index from `{sym}`")

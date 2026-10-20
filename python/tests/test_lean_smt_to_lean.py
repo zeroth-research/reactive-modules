@@ -1,4 +1,4 @@
-"""Tests for the SMT -> Lean expression translator (`zrth.lean.smt_to_lean`).
+"""Tests for the SMT -> Lean expression translator (`zrth.lean.proof.from_smt`).
 
 Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
 from, so a ReLU unit reaches the translator as `(ite (>= e 0) e 0)`. Left as
@@ -13,7 +13,7 @@ import torch
 
 from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
 from zrth.lean.cert import LeanPredicates, render_certificate
-from zrth.lean.smt_query import predicate_terms
+from zrth.lean.smt.precheck import predicate_terms
 from zrth.lean.certificate import Certificate, Claim
 
 
@@ -144,8 +144,8 @@ def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
 
 
 def test_the_same_net_without_sharing_shows_what_it_costs():
-    from zrth.lean.smt_to_lean import smt_to_lean_nat
-    from zrth.lean.smt_query import ModuleQueries
+    from zrth.lean.proof.from_smt import smt_to_lean_nat
+    from zrth.lean.smt.precheck import ModuleQueries
 
     q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=_dense(4)))
     plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
@@ -154,8 +154,8 @@ def test_the_same_net_without_sharing_shows_what_it_costs():
 
 
 def test_sharing_never_makes_the_output_longer():
-    from zrth.lean.smt_to_lean import smt_to_lean_nat
-    from zrth.lean.smt_query import ModuleQueries
+    from zrth.lean.proof.from_smt import smt_to_lean_nat
+    from zrth.lean.smt.precheck import ModuleQueries
 
     for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
         q = ModuleQueries.build(_int_module(), Claim(), Certificate(ranking=smt))

@@ -117,7 +117,7 @@ to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-p
 [Adding an Inference Route](#adding-an-inference-route-infer_route) says how
 to write a new one.
 
-### 6. Lean certificate (`cert.py`, `smt_query.py`, `tactics.py`, `smt_to_lean.py`)
+### 6. Lean certificate (`cert.py`, `smt/precheck.py`, `tactics.py`, `proof/from_smt.py`)
 
 The route's answer becomes the project's certificate. Without a route,
 the same steps turn the given predicates into the certificate, before
@@ -223,11 +223,12 @@ topologically-sorted dataflow graph.
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
+| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` (with `fbk_bool.py`, cvc5 terms as the `Bool` Lean `lean2vmt` reads) |
 | `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
-| `smt_query.py` | `--pre-check` and `--smt-tactics`: `ModuleQueries`, `pre_check`, `solver_hints` |
+| `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
+| `proof/` | `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`) |
 | `magic/synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
 | `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
 
@@ -1470,7 +1471,7 @@ makes it worth having when the answer surprises: a refuted obligation becomes
 a file to bisect rather than a message to trust.  `.smt` is one predicate and
 not a script; the encoded form of the same thing is in `system.smt2`.
 
-These are written by `smt_query` as it builds each query, so they appear when
+These are written by `smt.precheck` as it builds each query, so they appear when
 something was encoded — `--pre-check cvc5` is what asks for the obligations.
 `--artifacts ignore` still records them: it is about where a run *starts*, not
 about what it leaves.

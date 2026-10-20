@@ -391,7 +391,7 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     `ModuleEncoding`, which the property is read on.
     """
     from .context import LeanContext
-    from .smt_to_lean import smt_to_lean_bool
+    from .translate.fbk_bool import smt_to_lean_bool
     from .translate.fbk import slot_accessors
 
     term = _parse(module, property_smt, "--safety", encoding)

@@ -125,7 +125,8 @@ from .project import (
 )
 from .smt.record import note
 from .smt.encoding import lazy
-from .smt_query import pre_check, predicate_terms, solver_hints
+from .smt.precheck import pre_check, predicate_terms
+from .proof.facts import solver_hints
 from .translate import ModuleToLean4
 
 

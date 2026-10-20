@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 
 from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.smt_query import ModuleQueries
+from zrth.lean.smt.precheck import ModuleQueries
 
 CASES = [
     ("m_countdown", "(>= s0 1)"),

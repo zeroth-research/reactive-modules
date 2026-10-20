@@ -27,7 +27,7 @@ from zrth.lean.cert import (
     generate_data_lean,
 )
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.smt_query import predicate_terms
+from zrth.lean.smt.precheck import predicate_terms
 from zrth.lean.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project import generate_standalone_cert_lean
@@ -153,7 +153,7 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
     from zrth.lean.cert import prepare
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt_query import solver_hints
+    from zrth.lean.proof.facts import solver_hints
 
     lean = None
     if claim is not None:

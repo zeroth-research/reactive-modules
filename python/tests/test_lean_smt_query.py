@@ -1,4 +1,4 @@
-"""Tests for the bounded cvc5 query layer (`zrth.lean.smt_query`).
+"""Tests for the bounded cvc5 query layer (`zrth.lean.smt.precheck`).
 
 The contract this file pins down is not "cvc5 gets the right answer" so much
 as "nothing here can break generation": every query is bounded, and every
@@ -17,13 +17,8 @@ from zrth.analyzer import convert_method
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.errors import Refused
 from zrth.lean.smt.limits import SmtBudget
-from zrth.lean.smt_query import (
-    ModuleQueries,
-    Status,
-    pre_check,
-    predicate_facts,
-    solver_hints,
-)
+from zrth.lean.smt.precheck import ModuleQueries, Status, pre_check
+from zrth.lean.proof.facts import predicate_facts, solver_hints
 
 
 def countdown() -> Module:
@@ -283,7 +278,7 @@ def test_branch_points_do_not_move_when_the_printer_shares():
     the printer bound the repeats to names -- and the heartbeat budget is
     calibrated against that goal.
     """
-    from zrth.lean.smt_to_lean import smt_to_lean_nat
+    from zrth.lean.proof.from_smt import smt_to_lean_nat
 
     q = ModuleQueries.build(countdown(), Claim(), Certificate(ranking=_dense(5)))
     unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
@@ -344,7 +339,7 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     """The plan is read off the obligations the certificate actually has,
     so a safety certificate contributes `inv_imp_P` where a Buchi one
     contributes `hrank`."""
-    from zrth.lean.smt_query import _obligation_labels
+    from zrth.lean.proof.facts import _obligation_labels
 
     buchi = ModuleQueries.build(countdown(), CLAIM, GOOD)
     assert [name for name, _ in _obligation_labels(buchi)] == ["step_inv", "hrank"]
@@ -418,7 +413,7 @@ def test_translation_can_be_asked_not_to_share():
     certificate itself is printed shared, hints or not (`cert.prepare`).
     """
     from zrth.lean.cert import render_certificate
-    from zrth.lean.smt_query import predicate_terms
+    from zrth.lean.smt.precheck import predicate_terms
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
     shared = render_certificate(q, share=True).ranking
@@ -430,7 +425,7 @@ def test_translation_can_be_asked_not_to_share():
 def test_a_lean_answer_is_printed_as_it_was_given():
     """`--infer ai`'s reply is Lean already; the property beside it is not."""
     from zrth.lean.cert import render_certificate
-    from zrth.lean.smt_query import predicate_terms
+    from zrth.lean.smt.precheck import predicate_terms
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
@@ -438,7 +433,7 @@ def test_a_lean_answer_is_printed_as_it_was_given():
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
-    from zrth.lean.smt_query import predicate_terms
+    from zrth.lean.smt.precheck import predicate_terms
 
     with pytest.raises(Refused, match="--ranking"):
         predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))

@@ -33,7 +33,7 @@ def _module(name: str):
 def _clamps():
     """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
     from zrth.lean.smt.obligations import clamp
-    from zrth.lean.smt_query import ModuleQueries
+    from zrth.lean.smt.precheck import ModuleQueries
 
     claim = Claim(prp="(= s0 0)")
     q = ModuleQueries(_module("m_countdown"), claim,

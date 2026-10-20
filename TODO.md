@@ -147,7 +147,7 @@ Paths are relative to `python/zrth/lean/`.
   and `inv ∧ B ⊨ goal` (`tests/limits/probes/abduction.py`). The catch:
   the answers are sufficient, not weakest. On `m_countdown`,
   `inv=(>= s0 1)` gets `(= s0 100)`. Plan, about half a day:
-  1. `smt_query.abduce(q, budget)`, called only when `check_step_inv` came
+  1. `smt.precheck.abduce(q, budget)`, called only when `check_step_inv` came
      back `REFUTED`, sharing the phase budget;
   2. enumerate with `getAbductNext` up to 4, and keep the weakest by
      pairwise entailment checks;

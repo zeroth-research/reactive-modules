@@ -300,7 +300,7 @@ class Cvc5Solver(Solver):
             else:
                 answer = Answer(Verdict.UNKNOWN)
         except RuntimeError as e:
-            # Total, the way `smt_query` is total: the terms came out of
+            # Total, the way `smt.precheck` is total: the terms came out of
             # cvc5's own encoder, so anything raised here is a resource the
             # run does not have rather than a question it asked wrongly.
             self.log(f"[houdini] cvc5 could not answer a query: {e}")

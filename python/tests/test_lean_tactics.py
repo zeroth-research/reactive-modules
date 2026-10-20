@@ -282,7 +282,7 @@ def test_only_recursion_depth_scales_with_the_module():
 
 def test_facts_override_the_text_scan_for_nonlinearity():
     """The regex over-reports by design; the term does not."""
-    from zrth.lean.smt_query import PredicateFacts
+    from zrth.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     linear = features_for(ctx, "fun s => ((s 0 0) * (s 0 0))")
@@ -294,7 +294,7 @@ def test_facts_override_the_text_scan_for_nonlinearity():
 def test_a_lean_answers_branches_add_to_the_terms():
     """Terms cover only the SMT-derived fields; a Lean answer's text is
     counted on top of them, never in place of them."""
-    from zrth.lean.smt_query import PredicateFacts
+    from zrth.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => (max (s 0 0) 0) + (max (s 0 0) 1) + (max (s 0 0) 2)"
@@ -305,7 +305,7 @@ def test_a_lean_answers_branches_add_to_the_terms():
 def test_with_facts_the_printed_text_is_not_reread():
     """The facts speak for what was printed from terms; reading the text
     as well would count a shared subterm by how the printer laid it out."""
-    from zrth.lean.smt_query import PredicateFacts
+    from zrth.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => ((s 0 0) * (s 0 0)) + (max (s 0 0) 0)"
@@ -315,7 +315,7 @@ def test_with_facts_the_printed_text_is_not_reread():
 
 def test_facts_raise_the_branch_count_above_what_the_printer_shows():
     """Sharing shrinks the output; the goal the closers see is unchanged."""
-    from zrth.lean.smt_query import PredicateFacts
+    from zrth.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     f = features_for(ctx, "fun s => (max (s 0 0) 0)", PredicateFacts(n_branch=62))

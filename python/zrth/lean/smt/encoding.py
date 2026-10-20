@@ -90,10 +90,10 @@ class ModuleEncoding:
         return hit
 
     def queries(self, claim, cert=None):
-        """`smt_query.ModuleQueries` for `claim` and `cert`, built once per
+        """`smt.precheck.ModuleQueries` for `claim` and `cert`, built once per
         pair. Raises as its constructor does."""
         from ..certificate import Certificate
-        from ..smt_query import ModuleQueries
+        from .precheck import ModuleQueries
 
         key = (claim, cert or Certificate())
         q = self._queries.get(key)

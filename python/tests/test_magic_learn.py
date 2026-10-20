@@ -2,7 +2,7 @@
 
 What the route promises is that the certificate it returns has already been
 proved, so the tests that matter put its output to verith's *own* obligations
-(`smt_query.pre_check`, which is cvc5 restating `rule_buchi` / `rule_globally`
+(`smt.precheck.pre_check`, which is cvc5 restating `rule_buchi` / `rule_globally`
 from scratch). A certificate the Farkas procedure certified and cvc5 refutes
 would be the route lying about what it did.
 
@@ -30,7 +30,7 @@ from zrth.lean.magic.learn import (
 )
 from zrth.lean.smt.script import smt_int
 from zrth.lean.smt.limits import SmtBudget
-from zrth.lean.smt_query import Status, pre_check
+from zrth.lean.smt.precheck import Status, pre_check
 
 pytest.importorskip("cvc5")
 

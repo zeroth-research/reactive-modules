@@ -642,14 +642,14 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
 
 
 def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
-    """The obligation names `smt_query` does not certify for `cert`.
+    """The obligation names `smt.precheck` does not certify for `cert`.
 
     A second opinion, and deliberately not the query that produced the
     answer: `check_obligations` states `init_inv`, `step_inv` and
     `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
     """
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt_query import ModuleQueries, Status
+    from zrth.lean.smt.precheck import ModuleQueries, Status
 
     q = ModuleQueries.build(module_of(name), claim, cert)
     assert q is not None, "the predicates should be readable for this module"
@@ -830,7 +830,7 @@ def bv_counter(width: int, top: int):
 
 def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt_query import ModuleQueries, Status
+    from zrth.lean.smt.precheck import ModuleQueries, Status
 
     q = ModuleQueries.build(module, claim, cert)
     assert q is not None

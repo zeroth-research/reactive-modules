@@ -14,7 +14,8 @@ from zrth.lean.template_env import render
 if TYPE_CHECKING:
     from zrth import Module
 
-    from zrth.lean.smt_query import ModuleQueries, PredicateFacts, SolverHints
+    from zrth.lean.smt.precheck import ModuleQueries
+    from zrth.lean.proof.facts import PredicateFacts, SolverHints
 
 def generate_zeroth_hammer_lean() -> str:
     """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic."""
@@ -95,7 +96,7 @@ class LeanHints:
 def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     """`hints` printed. A condition or a factor the printer cannot express
     is left out: a hint is an optimisation, never needed for the proof."""
-    from .smt_to_lean import smt_to_lean_body
+    from .proof.from_smt import smt_to_lean_body
 
     determined = []
     for cond, value in hints.determined:
@@ -150,7 +151,7 @@ def render_certificate(
     `verbatim` is an answer that is Lean already; its `inv` and `ranking`
     are taken as they are.
     """
-    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
+    from .proof.from_smt import smt_to_lean, smt_to_lean_nat
 
     msmt = q.msmt
 
@@ -213,9 +214,9 @@ def prepare(
     definitions with `simp`'s default `zeta`, which substitutes the `let`s
     away before the hint's `if_pos` runs.
     """
-    from .smt_query import predicate_facts
+    from .proof.facts import predicate_facts
 
-    from .smt_to_lean import smt_to_lean_body
+    from .proof.from_smt import smt_to_lean_body
 
     printed = print_hints(hints, q.msmt.ctrl_next) if hints is not None else None
     facts = predicate_facts(q)
@@ -240,9 +241,9 @@ def lean_certificate(
 ) -> LeanCertificate:
     """`claim` and `cert` printed for codegen, with the facts their terms
     give and no solver hints."""
-    from .smt_query import predicate_facts
+    from .proof.facts import predicate_facts
 
-    from .smt_query import predicate_terms
+    from .smt.precheck import predicate_terms
 
     q = predicate_terms(module, claim, cert)
     return LeanCertificate(

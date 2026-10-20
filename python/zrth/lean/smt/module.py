@@ -25,7 +25,7 @@ from .encode import translate_terms, wire_sort
 # the solvers and terms made from it, and a GC cycle collects the two
 # together in arbitrary order. One list, here, because the ordering it
 # defends against is global -- a per-module list only orders the objects
-# inside it, so two of them (`smt_query`'s queries and the fbk route's
+# inside it, so two of them (`smt.precheck`'s queries and the fbk route's
 # encodings) could still be finalised in the wrong order relative to each
 # other. A `verith` run keeps a handful of entries and then exits.
 _LIVE: list = []
