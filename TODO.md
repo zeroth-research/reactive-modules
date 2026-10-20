@@ -40,7 +40,7 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    reads))`, `opaque.update(zip(t_.write, [[sym]]))`), `read_system` making
    a column per element, and `System.sp_syms` / `index` / `entry`, which
    read `[0]` off each var and so need the wire-vs-column split that
-   `infer.houdini.engine.Column` is on the other side of the house.
+   `infer.common.synth.Column` is on the other side of the house.
 
    **What should decide it**: the payoff is now *second-route coverage*, not
    reach. `--infer ai` verifies all 7 of those modules and `--infer houdini`

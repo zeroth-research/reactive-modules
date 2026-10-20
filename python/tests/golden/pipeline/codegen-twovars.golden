@@ -33,7 +33,7 @@ set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/tactics.py`.
+-- its certificate; see `zrth/lean/proof/tactics.py`.
 -- state: Bool+Int, 2 slot(s), 13 term(s)
 -- predicates: branching, conjunctive, linear, 1 branch point(s)
 set_option maxRecDepth 19500
@@ -168,7 +168,7 @@ set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/tactics.py`.
+-- its certificate; see `zrth/lean/proof/tactics.py`.
 -- state: Bool+Int, 2 slot(s), 13 term(s)
 -- predicates: branching, conjunctive, linear, 1 branch point(s)
 set_option maxRecDepth 19500

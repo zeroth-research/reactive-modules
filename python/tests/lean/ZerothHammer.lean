@@ -15,9 +15,9 @@ macro "mat_collapse" : tactic => `(tactic| simp only [])
 -- inequalities: an implication left in the goal, a disjunctive goal, a
 -- hypothesis `b = false → 5 ≤ x`, a floor on either side. Each of those is
 -- still linear arithmetic once the structure is taken apart, and `lra_close`
--- is the taking apart. The certificates `zrth/lean/tactics.py` gives it to
--- are ones cvc5 has already checked, so what fails here is the proof search,
--- never the claim.
+-- is the taking apart. The certificates `zrth/lean/proof/tactics.py` gives
+-- it to are ones cvc5 has already checked, so what fails here is the proof
+-- search, never the claim.
 
 /-- Every `⌊a⌋` in `e`, by its argument `a`. Only the outermost application
     is a floor of something: descending into its function part would meet

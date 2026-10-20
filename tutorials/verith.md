@@ -330,7 +330,7 @@ grep -E '^-- |^def RM|^theorem |^def lts' "$OUT/$PROJ/Certificate/Certificate.le
 
 ```lean
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/tactics.py`.
+-- its certificate; see `zrth/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
@@ -418,7 +418,7 @@ def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9
 def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
 def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) : Int)).toNat
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/tactics.py`.
+-- its certificate; see `zrth/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear, 1 branch point(s)
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)

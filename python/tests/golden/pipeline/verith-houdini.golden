@@ -109,7 +109,7 @@ set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/tactics.py`.
+-- its certificate; see `zrth/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, linear
 
