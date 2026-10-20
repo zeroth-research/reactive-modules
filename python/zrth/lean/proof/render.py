@@ -1,13 +1,21 @@
+"""The certificate as Lean: its predicates parsed once and printed
+(`render_certificate`), with what the tactic plan reads of them (`prepare`,
+which every certificate goes through), and the files that come of it --
+the project's two (`certificate_files`) and the one `--cert-file` writes
+(`generate_standalone_cert_lean`).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from zrth.lean.codegen.encodings import ModuleToLean4
 from zrth.lean.codegen.terms import product_type
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.core.errors import PredicateRefused, Refused
 from zrth.lean.codegen.context import LeanContext
-from zrth.lean.project.names import MAT_SIMP, rm_def
+from zrth.lean.project.names import DATA, MAT_SIMP, PROOF, cert_file, rm_def
 from zrth.lean.proof.tactics import plan_for
 from zrth.lean.project.templates import render
 
@@ -232,18 +240,12 @@ def prepare(
 
 def lean_certificate(
     module: "Module", claim: Claim, cert: Certificate = Certificate(),
-    *, share: bool = True,
 ) -> LeanCertificate:
-    """`claim` and `cert` printed for codegen, with the facts their terms
-    give and no solver hints."""
-    from .facts import predicate_facts
-
+    """`claim` and `cert` printed for codegen, with no solver hints: what
+    `prepare` makes of them, parsed against `module`."""
     from ..smt.precheck import predicate_terms
 
-    q = predicate_terms(module, claim, cert)
-    return LeanCertificate(
-        render_certificate(q, share=share), PlanInputs(facts=predicate_facts(q))
-    )
+    return prepare(predicate_terms(module, claim, cert))
 
 
 def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
@@ -361,3 +363,39 @@ def generate_certificate_lean(
         is_safety=defs.is_safety,
         plan=plan,
     )
+
+
+def certificate_files(
+    ctx: LeanContext, lean_cert: LeanCertificate | None = None,
+) -> dict[str, str]:
+    """The project's two certificate files by project-relative path: the
+    definitions (`Data.lean`) and the proof whose tactics are read off
+    their shape (`Certificate.lean`). Placeholders where `lean_cert` has no
+    predicate, or is `None`.
+
+    Rendered together because they are rewritten together: a file of
+    either kind left over from other predicates no longer matches the
+    other.
+    """
+    return {
+        cert_file(DATA): generate_data_lean(ctx, lean_cert),
+        cert_file(PROOF): generate_certificate_lean(ctx, lean_cert),
+    }
+
+
+def generate_standalone_cert_lean(
+    module: "Module",
+    lean_cert: LeanCertificate | None = None,
+) -> str:
+    """Generate a self-contained certificate Lean file with init/update inlined.
+
+    Unlike the project's ``Certificate.lean``, the functional module code
+    (init, update) is inlined directly rather than imported.  ZerothHammer
+    is always imported from the project-level ``ZerothHammer.lean``.
+
+    Suitable for placing a single .lean file inside an existing lake project
+    such as ``tests/lean/Certs/``.
+    """
+    ctx = LeanContext(module)
+    module_code = ModuleToLean4(ctx).to_lean_functional()
+    return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)

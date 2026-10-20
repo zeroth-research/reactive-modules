@@ -48,10 +48,8 @@ def snapshot(path: Path, out: Path) -> None:
     from zrth.lean import inputs
     from zrth.lean.codegen.context import LeanContext
     from zrth.lean.codegen.terms import lean_gaps
-    from zrth.lean.project.scaffold import (
-        ENCODINGS,
-        generate_standalone_cert_lean,
-    )
+    from zrth.lean.project.scaffold import ENCODINGS
+    from zrth.lean.proof.render import generate_standalone_cert_lean
     from zrth.lean.codegen.encodings import ModuleToLean4
     from zrth.lean.infer.fbk_proveit.na import (
         atom_to_lean_na, check_na_supported,
@@ -74,10 +72,9 @@ def snapshot(path: Path, out: Path) -> None:
     (out / "alone").mkdir(exist_ok=True)
     for enc in ENCODINGS:
         name = f"System{enc.suffix}.lean"
-        _write(out, name, getattr(shared, enc.producer))
+        _write(out, name, lambda enc=enc: enc.producer(shared))
         _write(out / "alone", name,
-               lambda enc=enc: getattr(ModuleToLean4(LeanContext(module)),
-                                       enc.producer)())
+               lambda enc=enc: enc.producer(ModuleToLean4(LeanContext(module))))
     _write(out, "Cert.lean", lambda: generate_standalone_cert_lean(module))
 
     try:

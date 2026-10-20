@@ -19,12 +19,14 @@ from ..project.scaffold import (
     ENCODINGS,
     Layout,
     create_project,
-    generate_standalone_cert_lean,
     generate_zeroth_hammer_lean,
     write_encoding,
 )
-from ..proof.render import LeanCertificate
-
+from ..proof.render import (
+    LeanCertificate,
+    certificate_files,
+    generate_standalone_cert_lean,
+)
 
 
 def build_cert(settings: Settings, project_dir: Path,
@@ -107,7 +109,7 @@ def generate(settings: Settings, module, ctx: LeanContext,
             module=module,
             project_name=settings.project_name,
             executable=settings.executable,
-            lean_cert=lean_cert,
+            certificate=certificate_files(ctx, lean_cert),
             source=source,
             lakefile=(
                 settings.route.lakefile(

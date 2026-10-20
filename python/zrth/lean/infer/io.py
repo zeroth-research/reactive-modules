@@ -106,32 +106,19 @@ class ProjectHandle:
             )
         return self.artifacts.usable(role, languages=languages, statuses=statuses)
 
-    # --- the two ordinary writes ----------------------------------------
+    # --- the ordinary write --------------------------------------------
     #
-    # Available to every route, and the only writes most of them want: after
+    # Available to every route, and the only write most of them want: after
     # inference the predicates are new, so the definitions (`Data.lean`) and
     # the tactics generated from their shape (`Certificate.lean`) are both
-    # restated.  Going through here rather than through two module-level
-    # functions in the caller keeps that pairing in one place.
-
-    def write_data(self, lean_cert: "LeanCertificate") -> Path:
-        from ..project.scaffold import write_data_lean
-
-        return write_data_lean(
-            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
-        )
-
-    def write_certificate(self, lean_cert: "LeanCertificate") -> Path:
-        from ..project.scaffold import write_certificate_lean
-
-        return write_certificate_lean(
-            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
-        )
+    # restated, as `proof.render.certificate_files` renders the pair.
 
     def write_predicates(self, lean_cert: "LeanCertificate") -> None:
-        """Both of the above, which is what an inferring route wants."""
-        self.write_data(lean_cert)
-        self.write_certificate(lean_cert)
+        """The certificate's two files, rewritten from `lean_cert`."""
+        from ..project.scaffold import write_files
+        from ..proof.render import certificate_files
+
+        write_files(self.dir, certificate_files(self.ctx, lean_cert))
 
     # --- writing more than that -----------------------------------------
 

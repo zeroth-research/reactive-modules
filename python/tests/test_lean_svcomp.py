@@ -15,8 +15,9 @@ from pathlib import Path
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.project.scaffold import create_project, write_data_lean
-from zrth.lean.proof.render import lean_certificate
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.project.scaffold import create_project
+from zrth.lean.proof.render import certificate_files, lean_certificate
 from zrth.lean.core.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
@@ -34,13 +35,12 @@ def _gen(name, module, prp, inv, ranking, pre=None):
         Claim(prp=prp, init_pre=pre, update_pre=pre),
         Certificate(inv=inv, ranking=ranking),
     )
-    project_dir = create_project(
+    return create_project(
         output_dir=OUTPUT_DIR,
         module=module,
         project_name=name,
+        certificate=certificate_files(LeanContext(module), lean_cert),
     )
-    write_data_lean(project_dir, name, module, lean_cert)
-    return project_dir
 
 
 def _lake_build(project_dir):

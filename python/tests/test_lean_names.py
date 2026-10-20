@@ -9,6 +9,7 @@ from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from zrth.lean.project.scaffold import create_project
+from zrth.lean.proof.render import certificate_files
 from zrth.lean.infer.fbk_proveit.na import check_na_supported
 from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
@@ -23,7 +24,8 @@ def _own_imports(text: str) -> list[str]:
 
 def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
     module = load_module(FIXTURES / "counter.py")
-    project = create_project(tmp_path, module, "Rea")
+    project = create_project(tmp_path, module, "Rea",
+                             certificate=certificate_files(LeanContext(module)))
     ctx = LeanContext(module)
     bridge = atom_to_lean_fbk_bridge(ctx, na_module="ReaNA",
                                      bodies=check_na_supported(ctx))
@@ -42,7 +44,8 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
 
 def test_the_lakefile_builds_the_certificate_library(tmp_path):
     module = load_module(FIXTURES / "counter.py")
-    project = create_project(tmp_path, module, "Rea")
+    project = create_project(tmp_path, module, "Rea",
+                             certificate=certificate_files(LeanContext(module)))
     lakefile = (project / "lakefile.toml").read_text()
     assert f'name = "{CERT_LIB}"' in lakefile
     assert re.search(rf'defaultTargets = \[[^\]]*"{CERT_LIB}"', lakefile)

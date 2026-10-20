@@ -315,11 +315,15 @@ def test_generated_executable_builds_and_runs(
         module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
+    from zrth.lean.codegen.context import LeanContext
     from zrth.lean.project.scaffold import create_project
+    from zrth.lean.proof.render import certificate_files
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        project = create_project(out, module_def, "Rea", executable=True)
+        project = create_project(
+            out, module_def, "Rea", executable=True,
+            certificate=certificate_files(LeanContext(module_def)))
 
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)

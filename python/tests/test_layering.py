@@ -44,30 +44,25 @@ LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
                 frozenset({"core", "lowering"})),
     "smt": (frozenset({"zrth.lean.smt"}),
             frozenset({"core", "lowering", "artifacts"})),
-    # The project's vocabulary, templates, lakefile, build and `Main.lean`;
-    # `scaffold`, which writes the certificate's files, sits above `proof`.
-    "project": (frozenset({
-        "zrth.lean.project.names", "zrth.lean.project.templates",
-        "zrth.lean.project.lakefile", "zrth.lean.project.build",
-        "zrth.lean.project.main_lean",
-    }), frozenset({"core", "lowering", "codegen"})),
+    # The project on disk. It writes the certificate's files as the text it
+    # is handed, so it sits below `proof`, which renders them.
+    "project": (frozenset({"zrth.lean.project"}),
+                frozenset({"core", "lowering", "codegen"})),
     "proof": (frozenset({"zrth.lean.proof"}),
               frozenset({"core", "lowering", "codegen", "smt", "project"})),
-    "scaffold": (frozenset({"zrth.lean.project.scaffold"}), frozenset({
-        "core", "lowering", "codegen", "project", "proof"})),
     # The input formats; one encodes a module through `smt` as it reads it.
     "inputs": (frozenset({"zrth.lean.inputs"}), frozenset({"core", "smt"})),
     # The routes, their engines and the registry over them.
     "infer": (frozenset({"zrth.lean.infer"}), frozenset({
         "core", "lowering", "artifacts", "codegen", "smt", "project",
-        "proof", "scaffold"})),
+        "proof"})),
     # The command line: read off the input formats' and the routes' rows.
     "cli": (frozenset({"zrth.lean.cli"}), frozenset({
         "core", "artifacts", "smt", "inputs", "infer"})),
     # `uv run verith`: every stage, in order.
     "pipeline": (frozenset({"zrth.lean.pipeline"}), frozenset({
         "core", "lowering", "artifacts", "codegen", "smt", "project", "proof",
-        "scaffold", "inputs", "infer", "cli"})),
+        "inputs", "infer", "cli"})),
 }
 
 

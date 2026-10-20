@@ -3,7 +3,9 @@
 import pytest
 import torch
 from zrth import Wire, Term, Module, Sort as dt, LIA as it, Bool, Int
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.project.scaffold import create_project
+from zrth.lean.proof.render import certificate_files
 
 from zrth.expr import Expr, Bool as BoolConst
 
@@ -74,6 +76,7 @@ def test_counter_generates_lean():
         module=m,
         project_name="SimpleQNet",
         executable=True,
+        certificate=certificate_files(LeanContext(m)),
         # p_terms=_make_P(m.ctrl),
         # ranking_terms=_make_ranking(m.ctrl),
     )

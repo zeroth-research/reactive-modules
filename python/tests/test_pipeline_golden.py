@@ -25,12 +25,12 @@ from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
 from zrth.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
+    generate_standalone_cert_lean,
 )
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.smt.precheck import predicate_terms
 from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
-from zrth.lean.project.scaffold import generate_standalone_cert_lean
 
 pytest.importorskip("cvc5")
 

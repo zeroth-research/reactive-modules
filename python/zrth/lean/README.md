@@ -213,8 +213,8 @@ topologically-sorted dataflow graph.
 ## Module Files
 
 The rows run from the bottom layer up: a package imports only the packages
-above it in the table, except `project/scaffold`, which also imports
-`proof/`. `tests/test_layering.py` holds every module to its layer.
+above it in the table. `tests/test_layering.py` holds every module to its
+layer.
 
 | Package | What it holds |
 |------|------|
@@ -223,8 +223,8 @@ above it in the table, except `project/scaffold`, which also imports
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) and `record` (`found`, `note`, the writes a route makes) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `claim` (`SynthContext`, a claim read against the encoding), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `solvers` (cvc5 and Vampire answering a `Query`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer), `slots`, `vampire` (the Vampire driver) |
-| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer) |
-| `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, `generate_certificate_lean`), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
+| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
+| `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
 | `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) and what a route is given and hands back (`io`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
 | `infer/common/` | What more than one route uses: `llm`, the model both LLM routes ask; `synth`, what a searching route reads a module as (its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use); `options`, the options two rows share |
@@ -406,8 +406,8 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
 
-The project writes one file per row of `project.scaffold.ENCODINGS`, each from its
-`to_lean_*` producer.
+The project writes one file per row of `project.scaffold.ENCODINGS`, each
+printed by the row's `producer`, a `ModuleToLean4.to_lean_*` method.
 
 ---
 
@@ -454,8 +454,12 @@ came from; `render_certificate(q, share=..., verbatim=...)` translates the
 terms. `share=False` prints repeated subterms in full; `proof.render.prepare`
 always shares, because a hint's `if_pos` matches once `simp` has
 zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
-`LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
-for a caller that wants no solver hints.
+`LeanAnswer` as they are. Every certificate is printed through `prepare`,
+the pipeline's (`pipeline.certify.render`) and the tests'
+(`lean_certificate(module, claim, cert)`, which is `prepare` with no solver
+hints) alike; `certificate_files` renders the project's `Data.lean` and
+`Certificate.lean` from it, and `create_project` and
+`ProjectHandle.write_predicates` write that text as it is.
 
 ---
 

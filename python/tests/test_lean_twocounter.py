@@ -2,8 +2,9 @@
 
 import torch
 from zrth import Wire, Term, Module, LIA, Bool, Var, X
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import lean_certificate
+from zrth.lean.proof.render import certificate_files, lean_certificate
 from zrth.lean.core.certificate import Certificate, Claim
 
 from os.path import dirname
@@ -44,9 +45,9 @@ def test_twobitcounter_generates_lean():
         project_name="TwoBitCertificate",
         executable=True,
         # P: b0 is false. ranking = 2*b1 + b0 - 3, each bit read as 0 or 1.
-        lean_cert=lean_certificate(
+        certificate=certificate_files(LeanContext(m), lean_certificate(
             m,
             Claim(prp="(not s0)"),
             Certificate(ranking="(- (+ (ite s1 1 0) (ite s1 1 0) (ite s0 1 0)) 3)"),
-        ),
+        )),
     )

@@ -1,13 +1,13 @@
 """The project on disk, written by `create_project`: its directories, the
 static Lean library copied in, the lakefile and toolchain, the module's
-encodings (`ENCODINGS`) and the certificate's files.
-`generate_standalone_cert_lean` is the one-file form `--cert-file` writes.
+encodings (`ENCODINGS`), and the certificate's files, which it is handed
+as text (`proof.render.certificate_files`) and writes as they are.
 """
 
 from __future__ import annotations
 
 import shutil
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,16 +16,8 @@ from zrth import Module
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
-from .names import (
-    DATA, LINTERS_OFF, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
-)
+from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import STATIC_DIR, render
-
-from ..proof.render import (
-    LeanCertificate,
-    generate_certificate_lean,
-    generate_data_lean,
-)
 from .lakefile import LEAN_TOOLCHAIN, LakefileParts, generate_lakefile
 from .main_lean import generate_main_lean
 
@@ -67,7 +59,7 @@ class Encoding:
     title: str                  # header comment, "<title> of reactive module `X`"
     core: str                   # the Core module the encoding is written against
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
-    producer: str               # the `ModuleToLean4` method that prints it
+    producer: Callable[[ModuleToLean4], str]    # prints it
     cert_file: bool = True      # also written by the `--cert-file` route
 
 
@@ -76,15 +68,15 @@ ENCODINGS: tuple[Encoding, ...] = (
     # `--cert-file` route gets its own copy inlined into the standalone
     # certificate by `generate_standalone_cert_lean`, so it is not written
     # again there; `Circ` has no consumer on that route at all.
-    Encoding("", "Functional encoding", "Core.Box", (), "to_lean_functional",
+    Encoding("", "Functional encoding", "Core.Box", (), ModuleToLean4.to_lean_functional,
              cert_file=False),
-    Encoding("Circ", "Circuit encoding", "Core.Box", ("",), "to_lean_circ",
+    Encoding("Circ", "Circuit encoding", "Core.Box", ("",), ModuleToLean4.to_lean_circ,
              cert_file=False),
     Encoding("Rel", "Matrix-domain relational encoding", "Core.Basic", ("",),
-             "to_lean_mat_rel"),
-    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar"),
+             ModuleToLean4.to_lean_mat_rel),
+    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), ModuleToLean4.to_lean_scalar),
     Encoding("ScalarRel", "Scalar-relational encoding", "Core.Basic", ("Scalar",),
-             "to_lean_rel"),
+             ModuleToLean4.to_lean_rel),
 )
 
 
@@ -93,7 +85,7 @@ def write_encoding(
 ) -> Path:
     """Print one encoding and write it where `layout` says it goes."""
     imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
-    body = getattr(m2l, enc.producer)()
+    body = enc.producer(m2l)
     path = layout.path(enc.suffix)
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"
@@ -120,60 +112,13 @@ def generate_zeroth_hammer_lean() -> str:
     return render("project/ZerothHammer.lean.j2")
 
 
-def write_data_lean(
-    project_dir: Path,
-    project_name: str,
-    module: Module,
-    lean_cert: LeanCertificate | None,
-    ctx: LeanContext | None = None,
-) -> Path:
-    """Write/overwrite Certificate/Data.lean with init_pre, update_pre, inv, P,
-    ranking.
-
-    Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
-    from ``create_project`` which already has one).
-
-    Beside ``Certificate.lean`` rather than under ``System/``: both files are
-    about the certificate and both are rewritten whenever the predicates
-    change, while ``System/`` holds the module, which does not. The directory
-    is made here because this can be called on its own, after inference, and
-    is not guaranteed to run after ``write_certificate_lean``.
-    """
-    if ctx is None:
-        ctx = LeanContext(module)
-
-    data_file = project_dir / cert_file(DATA)
-    data_file.parent.mkdir(parents=True, exist_ok=True)
-    data_file.write_text(generate_data_lean(ctx, lean_cert))
-    print(f"Wrote {data_file}")
-    return data_file
-
-
-def write_certificate_lean(
-    project_dir: Path,
-    project_name: str,
-    module: Module,
-    lean_cert: LeanCertificate | None = None,
-    ctx: LeanContext | None = None,
-) -> Path:
-    """Write/overwrite Certificate.lean (stable proof structure, imports Data).
-
-    Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
-    from ``create_project`` which already has one).
-
-    The *definitions* live in ``Certificate/Data.lean`` beside it, but the
-    proof tactics are generated from the shape of the predicates (see
-    ``zrth.lean.proof.tactics``), so this file has to be rewritten whenever they
-    change — after ``--infer``, for instance.
-    """
-    if ctx is None:
-        ctx = LeanContext(module)
-
-    path = project_dir / cert_file(PROOF)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(generate_certificate_lean(ctx, lean_cert))
-    print(f"Wrote {path}")
-    return path
+def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
+    """Write whole files by project-relative path, each directory made."""
+    for rel, text in files.items():
+        path = project_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        print(f"Wrote {path}")
 
 
 def create_project(
@@ -182,7 +127,8 @@ def create_project(
     project_name: str = "Certificate",
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
-    lean_cert: LeanCertificate | None = None,
+    *,
+    certificate: Mapping[str, str],
     source: "SourceText | None" = None,
     lakefile: LakefileParts | None = None,
     remove: Iterable[str] = (),
@@ -193,13 +139,11 @@ def create_project(
 
     Args:
         `output_dir`:      Where to create the project folder.
-        `diagram_sources`: Dict of {filename_stem: lean_source_code}
-                           e.g. {"MixedDiagram": "import ...\\ndef mixedDiagram ..."}
         `template_dir`:    Optional path to directory containing template .lean files.
         `project_name`:    Optional name of the Lean package / library.
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
-        `lean_cert`:       The certificate's predicates, printed; placeholders
-                           where it is `None`.
+        `certificate`:     The certificate's files by project-relative path,
+                           as `proof.render.certificate_files` renders them.
         `source`:          The input the module was read from, written to
                            `dbg/system<suffix>` as a debug artifact.
         `lakefile`:        What the inference route adds to the lakefile,
@@ -307,8 +251,8 @@ def create_project(
     for enc in ENCODINGS:
         print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
 
-    # -- certificate data (init_pre, inv, P, ranking — placeholders if no lean_cert) --
-    write_data_lean(project_dir, project_name, module, lean_cert, ctx=ctx)
+    # The certificate: its definitions and the proof read off their shape.
+    write_files(project_dir, certificate)
 
     # ----------------------------------------------------------
     # Generate Main.lean for executable
@@ -318,30 +262,6 @@ def create_project(
         main_lean.write_text(generate_main_lean(project_name, module, module_name))
         print(f"Wrote {main_lean}")
 
-    # ----------------------------------------------------------
-    # Always write Certificate.lean (stable proof structure, imports XXXData)
-    # ----------------------------------------------------------
-    write_certificate_lean(project_dir, project_name, module, lean_cert, ctx=ctx)
-
     print()
     print(f"DONE: Project created at: {project_dir}")
     return project_dir
-
-
-def generate_standalone_cert_lean(
-    module: Module,
-    lean_cert: LeanCertificate | None = None,
-) -> str:
-    """Generate a self-contained certificate Lean file with init/update inlined.
-
-    Unlike :func:`write_certificate_lean`, the functional module code
-    (init, update) is inlined directly rather than imported.  ZerothHammer
-    is always imported from the project-level ``ZerothHammer.lean``.
-
-    Suitable for placing a single .lean file inside an existing lake project
-    such as ``tests/lean/Certs/``.
-    """
-    ctx = LeanContext(module)
-    m2l = ModuleToLean4(ctx)
-    module_code = m2l.to_lean_functional()
-    return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)
