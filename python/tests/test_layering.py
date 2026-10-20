@@ -6,8 +6,8 @@ layers it may import besides itself, and a module imports nothing else of
 for the reader and loads nothing.
 
 A route is a module of `zrth.lean.magic` that defines a `TA2Magic`: what two
-routes share lives under `zrth.lean.smt` or in `smt_synth`, never in one of
-them. A route's row imports its engine inside the function that runs it, so
+routes share lives under `zrth.lean.smt` or in a module of `magic` that is
+not a route (`synth`, `llm`), never in one of them. A route's row imports its engine inside the function that runs it, so
 `verith --help` loads no engine. And a name with a leading underscore is its
 module's own: no module of `zrth.lean` imports one from another, nor reads
 one off an imported module. A name another module needs is part of its

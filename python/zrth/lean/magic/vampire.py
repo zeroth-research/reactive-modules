@@ -68,7 +68,7 @@ ranks one by, for the reason it has: a quantity that falls by less than one
 need not floor to anything smaller.  So the two halves of a Buchi
 certificate read the same column differently, the invariant keeping its
 rationals and the rank flooring them, which is what
-`smt_synth.component_readings`'s ``floor_reals`` is the general form of.
+`magic.synth.component_readings`'s ``floor_reals`` is the general form of.
 
 cvc5 writes the question
 ========================
@@ -173,7 +173,7 @@ from ..smt.record import found, note
 from ..smt.script import decimals, script, smt_int
 from ..smt.terms import free_constants, ite_conditions
 from ..smt.vampire import run_vampire
-from ..smt_synth import (
+from .synth import (
     SynthContext,
     columns,
     denominator_scale,

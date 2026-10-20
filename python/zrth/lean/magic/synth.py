@@ -50,11 +50,11 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
-from .certificate import Claim
-from .errors import Refused
-from .smt.record import found, note
-from .smt.script import decimals, smt_int, smt_lit
-from .smt.terms import free_constants, literals, nodes
+from ..certificate import Claim
+from ..errors import Refused
+from ..smt.record import found, note
+from ..smt.script import decimals, smt_int, smt_lit
+from ..smt.terms import free_constants, literals, nodes
 
 try:
     import cvc5                                      # type: ignore
@@ -64,7 +64,7 @@ except ImportError:                                  # pragma: no cover
     Kind = None
 
 if TYPE_CHECKING:
-    from .smt.obligations import Obligations
+    from ..smt.obligations import Obligations
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -145,7 +145,7 @@ class SynthContext:
                 f"--infer {route} needs the `cvc5` package, which is not "
                 f"importable. Install with: uv pip install cvc5"
             )
-        from .smt.encoding import encoding_of
+        from ..smt.encoding import encoding_of
 
         if claim.prp is None:
             raise Refused(

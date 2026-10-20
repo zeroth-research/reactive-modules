@@ -15,10 +15,12 @@ route's row in `infer_route/<name>.py` builds and calls
 * `vampire` -- Vampire derives the certificate itself, nothing proposes it
   (`--infer vampire`).
 
-Two are not routes: `llm`, the model both LLM routes ask, and `modes`, the
-bounds `houdini` computes per mode. No route imports another
-(`tests/test_layering.py`); what two share is in `zrth.lean.smt` or
-`smt_synth`.
+Four are not routes: `llm`, the model both LLM routes ask;
+`cegis_prompt`, what `cegis` asks it; `modes`, the bounds `houdini`
+computes per mode; and `synth`, what a searching route reads a module as,
+which `houdini`, `linear`, `sygus` and `vampire` share. No route imports
+another (`tests/test_layering.py`); what two share is in `zrth.lean.smt`
+or in one of these.
 
 Nothing is imported here: the route rows import their own module, which is
 what keeps `verith --help` cheap. Importing a route from this package's

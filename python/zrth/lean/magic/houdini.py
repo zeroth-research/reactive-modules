@@ -132,7 +132,7 @@ from ..smt.obligations import Candidate, Obligations
 from ..smt.record import found, note
 from ..smt.script import smt_int, smt_real
 from ..smt.terms import free_constants
-from ..smt_synth import (
+from .synth import (
     Column,
     SynthContext,
     affine_smt,
@@ -170,7 +170,7 @@ _MINIMISE_SECONDS = 15.0
 
 # A ranking search asks about at most this many shapes, smallest first; fits
 # them to at most this many rounds; and has at most this many forms on each
-# side of a branch (`smt_synth.split_conditions` says which branches).
+# side of a branch (`magic.synth.split_conditions` says which branches).
 _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
 _MAX_BRANCH_FORMS = 6
@@ -197,7 +197,7 @@ _MAX_SHIFTS = 2
 # disjunction of them as one fact. It bounds how long a certificate can get:
 # the disjunction is one `step_inv` case per value. The other half of that
 # bound, the scale a ranking function is floored after, is
-# `smt_synth._MAX_SCALE`, since every route that reads a Real rank wants it.
+# `magic.synth._MAX_SCALE`, since every route that reads a Real rank wants it.
 _MAX_VALUES = 8
 
 

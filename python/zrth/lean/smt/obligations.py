@@ -23,7 +23,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..smt_synth import SynthContext
+    from ..magic.synth import SynthContext
 
 
 @dataclass(frozen=True)

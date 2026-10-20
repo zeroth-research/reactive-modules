@@ -29,7 +29,7 @@ about a story told over it.
 a ``Nat``, and flooring a quantity that falls by less than one need not fall
 at all -- ``m_lra_half`` steps by ``1/2``, where ``to_int x`` stalls on every
 other round.  The scale is the least common denominator of the literals the
-program writes (:func:`smt_synth.denominator_scale`, which
+program writes (:func:`magic.synth.denominator_scale`, which
 ``--infer houdini`` reads the same way), so the column is
 ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
 integral.  What this costs on the Lean side is a bridge rather than a
@@ -101,7 +101,7 @@ from ..smt.obligations import (
     ranked,
     step_inv,
 )
-from ..smt_synth import (
+from .synth import (
     Search,
     SynthContext,
     affine_smt,
@@ -329,7 +329,7 @@ class TA2MagicLinear(TA2Magic):
           property's state has no linear rank and has this one:
           `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
         * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
-          property and the transition branch on (`smt_synth.split_conditions`),
+          property and the transition branch on (`magic.synth.split_conditions`),
           for a rank that falls through a different quantity on each side --
           `(ite (<= 0 s1) s0 (- s1))`.
         """

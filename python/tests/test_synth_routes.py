@@ -42,7 +42,7 @@ def _int_cols(n: int):
     worth a cvc5 context here -- what is being checked is which widths the
     note claims, not what was searched.
     """
-    from zrth.lean.smt_synth import Reading
+    from zrth.lean.magic.synth import Reading
 
     return [Reading(f"s{i}", None, "int", i) for i in range(n)]
 
@@ -314,7 +314,7 @@ def test_an_element_is_read_by_its_own_sort_not_the_component_s():
     import torch
 
     from zrth import LIA, Bool, Module, Term, Var, Wire, X
-    from zrth.lean.smt_synth import SynthContext, component_readings, component_slots
+    from zrth.lean.magic.synth import SynthContext, component_readings, component_slots
 
     b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))
     module = Module.sequential(

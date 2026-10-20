@@ -79,7 +79,7 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     without a search having been run. What the seam's cases ask about."""
     from zrth.lean.magic.houdini import TA2MagicHoudini
     from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.smt_synth import SynthContext, columns
+    from zrth.lean.magic.synth import SynthContext, columns
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
@@ -228,7 +228,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
 def test_a_real_module_is_no_longer_refused_for_its_sort():
     """It is the shapes that have to answer for a Real component now, not a
     sort check: `SynthContext.build` still refuses one for every other route."""
-    from zrth.lean.smt_synth import SynthContext
+    from zrth.lean.magic.synth import SynthContext
 
     claim = Claim(prp="(= s0 0.0)", kind="buchi")
     module = module_at(LIMITS / "m_lra_lin.py")

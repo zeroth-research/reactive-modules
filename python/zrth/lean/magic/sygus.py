@@ -69,7 +69,7 @@ from ..errors import Refused
 from . import TA2Magic
 from ..smt.limits import bounded_solver, call_ms
 from ..smt.obligations import initial, transition
-from ..smt_synth import (
+from .synth import (
     READING_KINDS,
     Search,
     SynthContext,
