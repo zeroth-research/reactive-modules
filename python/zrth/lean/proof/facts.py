@@ -276,22 +276,33 @@ def _proof_facts(solver) -> tuple[bool, list]:
     Walks the proof for the nonlinear-arithmetic rules. Their conclusions
     name the products cvc5 had to reason about, which is precisely what
     `nlinarith` would otherwise have to guess.
+
+    A rule's name is not enough: `ARITH_MULT_POS` / `_NEG` also scale an
+    inequality by a numeral -- `-1 < 0 ∧ x ≥ 1 → -1·x ≤ -1` -- which is
+    linear reasoning and which a linear refutation is full of. A step
+    counts when its conclusion multiplies two factors neither of which is
+    a numeral.
     """
     from cvc5 import Kind
 
     products: dict[int, object] = {}
     linear = True
+    # A proof is a DAG, and `getChildren()` wraps each child afresh: an
+    # `id()` names a wrapper, which a shared step does not keep and a freed
+    # one hands on to the next. A `Proof` hashes and compares by the step
+    # it wraps, so the steps themselves are what is kept.
     stack, seen = list(solver.getProof()), set()
     while stack:
         step = stack.pop()
-        key = id(step)
-        if key in seen:
+        if step in seen:
             continue
-        seen.add(key)
+        seen.add(step)
         if str(step.getRule()).rsplit(".", 1)[-1] in _NONLINEAR_RULES:
-            linear = False
             for node in nodes([step.getResult()], order="lifo"):
-                if node.getKind() == Kind.MULT:
+                if node.getKind() == Kind.MULT and sum(
+                        1 for c in node
+                        if not (c.isIntegerValue() or c.isRealValue())) > 1:
+                    linear = False
                     products.setdefault(node.getId(), node)
         stack.extend(step.getChildren())
     return linear, list(products.values())
@@ -390,7 +401,8 @@ def _refutation_shape(
     proved_any = False
     pre_offered = False
     pre_used = False
-    for name, labels in _obligation_labels(q):
+    f = q.frame("h_")
+    for name, labels in _obligation_labels(q, f):
         if budget.exhausted:
             break
         try:
@@ -406,7 +418,11 @@ def _refutation_shape(
             continue
         proved_any = True
         linear_all = linear_all and linear
-        products += prods
+        # Restated over the state the predicates are printed over: the
+        # obligation reads the frame's own `h_s0..`, which the printer does
+        # not know. A product of inputs or of the successor still names
+        # the frame, and is left out when it is printed.
+        products += [t.substitute(f.s, q.state_vars) for t in prods]
         if "pre" in labels:
             pre_offered = True
             pre_used = pre_used or _in_core(solver, labels["pre"])
@@ -421,8 +437,9 @@ def _refutation_shape(
         hints.products = _factor_pairs(products)
 
 
-def _obligation_labels(q: "ModuleQueries"):
-    """`(name, {hypothesis name: term})` for each obligation cvc5 can state.
+def _obligation_labels(q: "ModuleQueries", f):
+    """`(name, {hypothesis name: term})` for each obligation cvc5 can state,
+    over the frame `f`.
 
     `step_inv` always, and then whichever third obligation the certificate's
     kind states -- `hrank` for `G (F P)`, `inv_imp_P` for `G P`. `init_inv`
@@ -432,7 +449,6 @@ def _obligation_labels(q: "ModuleQueries"):
     A hypothesis that is literally `true` is left out: it would be in no
     unsat core and would make every core look like a strict subset.
     """
-    f = q.frame("h_")
     inv = [("inv", q.inv)]
     out = [("step_inv", ob.step_inv(f, inv, [q.inv]).labelled(q.tm))]
     if q.kind == "safety":

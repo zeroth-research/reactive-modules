@@ -36,7 +36,7 @@ set_option linter.unnecessarySeqFocus false
 -- its certificate; see `zrth/lean/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, nonlinear
-
+-- cvc5: cvc5 needed 2 product hint(s)
 set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 
@@ -62,7 +62,7 @@ macro "cert_prep" : tactic =>
 
 -- Close it: only the provers this state can use, cheapest first.
 macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
+  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
@@ -172,7 +172,7 @@ set_option linter.unnecessarySeqFocus false
 -- its certificate; see `zrth/lean/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, nonlinear
-
+-- cvc5: cvc5 needed 2 product hint(s)
 set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 
@@ -228,7 +228,7 @@ macro "cert_prep" : tactic =>
 
 -- Close it: only the provers this state can use, cheapest first.
 macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
+  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
