@@ -441,7 +441,7 @@ def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
     """Run `module` from its initial state up to time `horizon`.
 
     `t` is the module's time reference, its only allowed external: it reads the current
-    time and its rate is 1. `seed` feeds the exponential clocks and the `uniform`
+    time and its rate is 1; left out, it is the module's one external. `seed` feeds the exponential clocks and the `uniform`
     scheduler. `scheduler` is `last()` (the default), `first(gap)`, `uniform(gap)`, or a
     function `(hi, rng) -> delta` choosing how long the step flows, `0 < delta <= hi`,
     where `hi` is how long the invariants allow (already clipped to the horizon).
@@ -451,9 +451,11 @@ def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
     with the trace so far attached: the flow has no value in the current state, or time
     cannot pass and the round changes nothing.
     """
+    if t is None and len(module.extl) == 1:
+        [t] = module.extl
     if set(module.extl) != ({t} if t is not None else set()):
         raise TypeError("simulate(): the module's only external may be the time reference `t`")
-    if t is not None and not isinstance(t.dtype, Clock):
+    if t is not None and t.dtype != Clock():
         raise TypeError(f"simulate(): the time reference must be a Clock, got {t.dtype}")
     pick = last() if scheduler is None else scheduler
     rng = random.Random(seed)
