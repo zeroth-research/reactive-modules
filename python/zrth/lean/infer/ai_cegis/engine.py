@@ -243,70 +243,50 @@ class AiCegisEngine(Engine):
         if self.budget is not None:
             self.budget.start_phase()
 
-        checks = [
-            self._check_init(frame("init_"), r),
-            self._check_inductive(frame("ind_"), r),
+        held = [("inv", r.inv_term)]
+
+        def entry(f):
+            return [("extl_l", f.el), ("extl_n", f.en)]
+
+        def step(f):
+            return [("s", f.s), ("extl_l", f.el), ("extl_n", f.en),
+                    ("s_next", f.succ)]
+
+        def rank_at(f, *names):
+            return [(f"ranking({n})", [f.at(r.ranking_term, vs)])
+                    for n, vs in zip(names, (f.s, f.succ))]
+
+        # One row per obligation: its name, the prefix of the fresh constants
+        # its frame is stated over, the obligation on that frame, and the
+        # values a counter-model is read back at for the feedback.
+        rows = [
+            ("init_inv", "init_",
+             lambda f: init_inv(f, [r.inv_term]), entry),
+            ("step_inv", "ind_",
+             lambda f: step_inv(f, held, [r.inv_term]), step),
         ]
         if safety:
-            checks.append(self._check_inv_implies_prp(frame("ip_"), r, prp_term))
+            # `inv s → prp s`: what makes the invariant a *safety* proof.
+            rows.append(("inv_imp_P", "ip_",
+                         lambda f: inv_imp_P(f, held, prp_term),
+                         lambda f: [("s", f.s)]))
         else:
-            checks += [
-                self._check_ranking_decrease(frame("rd_"), r, prp_term),
-                self._check_ranking_positive(frame("rp_"), r, prp_term),
+            # `rank_positive` is `inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`:
+            # with `rank_decrease`, exactly `hrank` over `Int.toNat ranking`.
+            rows += [
+                ("rank_decrease", "rd_",
+                 lambda f: rank_decrease(f, held, prp_term, r.ranking_term),
+                 lambda f: step(f) + rank_at(f, "s", "s_next")),
+                ("rank_positive", "rp_",
+                 lambda f: rank_positive(f, held, prp_term, r.ranking_term),
+                 lambda f: [("s", f.s)] + rank_at(f, "s")),
             ]
-        return checks
-
-    def _check_inv_implies_prp(self, f: Frame, r, prp_term):
-        """`inv s → prp s`: what makes the invariant a *safety* proof."""
-        q = inv_imp_P(f, [("inv", r.inv_term)], prp_term)
-        return self._run_query("inv_imp_P", q.negation(f.tm), f.tm,
-                               extra_vars=[("s", f.s)])
-
-    def _check_init(self, f: Frame, r):
-        q = init_inv(f, [r.inv_term])
-        return self._run_query(
-            "init_inv", q.negation(f.tm), f.tm,
-            extra_vars=[("extl_l", f.el), ("extl_n", f.en)],
-        )
-
-    def _check_inductive(self, f: Frame, r):
-        q = step_inv(f, [("inv", r.inv_term)], [r.inv_term])
-        return self._run_query(
-            "step_inv",
-            q.negation(f.tm),
-            f.tm,
-            extra_vars=[
-                ("s", f.s),
-                ("extl_l", f.el),
-                ("extl_n", f.en),
-                ("s_next", f.succ),
-            ],
-        )
-
-    def _check_ranking_decrease(self, f: Frame, r, prp_term):
-        q = rank_decrease(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
-        return self._run_query(
-            "rank_decrease",
-            q.negation(f.tm),
-            f.tm,
-            extra_vars=[
-                ("s", f.s),
-                ("extl_l", f.el),
-                ("extl_n", f.en),
-                ("s_next", f.succ),
-                ("ranking(s)", [f.at(r.ranking_term, f.s)]),
-                ("ranking(s_next)", [f.at(r.ranking_term, f.succ)]),
-            ],
-        )
-
-    def _check_ranking_positive(self, f: Frame, r, prp_term):
-        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`: with
-        `rank_decrease`, exactly `hrank` over `Int.toNat ranking`."""
-        q = rank_positive(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
-        return self._run_query(
-            "rank_positive", q.negation(f.tm), f.tm,
-            extra_vars=[("s", f.s), ("ranking(s)", [f.at(r.ranking_term, f.s)])],
-        )
+        out = []
+        for name, prefix, obligation, read_at in rows:
+            f = frame(prefix)
+            out.append(self._run_query(name, obligation(f).negation(f.tm),
+                                       f.tm, extra_vars=read_at(f)))
+        return out
 
     # --- solver driver --------------------------------------------------
 
