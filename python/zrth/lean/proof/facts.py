@@ -358,6 +358,8 @@ def solver_hints(q: "ModuleQueries | None", budget: SmtBudget) -> SolverHints:
 
 def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) -> None:
     """Conditions the invariant already settles, so `split_ifs` need not."""
+    from cvc5 import Kind
+
     # Conditions of the `ite`s the printer does not fold into min/max, in
     # this order: it is the order of `hints.determined`, which reaches Lean.
     conds: dict = {}
@@ -375,9 +377,10 @@ def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) 
         inv_s = q.enc.at(q.inv, s)
         cond_s = cond.substitute(q.state_vars, s)
         value = None
-        if _unsat(q, q._and(inv_s, cond_s), budget):
+        if _unsat(q, ob.conjunction(q.tm, [inv_s, cond_s]), budget):
             value = False
-        elif _unsat(q, q._and(inv_s, q._not(cond_s)), budget):
+        elif _unsat(q, ob.conjunction(
+                q.tm, [inv_s, q.tm.mkTerm(Kind.NOT, cond_s)]), budget):
             value = True
         if value is None:
             continue

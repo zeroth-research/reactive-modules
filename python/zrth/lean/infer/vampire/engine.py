@@ -549,12 +549,11 @@ class Question:
         return [floor_real(self.tm, at[i], self.scale) for i in tpl.at]
 
     def _and(self, parts):
-        kept = [p for p in parts
-                if not (p.getKind() == Kind.CONST_BOOLEAN
-                        and p.getBooleanValue())]
-        if not kept:
-            return self.tm.mkBoolean(True)
-        return kept[0] if len(kept) == 1 else self.tm.mkTerm(Kind.AND, *kept)
+        """`parts` conjoined, less any literal `true`."""
+        return obl.conjunction(self.tm, [
+            p for p in parts
+            if not (p.getKind() == Kind.CONST_BOOLEAN and p.getBooleanValue())
+        ])
 
     # --- the obligations --------------------------------------------------
 

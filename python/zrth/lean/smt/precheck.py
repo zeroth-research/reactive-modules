@@ -125,22 +125,6 @@ class ModuleQueries:
 
     # ── plumbing ──────────────────────────────────────────────────────
 
-    def _true(self):
-        return self.tm.mkBoolean(True)
-
-    def _and(self, *ts):
-        from cvc5 import Kind
-
-        ts = [t for t in ts if t is not None]
-        if not ts:
-            return self._true()
-        return ts[0] if len(ts) == 1 else self.tm.mkTerm(Kind.AND, *ts)
-
-    def _not(self, t):
-        from cvc5 import Kind
-
-        return self.tm.mkTerm(Kind.NOT, t)
-
     def solver(self, budget: SmtBudget):
         """A solver on this module's terms, held to `budget`'s next call."""
         return self.enc.solver(call_ms(budget), logic="ALL")

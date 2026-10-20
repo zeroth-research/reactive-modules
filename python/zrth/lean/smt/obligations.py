@@ -61,8 +61,8 @@ class Query:
         from cvc5 import Kind
 
         assert not self.defines, "a defined round has no negation form"
-        parts = [t for _, t in self.hyps] + [tm.mkTerm(Kind.NOT, self.goal)]
-        return parts[0] if len(parts) == 1 else tm.mkTerm(Kind.AND, *parts)
+        return conjunction(tm, [t for _, t in self.hyps]
+                           + [tm.mkTerm(Kind.NOT, self.goal)])
 
     def implication(self, tm):
         """`hyps -> goal`, every hypothesis kept as given. Inline only."""

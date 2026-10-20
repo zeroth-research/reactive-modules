@@ -97,6 +97,7 @@ from ...smt.script import affine_smt, conjunction_smt, decimals
 from ...smt.obligations import (
     Frame,
     Obligations,
+    conjunction,
     init_inv,
     inv_imp_P,
     ranked,
@@ -621,9 +622,7 @@ class SmtLinearEngine(Engine):
                                   col.term.substitute(ctx.state, vs)),
                     )
                 parts.append(tm.mkTerm(Kind.GEQ, t, tm.mkInteger(0)))
-            if not parts:
-                return tm.mkBoolean(True)
-            return parts[0] if len(parts) == 1 else tm.mkTerm(Kind.AND, *parts)
+            return conjunction(tm, parts)
 
         return [x for row in rows for x in row], inv
 
