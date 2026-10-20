@@ -100,11 +100,8 @@ import sys
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
-from .proof.render import (
-    LeanCertificate,
-    generate_zeroth_hammer_lean,
-    prepare,
-)
+from .proof.render import LeanCertificate, prepare
+from .project.scaffold import generate_zeroth_hammer_lean
 from .core.certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .core.errors import Refused
@@ -114,15 +111,14 @@ from . import inputs
 from .infer_route import (
     InferInput, InferResult, ProjectHandle, owned_files,
 )
-from .project import (
+from .project.scaffold import (
     ENCODINGS,
-    LakeBuildError,
     Layout,
-    build_certificate,
     create_project,
     generate_standalone_cert_lean,
     write_encoding,
 )
+from .project.build import LakeBuildError, build_certificate
 from .smt.record import note
 from .smt.encoding import lazy
 from .smt.precheck import pre_check, predicate_terms

@@ -7,20 +7,15 @@ from zrth.lean.codegen.terms import product_type
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.core.errors import PredicateRefused, Refused
 from zrth.lean.codegen.context import LeanContext
-from zrth.lean.lean_names import MAT_SIMP, rm_def
+from zrth.lean.project.names import MAT_SIMP, rm_def
 from zrth.lean.proof.tactics import plan_for
-from zrth.lean.template_env import render
+from zrth.lean.project.templates import render
 
 if TYPE_CHECKING:
     from zrth import Module
 
     from zrth.lean.smt.precheck import ModuleQueries
     from zrth.lean.proof.facts import PredicateFacts, SolverHints
-
-def generate_zeroth_hammer_lean() -> str:
-    """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic."""
-    return render("project/ZerothHammer.lean.j2")
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean

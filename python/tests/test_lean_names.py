@@ -1,4 +1,4 @@
-"""`zrth.lean.lean_names` is what the project is written under: every
+"""`zrth.lean.project.names` is what the project is written under: every
 module the generated Lean imports from the project, the bridge's
 included, is a file the project has."""
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
-from zrth.lean.lean_names import CERT_LIB, SYSTEM_LAYOUT
-from zrth.lean.project import create_project
+from zrth.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
+from zrth.lean.project.scaffold import create_project
 from zrth.lean.fbk.na import check_na_supported
 from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
 

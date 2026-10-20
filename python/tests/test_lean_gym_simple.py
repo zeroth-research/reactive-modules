@@ -3,9 +3,7 @@
 import pytest
 import torch
 from zrth import Wire, Term, Module, Sort as dt, LIA as it, Bool, Int
-from zrth.lean.project import (
-    create_project,
-)
+from zrth.lean.project.scaffold import create_project
 
 from zrth.expr import Expr, Bool as BoolConst
 

@@ -59,7 +59,7 @@ Lean is written:
 - the route's `precheck` refuses a module that its procedure cannot read;
 - `lean_gaps` refuses an operator with no Lean form.
 
-### 4. Lean project (`project.py`, `codegen/encodings/`, `templates/`)
+### 4. Lean project (`project/`, `codegen/encodings/`, `templates/`)
 
 `create_project` writes the project to `-o DIR -p NAME`:
 
@@ -226,7 +226,8 @@ topologically-sorted dataflow graph.
 | `codegen/encodings/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circuit.py`, `scalar.py`, `relational.py`; `skeleton.py`, the shape every relational encoding has, and `common.py`, what the scalar ones share |
 | `fbk/` | The `--infer fbk-proveit` route's machinery: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`proveit`) |
 | `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
-| `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
+| `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean` |
+| `project/` | The generated project on disk: `scaffold` writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), `lakefile` its dependencies, `main_lean` the `--executable` program, `build` runs `lake build`; `names` are the files and modules it is made of and `templates` the Jinja environment |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
 | `proof/` | The rest of the certificate's Lean: `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`); `tactics`, the plan read off them |
@@ -407,7 +408,7 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
 
-The project writes one file per row of `project.ENCODINGS`, each from its
+The project writes one file per row of `project.scaffold.ENCODINGS`, each from its
 `to_lean_*` producer.
 
 ---
@@ -446,7 +447,7 @@ shape follows the module: the encodings (`codegen/encodings/`), the predicates
 (`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
 and a `--cert-file` certificate need is one template partial, rendered by both
 (`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
-than one file uses is one constant in `lean_names.py`.
+than one file uses is one constant in `project/names.py`.
 
 ### `predicate_terms` / `render_certificate`
 
@@ -499,7 +500,7 @@ across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
 
-## ZerothHammer (`proof/render.py`)
+## ZerothHammer (`project/scaffold.py`)
 
 A Lean 4 elaborator tactic that cascades proof strategies:
 
@@ -532,7 +533,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
+## `uv run verith` CLI (`cli.py`, `main.py`, `project/`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -1323,7 +1324,7 @@ see [Building the certificate](#building-the-certificate---build-cert).
 
 The route needs that checkout on the same toolchain as the generated
 projects, **v4.28.0**; it was pinned to v4.27.0 with `mathlib a3a10db` and
-`cslib d69fa7d`. Ported by matching `project.py`'s package set exactly
+`cslib d69fa7d`. Ported by matching `project/lakefile.py`'s package set exactly
 (`cslib v4.28.0`, `smt f58d19d…`, Mathlib inherited through cslib), which
 lets one already-built `.lake/packages` — e.g. `python/tests/lean`'s — serve
 both. One source fix was needed: `bv_decide_light` dropped `bvSimprocs`
@@ -1505,7 +1506,7 @@ rather than gaining a second one.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
 4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
-   (`project.py`) to be written into the project.
+   (`project/scaffold.py`) to be written into the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth

@@ -649,7 +649,7 @@ def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""
-    from zrth.lean.proof.render import generate_zeroth_hammer_lean
+    from zrth.lean.project.scaffold import generate_zeroth_hammer_lean
     hammer = generate_zeroth_hammer_lean()
     for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
         assert f'"{name}"' in hammer

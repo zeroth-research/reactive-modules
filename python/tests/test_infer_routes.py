@@ -26,7 +26,7 @@ from zrth.lean.infer_route import (
     route_by_name,
     route_names,
 )
-from zrth.lean.project import ENCODINGS
+from zrth.lean.project.scaffold import ENCODINGS
 
 KINDS = {"safety", "buchi"}
 RETURNS = {"smt", "lean", "files"}

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.project import create_project, write_data_lean
+from zrth.lean.project.scaffold import create_project, write_data_lean
 from zrth.lean.proof.render import lean_certificate
 from zrth.lean.core.certificate import Certificate, Claim
 

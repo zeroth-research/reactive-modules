@@ -909,7 +909,7 @@ def test_the_bridge_is_not_imported_by_the_certificate_root():
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
     from zrth.lean.fbk.proveit import equivalence_lean
-    from zrth.lean.template_env import render
+    from zrth.lean.project.templates import render
 
     text = equivalence_lean("Proj", LeanContext(_counter()))
 
@@ -1133,7 +1133,7 @@ def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
 
     from zrth.lean.fbk.proveit import na_module_name
     from zrth.lean.infer_route import route_by_name
-    from zrth.lean.project import generate_lakefile
+    from zrth.lean.project.lakefile import generate_lakefile
 
     bare = generate_lakefile("Proj")
     assert "LTL_Certifying" not in bare

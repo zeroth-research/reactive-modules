@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.project import CORE_FILES, LEAN_AI_FILES, TEMPLATE_DIR
-from zrth.lean.template_env import TEMPLATES_DIR, STATIC_DIR, PROJECT_TEMPLATES_DIR
+from zrth.lean.project.scaffold import CORE_FILES, LEAN_AI_FILES, TEMPLATE_DIR
+from zrth.lean.project.templates import TEMPLATES_DIR, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 
 def test_every_lean_template_is_reachable_by_the_generator():

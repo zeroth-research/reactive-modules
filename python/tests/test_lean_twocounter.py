@@ -2,9 +2,7 @@
 
 import torch
 from zrth import Wire, Term, Module, LIA, Bool, Var, X
-from zrth.lean.project import (
-    create_project,
-)
+from zrth.lean.project.scaffold import create_project
 from zrth.lean.proof.render import lean_certificate
 from zrth.lean.core.certificate import Certificate, Claim
 

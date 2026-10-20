@@ -70,7 +70,7 @@ class ProjectHandle:
         encoding it is removes the layout arithmetic -- ``System/System.lean``
         is the functional row's path only because `SYSTEM_LAYOUT` says so.
         """
-        from ..project import ENCODINGS, SYSTEM_LAYOUT
+        from ..project.scaffold import ENCODINGS, SYSTEM_LAYOUT
 
         if suffix not in {e.suffix for e in ENCODINGS}:
             raise Refused(f"there is no {suffix!r} encoding to read")
@@ -112,14 +112,14 @@ class ProjectHandle:
     # functions in the caller keeps that pairing in one place.
 
     def write_data(self, lean_cert: "LeanCertificate") -> Path:
-        from ..project import write_data_lean
+        from ..project.scaffold import write_data_lean
 
         return write_data_lean(
             self.dir, self.name, self.module, lean_cert, ctx=self.ctx
         )
 
     def write_certificate(self, lean_cert: "LeanCertificate") -> Path:
-        from ..project import write_certificate_lean
+        from ..project.scaffold import write_certificate_lean
 
         return write_certificate_lean(
             self.dir, self.name, self.module, lean_cert, ctx=self.ctx

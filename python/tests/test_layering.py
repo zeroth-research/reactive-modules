@@ -38,6 +38,19 @@ LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "artifacts": (frozenset({"zrth.lean.artifacts"}), frozenset({"core"})),
     "codegen": (frozenset({"zrth.lean.codegen"}), frozenset({"core", "ir"})),
     "smt": (frozenset({"zrth.lean.smt"}), frozenset({"core", "ir", "artifacts"})),
+    # The project's vocabulary, templates, lakefile, build and `Main.lean`;
+    # `scaffold`, which writes the certificate's files, sits above `proof`.
+    "project": (frozenset({
+        "zrth.lean.project.names", "zrth.lean.project.templates",
+        "zrth.lean.project.lakefile", "zrth.lean.project.build",
+        "zrth.lean.project.main_lean",
+    }), frozenset({"core", "ir", "codegen"})),
+    "proof": (frozenset({"zrth.lean.proof"}),
+              frozenset({"core", "ir", "codegen", "smt", "project"})),
+    "scaffold": (frozenset({"zrth.lean.project.scaffold"}),
+                 frozenset({"core", "ir", "codegen", "project", "proof"})),
+    "fbk": (frozenset({"zrth.lean.fbk"}),
+            frozenset({"core", "ir", "codegen", "smt", "project", "proof"})),
 }
 
 
@@ -243,8 +256,9 @@ def test_the_project_builder_does_not_know_the_routes():
     """`create_project` is told what to remove and what to add to the lakefile;
     it does not read the route table to find out."""
     bad = [
-        f"project.py:{i.line} imports {i.module}"
-        for i in _imports(LEAN / "project.py")
+        f"{_name(p)}:{i.line} imports {i.module}"
+        for p in sorted((LEAN / "project").glob("*.py"))
+        for i in _imports(p)
         if i.module.startswith("zrth.lean.infer_route")
     ]
     assert not bad, "\n".join(bad)

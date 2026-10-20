@@ -48,7 +48,7 @@ MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
-from zrth.lean.project import without_cascades  # noqa: E402
+from zrth.lean.project.build import without_cascades
 from zrth.lean.inputs import to_surface  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))

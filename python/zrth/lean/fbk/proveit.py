@@ -46,10 +46,10 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ..codegen.context import LeanContext
-from ..lean_names import (
+from ..project.names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
-from ..project import stream
+from ..project.build import stream
 from .na import (
     NA_IMPORTS,
     NAUnsupported,

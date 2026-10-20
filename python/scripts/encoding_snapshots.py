@@ -9,7 +9,7 @@ is checked the same way: record at the commit before and after, then
 
     uv run python scripts/encoding_snapshots.py OUTDIR
 
-OUTDIR/<fixture>/ gets one file per `project.ENCODINGS` row (`System.lean`,
+OUTDIR/<fixture>/ gets one file per `project.scaffold.ENCODINGS` row (`System.lean`,
 `SystemCirc.lean`, ...; printed by one `ModuleToLean4`, in table order, as
 `create_project` does), each row again from a fresh `ModuleToLean4`
 (`alone/`, which is what shows state carried between producers), `Cert.lean`
@@ -48,7 +48,10 @@ def snapshot(path: Path, out: Path) -> None:
     from zrth.lean import inputs
     from zrth.lean.codegen.context import LeanContext
     from zrth.lean.codegen.terms import lean_gaps
-    from zrth.lean.project import ENCODINGS, generate_standalone_cert_lean
+    from zrth.lean.project.scaffold import (
+        ENCODINGS,
+        generate_standalone_cert_lean,
+    )
     from zrth.lean.codegen.encodings import ModuleToLean4
     from zrth.lean.fbk.na import atom_to_lean_na, check_na_supported
     from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge

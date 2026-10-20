@@ -1,9 +1,9 @@
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pathlib import Path
 
-from zrth.lean.lean_names import LINTERS_OFF
+from zrth.lean.project.names import LINTERS_OFF
 
-TEMPLATES_DIR = Path(__file__).parent / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 STATIC_DIR = TEMPLATES_DIR / "static"
 PROJECT_TEMPLATES_DIR = TEMPLATES_DIR / "project"
 

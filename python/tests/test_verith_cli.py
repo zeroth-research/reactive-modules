@@ -674,7 +674,7 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
     """`zeroth_hammer` leaves a `sorry` where it cannot close an obligation,
     and lake reports that as a warning and exits 0 — so a plain exit code
     would make "built" mean nothing."""
-    from zrth.lean import project
+    from zrth.lean.project import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(
@@ -714,7 +714,7 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
     and reads like a codegen bug rather than a proof that did not close.
     Every occurrence of it in the matrix follows an earlier error.
     """
-    from zrth.lean import project
+    from zrth.lean.project import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])

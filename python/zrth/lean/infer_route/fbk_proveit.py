@@ -6,11 +6,11 @@ import re
 from typing import TYPE_CHECKING
 
 from ..core.errors import Refused
-from ..lean_names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
+from ..project.names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
 from .api import Alias, InferInput, InferResult, InferRoute, Opt
 
 if TYPE_CHECKING:
-    from ..project import LakefileParts
+    from ..project.lakefile import LakefileParts
 
 
 def _resolve(opts: dict):
@@ -60,7 +60,7 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
     NA model declared as a lean_lib.  Without the two, the certificate this
     route installs is a file lake reaches and cannot elaborate."""
     from ..fbk.proveit import na_module_name
-    from ..project import LakefileParts, LeanLib, Require
+    from ..project.lakefile import LakefileParts, LeanLib, Require
 
     return LakefileParts(
         libs=(
