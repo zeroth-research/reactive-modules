@@ -206,6 +206,35 @@ def prompt_inv_ranking(
             parse_predicate(env, fixed_inv_src),
             None if fixed_ranking_src is None else parse_predicate(env, fixed_ranking_src),
         )
+    user_msg = _request(env, source, prp, preconds, feedback,
+                        fixed_inv_src, fixed_ranking_src, safety, known)
+    text = chat(CEGIS_SAFETY_SYSTEM if safety else CEGIS_GENERATE_SYSTEM, user_msg)
+    inv_src, ranking_src = parse_llm_reply(
+        text,
+        require_inv=fixed_inv_src is None,
+        require_ranking=not safety and fixed_ranking_src is None,
+    )
+    if fixed_inv_src is not None:
+        inv_src = fixed_inv_src
+    if fixed_ranking_src is not None:
+        ranking_src = fixed_ranking_src
+    inv_term = _checked(env, inv_src, "INVARIANT", "Bool")
+    if safety:
+        # An LLM that volunteered a RANKING anyway has offered something
+        # this route has no obligation to state; drop it rather than carry
+        # a term nothing checks.
+        return PromptResult(inv_src, None, inv_term, None)
+    ranking_term = _checked(env, ranking_src, "RANKING", "Int")
+    return PromptResult(inv_src, ranking_src, inv_term, ranking_term)
+
+
+def _request(env: PredicateParser, source: str, prp: str | None,
+             preconds: str, feedback: str | None, fixed_inv_src: str | None,
+             fixed_ranking_src: str | None, safety: bool,
+             known: tuple[str, ...]) -> str:
+    """The user message of one attempt: the module and the property, what
+    earlier runs established, the field that is given, and the last
+    attempt's feedback."""
     goal = (
         "Property (prp), to hold in EVERY reachable state"
         if safety
@@ -250,41 +279,22 @@ def prompt_inv_ranking(
             f"{feedback}\n"
             f"Please try again with a corrected {what}.\n"
         )
-    text = chat(CEGIS_SAFETY_SYSTEM if safety else CEGIS_GENERATE_SYSTEM, user_msg)
-    inv_src, ranking_src = parse_llm_reply(
-        text,
-        require_inv=fixed_inv_src is None,
-        require_ranking=not safety and fixed_ranking_src is None,
-    )
-    if fixed_inv_src is not None:
-        inv_src = fixed_inv_src
-    if fixed_ranking_src is not None:
-        ranking_src = fixed_ranking_src
+    return user_msg
+
+
+def _checked(env: PredicateParser, src: str, field: str, sort: str):
+    """`src`, the reply's `field` line, parsed and held to `sort`; a
+    `PromptParseError` saying what is wrong, which is the next attempt's
+    feedback."""
     try:
-        inv_term = parse_predicate(env, inv_src)
+        term = parse_predicate(env, src)
     except RuntimeError as e:
         raise PromptParseError(
-            f"Could not parse INVARIANT `{inv_src}`: {e}. "
+            f"Could not parse {field} `{src}`: {e}. "
             f"Use only s0..s{len(env.state_vars) - 1}."
         ) from e
-    if str(inv_term.getSort()) != "Bool":
+    if str(term.getSort()) != sort:
         raise PromptParseError(
-            f"INVARIANT must have sort Bool, got {inv_term.getSort()}."
+            f"{field} must have sort {sort}, got {term.getSort()}."
         )
-    if safety:
-        # An LLM that volunteered a RANKING anyway has offered something
-        # this route has no obligation to state; drop it rather than carry
-        # a term nothing checks.
-        return PromptResult(inv_src, None, inv_term, None)
-    try:
-        ranking_term = parse_predicate(env, ranking_src)
-    except RuntimeError as e:
-        raise PromptParseError(
-            f"Could not parse RANKING `{ranking_src}`: {e}. "
-            f"Use only s0..s{len(env.state_vars) - 1}."
-        ) from e
-    if str(ranking_term.getSort()) != "Int":
-        raise PromptParseError(
-            f"RANKING must have sort Int, got {ranking_term.getSort()}."
-        )
-    return PromptResult(inv_src, ranking_src, inv_term, ranking_term)
+    return term
