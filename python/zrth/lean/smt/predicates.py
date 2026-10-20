@@ -351,17 +351,32 @@ def _coerce_bare_numerals(src: str, bv_widths: dict[str, int]) -> str:
 
 def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
     """Parse `src` as a cvc5 predicate. Tries the Python-expression DSL
-    first (`_pyeval`), falls back to SMT-LIB on failure."""
+    first (`_pyeval`), and falls back to SMT-LIB for text that is not the
+    DSL's syntax -- `(= s0 0)` is no Python expression at all.
+
+    Text that is the DSL's syntax and wrong in it -- a sort mismatch, an
+    index past the wire, a connective given too few arguments -- is refused
+    in the DSL's terms, as the `RuntimeError` every caller reports as "could
+    not parse": handed to the SMT-LIB parser it would only be text that
+    parser cannot read, which it never was. Anything else raised is a bug,
+    and is left to say so.
+    """
     ns = _pyeval_namespace(env)
     try:
         result = _pyeval(src, ns)
-        if isinstance(result, _E):
-            return result.t
-        if isinstance(result, cvc5.Term):
-            return result
-        # Some other Python object — fall through to SMT-LIB
-    except Exception:
-        pass
+    except (SyntaxError, _NotPredicate):
+        result = None
+    except (TypeError, ValueError, IndexError, RuntimeError) as e:
+        raise RuntimeError(
+            f"`{src.strip()}` is predicate syntax, and not a predicate of "
+            f"this module: {e}"
+        ) from e
+    if isinstance(result, _E):
+        return result.t
+    if isinstance(result, cvc5.Term):
+        return result
+    # Not the DSL, or a value no predicate is -- `5`, a whole matrix
+    # variable: SMT-LIB reads the rest.
     term = env.parse_expr(src)
     if term.isNull():
         # cvc5 parses an empty or all-blank source to a null term rather than

@@ -109,3 +109,32 @@ def test_a_bare_numeral_still_falls_through_to_smtlib():
     """`0` reads as a Python int, which is not a term; SMT-LIB makes it one."""
     term = parse_predicate(_env("m_countdown"), "0")
     assert term.getSort().isInteger()
+
+
+@pytest.mark.parametrize(
+    "src, why",
+    [
+        ("s1[0][0] + s0[0][0] > 0", "arithmetic"),       # Int + Bool
+        ("s1[5][0] > 0", "out of bounds"),
+        ("Ite(s0[0][0], 1)", "missing"),
+    ],
+)
+def test_the_dsl_says_what_is_wrong_with_a_predicate_in_it(src, why):
+    """Python syntax that is not a predicate of the module is refused in
+    the DSL's terms, rather than handed to the SMT-LIB parser as text it
+    was never written as."""
+    with pytest.raises(RuntimeError, match=f"is predicate syntax.*{why}"):
+        parse_predicate(_env("m_boolint"), src)
+
+
+def test_a_fault_in_the_dsl_itself_is_not_a_parse_error(monkeypatch):
+    """A bug raises as itself instead of reading as "could not parse"."""
+    import zrth.lean.smt.predicates as predicates
+
+    def broken(src, ns):
+        raise AttributeError("a bug")
+
+    monkeypatch.setattr(predicates, "_pyeval", broken)
+    with pytest.raises(AttributeError, match="a bug"):
+        parse_predicate(_env("m_countdown"), "s[0][0] == 0")
+
