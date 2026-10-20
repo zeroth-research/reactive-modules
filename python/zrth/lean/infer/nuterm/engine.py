@@ -1,4 +1,4 @@
-"""TA2Magic by a learned ranking function, certified before it is offered.
+"""Inference by a learned ranking function, certified before it is offered.
 
 ``--infer nuterm``. Where ``--infer ai`` and ``--infer ai-cegis`` ask an LLM for
 the certificate, this route learns one. A small ReLU network is trained on
@@ -40,7 +40,7 @@ a column of the system the proof quantifies over.
 states the precondition admits rather than from every state the init block can
 produce, which is the difference between finding an invariant and finding none:
 8 of the svcomp corpus's Houdini invariants hold only from the admitted states.
-It reaches the procedure as ``System.assuming`` -- see :meth:`TA2MagicLearn._assuming`
+It reaches the procedure as ``System.assuming`` -- see :meth:`NutermEngine._assuming`
 for how a predicate over inputs becomes one over columns, and for the one input
 shape that is refused instead.
 """
@@ -56,7 +56,7 @@ from zrth import Module
 
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
-from ..engine import TA2Magic
+from ..engine import Engine
 from ...smt.script import smt_int
 
 
@@ -262,7 +262,7 @@ def _conjuncts(term) -> list:
 # The route
 # ---------------------------------------------------------------------------
 
-class TA2MagicLearn(TA2Magic):
+class NutermEngine(Engine):
     """Infer the certificate by learning a ranking function and certifying it.
 
     ``delta`` is how much the rank must drop on a counting round (one, for an

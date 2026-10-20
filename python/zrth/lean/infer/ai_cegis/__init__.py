@@ -8,7 +8,7 @@ from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicCEGIS
+    from .engine import AiCegisEngine
 
     inp = inp.taking_inv(
         inp.resumable_inv(),
@@ -21,7 +21,7 @@ def _run(inp: InferInput) -> InferResult:
         else "taking its invariant as given and inferring the ranking function",
     )
 
-    magic = TA2MagicCEGIS(
+    engine = AiCegisEngine(
         inp.project.encoding(""),
         inp.module,
         model=inp.model,
@@ -32,7 +32,7 @@ def _run(inp: InferInput) -> InferResult:
         budget=inp.budget,
         log=inp.log,
     )
-    return InferResult(magic.infer(inp.claim, inp.given))
+    return InferResult(engine.infer(inp.claim, inp.given))
 
 
 ROUTE = InferRoute(

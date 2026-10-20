@@ -1,4 +1,4 @@
-"""TA2Magic by template: the certificate cvc5 can find in one quantified query.
+"""Inference by template: the certificate cvc5 finds in one quantified query.
 
 ``--infer smt-linear``.  No LLM, no learner, no grammar -- the *shape* is
 fixed and its coefficients are ordinary constants, so the whole search is one
@@ -29,7 +29,7 @@ about a story told over it.
 a ``Nat``, and flooring a quantity that falls by less than one need not fall
 at all -- ``m_lra_half`` steps by ``1/2``, where ``to_int x`` stalls on every
 other round.  The scale is the least common denominator of the literals the
-program writes (:func:`magic.synth.denominator_scale`, which
+program writes (:func:`infer.common.synth.denominator_scale`, which
 ``--infer houdini`` reads the same way), so the column is
 ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
 integral.  What this costs on the Lean side is a bridge rather than a
@@ -76,7 +76,7 @@ And one thing follows from a sort: **a bitvector column takes the query out
 of what cvc5 will state.**  Measured, the `exists c. forall s.` form comes
 back ``unknown (INCOMPLETE)`` in *one millisecond* for any width -- not a
 timeout, a refusal.  So there is a second engine, and it asks the same
-question with both halves quantifier-free (:meth:`TA2MagicLinear._cegis`).
+question with both halves quantifier-free (:meth:`SmtLinearEngine._cegis`).
 It is a fallback rather than the engine, because what the direct query
 proves is stronger: its ``unsat`` is about every integer coefficient, where
 the loop needs a bounded candidate space to terminate and its ``unsat`` is
@@ -88,7 +88,7 @@ from __future__ import annotations
 
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
-from ..engine import TA2Magic
+from ..engine import Engine
 from dataclasses import dataclass
 
 from ...smt.claim import SynthContext
@@ -181,7 +181,7 @@ class _Verdict:
 
 @dataclass(frozen=True)
 class _RankShape:
-    """What a ranking function is made of: see `TA2MagicLinear._shapes`."""
+    """What a ranking function is made of: see `SmtLinearEngine._shapes`."""
 
     kind: str                       # "linear" | "zeroed" | "split"
     cond_src: str = ""              # the branch, as SMT-LIB over `s0..`
@@ -236,7 +236,7 @@ def _normalise(values: list[int]) -> list[int]:
     return list(values) if g in (0, 1) else [int(v) // g for v in values]
 
 
-class TA2MagicLinear(TA2Magic):
+class SmtLinearEngine(Engine):
     """Infer a certificate of fixed linear shape, or prove there is none."""
 
     def __init__(
@@ -329,8 +329,9 @@ class TA2MagicLinear(TA2Magic):
           property's state has no linear rank and has this one:
           `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
         * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
-          property and the transition branch on (`magic.synth.split_conditions`),
-          for a rank that falls through a different quantity on each side --
+          property and the transition branch on
+          (`infer.common.synth.split_conditions`), for a rank that falls
+          through a different quantity on each side --
           `(ite (<= 0 s1) s0 (- s1))`.
         """
         shapes = [_RankShape("linear")]

@@ -1,4 +1,4 @@
-"""TA2Magic by proposing and proving: Houdini, and a ranking search.
+"""Inference by proposing and proving: Houdini, and a ranking search.
 
 ``--infer houdini``.  Nothing here searches for a certificate.  The route
 *proposes* -- candidate invariant facts read off the module and off
@@ -123,7 +123,7 @@ from ...core.errors import PredicateRefused, Refused
 from ...smt.claim import SynthContext
 from .solvers import DEFAULT_SOLVER, SolverSpec
 from ...smt.solvers import DEFAULT_TIMEOUT, Solver
-from ..engine import TA2Magic
+from ..engine import Engine
 from .modes import mode_bounds
 from ...smt.obligations import Candidate, Obligations
 from ...smt.record import found, note
@@ -166,7 +166,7 @@ _MINIMISE_SECONDS = 15.0
 
 # A ranking search asks about at most this many shapes, smallest first; fits
 # them to at most this many rounds; and has at most this many forms on each
-# side of a branch (`magic.synth.split_conditions` says which branches).
+# side of a branch (`infer.common.synth.split_conditions` says which branches).
 _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
 _MAX_BRANCH_FORMS = 6
@@ -193,7 +193,8 @@ _MAX_SHIFTS = 2
 # disjunction of them as one fact. It bounds how long a certificate can get:
 # the disjunction is one `step_inv` case per value. The other half of that
 # bound, the scale a ranking function is floored after, is
-# `magic.synth._MAX_SCALE`, since every route that reads a Real rank wants it.
+# `infer.common.synth._MAX_SCALE`, since every route that reads a Real rank
+# wants it.
 _MAX_VALUES = 8
 
 
@@ -1053,7 +1054,7 @@ def _drops(before: int, after: int) -> bool:
 # ══════════════════════════════════════════════════════════════════════════
 
 
-class TA2MagicHoudini(TA2Magic):
+class HoudiniEngine(Engine):
     """Houdini and a ranking search, put to whichever solver was chosen.
 
     `solver` is a `SolverSpec` -- what `--houdini-solver` and the flags

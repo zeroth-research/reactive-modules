@@ -1,11 +1,11 @@
-"""CEGIS-based TA2Magic: LLM proposes invariant/ranking as SMT-LIB
+"""CEGIS-based inference: an LLM proposes invariant/ranking as SMT-LIB
 expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 """
 
 # CEGIS, not CEGAR: the counterexample refines the *candidate*, and there is
 # no abstraction to refine -- the obligations are checked over the concrete
-# transition relation. `magic.learn`'s Farkas/CEGAR is the one that does
-# refine an abstraction.
+# transition relation. `infer.nuterm.engine`'s Farkas/CEGAR is the one that
+# does refine an abstraction.
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from zrth import Module
 
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
-from ..engine import TA2Magic
+from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from ...smt.obligations import (
     Frame,
@@ -43,7 +43,7 @@ class ObligationResult:
     counterexample: str | None  # formatted CE if not ok, else None
 
 
-class TA2MagicCEGIS(TA2Magic):
+class AiCegisEngine(Engine):
     """Infer invariant and ranking via LLM + cvc5 CEGIS loop.
 
     Each attempt:
@@ -200,7 +200,7 @@ class TA2MagicCEGIS(TA2Magic):
             self.log(f"[CEGIS] failures: {[o.name for o in failures]}")
             slowest = max(slowest, time.monotonic() - began)
 
-        # `Refused` for the reason `magic.ai` gives: running out of
+        # `Refused` for the reason `infer.ai.engine` gives: running out of
         # attempts is this route giving up, not a defect.
         within = (f" in {time.monotonic() - start:.0f} s of a {self.budget_s:g} s "
                   f"budget" if self.budget_s is not None else "")

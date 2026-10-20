@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from zrth.lean.core.certificate import Claim, LeanAnswer
-from zrth.lean.infer.ai.engine import TA2MagicAI
+from zrth.lean.infer.ai.engine import AiEngine
 
 COUNTER_SOURCE = """\
 def init():
@@ -30,7 +30,7 @@ def _assert_result(result: LeanAnswer):
 
 def test_an_answer_in_backticks_is_the_answer():
     """A model quotes Lean the way the prompt does; Lean would read the quote."""
-    inv, ranking = TA2MagicAI._parse_generate_response(
+    inv, ranking = AiEngine._parse_generate_response(
         "Reasoning first.\n\n"
         "INVARIANT: `fun s => 0 ≤ s.1 0 0`\n"
         "RANKING: `fun s => (s.1 0 0).toNat`\n"
@@ -40,7 +40,7 @@ def test_an_answer_in_backticks_is_the_answer():
 
 
 def test_an_unquoted_answer_is_left_alone():
-    inv, ranking = TA2MagicAI._parse_generate_response(
+    inv, ranking = AiEngine._parse_generate_response(
         "INVARIANT: fun s => 0 ≤ s.1 0 0\nRANKING: fun s => (s.1 0 0).toNat"
     )
     assert inv == "fun s => 0 ≤ s.1 0 0"
@@ -48,7 +48,7 @@ def test_an_unquoted_answer_is_left_alone():
 
 
 def test_a_backtick_inside_the_expression_is_not_a_quote():
-    inv, _ = TA2MagicAI._parse_generate_response(
+    inv, _ = AiEngine._parse_generate_response(
         "INVARIANT: fun s => s.1 0 0 = `x.name\nRANKING: fun s => 0"
     )
     assert inv == "fun s => s.1 0 0 = `x.name"
@@ -123,7 +123,7 @@ def test_both_prompts_state_the_obligations_under_the_precondition():
 
 
 def _recording_ai(monkeypatch):
-    """A `TA2MagicAI` that answers a fixed reply and keeps every message."""
+    """A `AiEngine` that answers a fixed reply and keeps every message."""
     import zrth.lean.infer.ai.engine as ai
 
     seen: list[tuple[str, str]] = []
@@ -140,7 +140,7 @@ def _recording_ai(monkeypatch):
         return chat
 
     monkeypatch.setattr(ai, "make_client", fake_client)
-    return ai.TA2MagicAI(COUNTER_SOURCE), seen
+    return ai.AiEngine(COUNTER_SOURCE), seen
 
 
 def test_the_precondition_reaches_both_calls(monkeypatch):
@@ -233,7 +233,7 @@ def test_a_candidate_lean_cannot_elaborate_is_asked_again(monkeypatch):
         return chat
 
     monkeypatch.setattr(ai, "make_client", fake_client)
-    magic = ai.TA2MagicAI(COUNTER_SOURCE)
+    magic = ai.AiEngine(COUNTER_SOURCE)
     out = magic.infer(Claim(prp="x == 0"))
 
     assert out.ranking == "fun s => \u230as 0 0\u230b.toNat"
@@ -257,7 +257,7 @@ def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
         return chat
 
     monkeypatch.setattr(ai, "make_client", fake_client)
-    assert ai.TA2MagicAI(COUNTER_SOURCE).infer(Claim(prp="x == 0")) is None
+    assert ai.AiEngine(COUNTER_SOURCE).infer(Claim(prp="x == 0")) is None
 
 
 # --- Claude API tests ---
@@ -267,9 +267,9 @@ def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
     reason="ANTHROPIC_API_KEY not set",
 )
 def test_counter_claude():
-    from zrth.lean.infer.ai.engine import TA2MagicAI
+    from zrth.lean.infer.ai.engine import AiEngine
 
-    magic = TA2MagicAI(COUNTER_SOURCE)
+    magic = AiEngine(COUNTER_SOURCE)
     _assert_result(magic.infer(Claim(prp="x == 0")))
 
 
@@ -285,9 +285,9 @@ def _ollama_available() -> bool:
 
 @pytest.mark.skipif(not _ollama_available(), reason="Ollama not available")
 def test_counter_ollama_qwen3_coder():
-    from zrth.lean.infer.ai.engine import TA2MagicAI
+    from zrth.lean.infer.ai.engine import AiEngine
 
-    magic = TA2MagicAI(
+    magic = AiEngine(
         COUNTER_SOURCE,
         model="qwen3-coder",
         base_url="http://localhost:11434/v1",

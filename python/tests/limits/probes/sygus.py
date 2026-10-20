@@ -3,8 +3,8 @@
 What came of it is `--infer sygus` (an invariant, not a ranking function) and
 `--infer smt-linear`; these are the numbers that steered them there.
 
-No LLM, no API key, deterministic. The constraints are the two `magic.cegis`
-already builds -- `inv s → rank s ≥ 0` and
+No LLM, no API key, deterministic. The constraints are the two
+`infer.ai_cegis.engine` already builds -- `inv s → rank s ≥ 0` and
 `inv s ∧ ¬P s → rank (update s) < rank s` -- with `rank` a `synthFun`
 instead of a parsed term.
 

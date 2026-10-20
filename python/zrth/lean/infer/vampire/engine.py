@@ -1,4 +1,4 @@
-"""TA2Magic by synthesis: the certificate Vampire's answer literals derive.
+"""Inference by synthesis: the certificate Vampire's answer literals derive.
 
 ``--infer vampire``.  Nothing here proposes a candidate.  The route states
 the certificate's obligations with the certificate *itself* left open --
@@ -68,7 +68,8 @@ ranks one by, for the reason it has: a quantity that falls by less than one
 need not floor to anything smaller.  So the two halves of a Buchi
 certificate read the same column differently, the invariant keeping its
 rationals and the rank flooring them, which is what
-`magic.synth.component_readings`'s ``floor_reals`` is the general form of.
+`infer.common.synth.component_readings`'s ``floor_reals`` is the general
+form of.
 
 cvc5 writes the question
 ========================
@@ -166,7 +167,7 @@ from itertools import combinations, product
 from ...core.certificate import Certificate, Claim
 from ...core.errors import PredicateRefused, Refused
 from ...smt.solvers import DEFAULT_TIMEOUT, Cvc5Solver
-from ..engine import TA2Magic
+from ..engine import Engine
 from ...smt import obligations as obl
 from ...smt.obligations import Candidate, Obligations
 from ...smt.record import found, note
@@ -906,7 +907,7 @@ def _integer(text: str) -> "int | None":
 # ══════════════════════════════════════════════════════════════════════════
 
 
-class TA2MagicVampire(TA2Magic):
+class VampireEngine(Engine):
     """The certificate Vampire derives, checked before it is handed on."""
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,

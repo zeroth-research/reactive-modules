@@ -1,13 +1,12 @@
 """AI-based inference of invariants and ranking functions.
 
-The model is reached through :mod:`.llm`.
+The model is reached through :mod:`..common.llm`.
 """
 
 import re
 
 from ...core.certificate import Claim, LeanAnswer
 from ...core.errors import Refused
-from ..engine import TA2Magic
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 
 GENERATE_SYSTEM = """\
@@ -165,7 +164,7 @@ def _absent_names(*values: str) -> str:
     return " ".join(said)
 
 
-class TA2MagicAI(TA2Magic):
+class AiEngine:
     """Infers invariants and ranking functions using an LLM.
 
     By default uses Claude via the Anthropic API (requires ANTHROPIC_API_KEY).

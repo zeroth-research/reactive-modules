@@ -1,4 +1,4 @@
-"""TA2Magic by synthesis: the invariant cvc5's SyGuS track finds.
+"""Inference by synthesis: the invariant cvc5's SyGuS track finds.
 
 ``--infer sygus``.  A safety certificate *is* an invariant -- `rule_globally`
 takes no ranking function -- and an invariant is exactly what SyGuS-IF's
@@ -50,7 +50,7 @@ One width at a time, `1, 2, ... --sygus-conjuncts`, the first that answers
 winning -- not one query at the ceiling.  The widths nest, so this costs no
 reach and the *narrowest* answer is the one that comes back; and because the
 search is not monotone in the width, asking only at the ceiling was losing
-both halves of what this route is for.  :meth:`TA2MagicSygus._synthesise`
+both halves of what this route is for.  :meth:`SygusEngine._synthesise`
 has the measurement.
 
 What it leaves behind
@@ -66,7 +66,7 @@ from __future__ import annotations
 
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
-from ..engine import TA2Magic
+from ..engine import Engine
 from ...smt.claim import READING_KINDS, SynthContext
 from ...smt.limits import bounded_solver, call_ms
 from ...smt.obligations import initial, transition
@@ -103,13 +103,13 @@ READS = READING_KINDS
 # than `unknown`, which is the difference between leaving a proof behind and
 # leaving a shrug. (The first reason is the ordinary one: every conjunct is
 # restated in Lean and is one more implication in the obligation, which
-# `magic.learn._prune` exists for.)
+# `infer.nuterm.engine._prune` exists for.)
 # Measured on `m_step2` with the congruence atoms dropped, which has no
 # answer in this space: decided empty in 10 / 25 / 166 ms at 1 / 2 / 3.
 DEFAULT_CONJUNCTS = 3
 
 
-class TA2MagicSygus(TA2Magic):
+class SygusEngine(Engine):
     """Infer a safety invariant with cvc5's SyGuS invariant track.
 
     ``grammar`` chooses what an atom may be: `linear` gives comparisons of
@@ -189,10 +189,10 @@ class TA2MagicSygus(TA2Magic):
     def _synthesise(self, ctx: SynthContext, cols, consts) -> Search:
         """`pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, width by width.
 
-        One query per width, narrowest first, as `magic.linear` runs its
-        rows -- and here for a stronger reason than cost, because **the
-        search is not monotone in the width**.  The widths nest: the start
-        rule at width `w` is `A | A /\\ A | ... ` up to `w`, so a wider
+        One query per width, narrowest first, as `infer.smt_linear.engine`
+        runs its rows -- and here for a stronger reason than cost, because
+        **the search is not monotone in the width**.  The widths nest: the
+        start rule at width `w` is `A | A /\\ A | ... ` up to `w`, so a wider
         grammar's language contains every narrower one and an answer found
         at 2 is inside the space searched at 3.  cvc5 still does not find it
         there.  Measured over the 59 matrix cells that reach the grammar:

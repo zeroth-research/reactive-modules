@@ -8,9 +8,9 @@ from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicSygus
+    from .engine import SygusEngine
 
-    magic = TA2MagicSygus(
+    engine = SygusEngine(
         inp.module,
         grammar=inp.opts["sygus_grammar"],
         conjuncts=inp.opts["sygus_conjuncts"],
@@ -19,7 +19,7 @@ def _run(inp: InferInput) -> InferResult:
         log=inp.log,
         encoding=inp.smt,
     )
-    return InferResult(magic.infer(inp.claim, inp.given))
+    return InferResult(engine.infer(inp.claim, inp.given))
 
 
 ROUTE = InferRoute(

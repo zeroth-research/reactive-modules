@@ -8,7 +8,7 @@ from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicLinear
+    from .engine import SmtLinearEngine
 
     inp = inp.taking_inv(
         inp.resumable_inv(strengthen=inp.claim.is_safety),
@@ -16,7 +16,7 @@ def _run(inp: InferInput) -> InferResult:
          if inp.claim.is_safety
          else "taking its invariant as given and ranking over it"),
     )
-    magic = TA2MagicLinear(
+    engine = SmtLinearEngine(
         inp.module,
         rows=inp.opts["linear_rows"],
         budget=inp.budget,
@@ -24,7 +24,7 @@ def _run(inp: InferInput) -> InferResult:
         log=inp.log,
         encoding=inp.smt,
     )
-    return InferResult(magic.infer(inp.claim, inp.given))
+    return InferResult(engine.infer(inp.claim, inp.given))
 
 
 ROUTE = InferRoute(

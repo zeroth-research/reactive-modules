@@ -8,10 +8,10 @@ from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicLearn
+    from .engine import NutermEngine
 
-    magic = TA2MagicLearn(inp.module, log=inp.log)
-    cert = magic.infer(inp.claim, inp.given)
+    engine = NutermEngine(inp.module, log=inp.log)
+    cert = engine.infer(inp.claim, inp.given)
     # The learner certified both halves before returning them, so they are
     # `proved`, which is what a later `--infer ai-cegis` resumes from; the
     # pipeline's own `inv.smt` record is `encoded` and resumes nothing.

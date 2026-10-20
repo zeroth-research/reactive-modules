@@ -219,16 +219,17 @@ class InferInput:
         not ask for, over one they did, is the kind of cross-run surprise
         that makes two identical command lines mean different things.
 
-        By default the invariant is one to take as *given*: `magic.cegis`
-        infers only what is left around a fixed `given.inv`, so it has to be
-        inductive and, on a safety claim, imply the property. `too_weak` is
-        inductive and merely fails to imply it, which `rule_buchi` never
-        asked of an invariant and exactly what `rule_globally` needs -- so it
-        is skipped for a safety claim, the one thing the store cannot filter
-        on. With `strengthen=True` the invariant is one to *add to*:
-        `--infer smt-linear --safety` searches for the conjuncts that are
-        missing, so an invariant that is inductive and does not yet imply the
-        property is the best thing it can be handed.
+        By default the invariant is one to take as *given*:
+        `infer.ai_cegis.engine` infers only what is left around a fixed
+        `given.inv`, so it has to be inductive and, on a safety claim, imply
+        the property. `too_weak` is inductive and merely fails to imply it,
+        which `rule_buchi` never asked of an invariant and exactly what
+        `rule_globally` needs -- so it is skipped for a safety claim, the one
+        thing the store cannot filter on. With `strengthen=True` the
+        invariant is one to *add to*: `--infer smt-linear --safety` searches
+        for the conjuncts that are missing, so an invariant that is inductive
+        and does not yet imply the property is the best thing it can be
+        handed.
         """
         if self.given.inv:
             return None

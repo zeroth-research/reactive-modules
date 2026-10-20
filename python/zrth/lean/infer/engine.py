@@ -1,10 +1,9 @@
-"""What an inference route's engine is: `TA2Magic`.
+"""What a route's row runs: an `Engine`.
 
 Each route's engine is `infer/<name>/engine.py`, built and called by the
-route's row in `infer/<name>/__init__.py` (`fbk-proveit`'s is not a
-`TA2Magic`: it hands back files):
+route's row in `infer/<name>/__init__.py`:
 
-* `ai` -- an LLM proposes the whole certificate.
+* `ai` -- an LLM proposes the whole certificate, in Lean.
 * `ai_cegis` -- an LLM proposes, cvc5 refutes, the counterexample goes back.
 * `houdini` -- candidate facts, greatest inductive subset, over either
   solver.
@@ -12,18 +11,24 @@ route's row in `infer/<name>/__init__.py` (`fbk-proveit`'s is not a
 * `smt_linear` -- one linear template, solved directly.
 * `sygus` -- cvc5's `addSygusInvConstraint`.
 * `vampire` -- Vampire derives the certificate itself, nothing proposes it.
+* `fbk_proveit` -- `lean-ltl-certifying`'s toolchain, which hands back
+  files.
 
 What two engines share is in `infer.common` (`llm`, the model both LLM
 routes ask; `synth`, what a searching route reads a module as) or in
 `zrth.lean.smt`. No route imports another (`tests/test_layering.py`).
 """
 
+from __future__ import annotations
+
+from typing import Protocol
+
 from ..core.certificate import Certificate, Claim
 
 
-class TA2Magic:
-    """Base class of the engines: `infer(claim, given)` answers with a new
-    `Certificate`, in SMT-LIB.
+class Engine(Protocol):
+    """An engine whose answer is SMT-LIB: `infer(claim, given)` answers with
+    a new `Certificate`.
 
     `claim.kind == "buchi"` asks for `G (F prp)`: an invariant and a ranking
     function that decreases on every step from an `inv ∧ ¬prp` state.
@@ -33,16 +38,18 @@ class TA2Magic:
     (`--invariant`, `--ranking`, or a resumed invariant); an engine reads
     only what its route's `seeds` names.
 
-    `ai` is the exception: `infer(claim)` answers in Lean, a `LeanAnswer`.
+    Two engines are not one: `ai` answers in Lean (`infer(claim)` returns
+    a `LeanAnswer`), and `fbk-proveit`'s hands back the certificate's files.
+    Neither has this shape, and neither claims it.
 
-    The route's contract is its row's `run(InferInput) -> InferResult` in
-    `infer/<name>/__init__.py`, which builds the engine from what it needs and
-    calls it. This class names `infer(claim, given)` and holds nothing: no
-    two engines are constructed from the same arguments.
+    The route's contract is its row's `run(InferInput) -> InferResult`,
+    which builds the engine from what it needs and calls it. This names
+    `infer(claim, given)` and holds nothing: no two engines are constructed
+    from the same arguments.
     """
 
     def infer(self, claim: Claim,
               given: Certificate = Certificate()) -> Certificate:
         """The certificate of `claim.prp`, under the claim's preconditions
         (`init_pre`, `update_pre`)."""
-        raise NotImplementedError
+        ...

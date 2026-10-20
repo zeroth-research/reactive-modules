@@ -23,8 +23,8 @@ from .encoding import encoding_of
 # `tuple` is the odd one out, and deliberately: it is not a kind anything is
 # *read* as, it is the kind that has elements. A route that takes it is
 # saying it states itself over elements rather than over components -- see
-# `magic.synth.component_slots` -- and what each element is read as is one
-# of the other four.
+# `infer.common.synth.component_slots` -- and what each element is read as
+# is one of the other four.
 READING_KINDS = ("int", "bool", "bv", "real", "tuple")
 
 

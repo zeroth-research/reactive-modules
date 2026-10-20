@@ -70,9 +70,9 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 
 def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
            fixture: Path = LIMITS, vampire: "str | None" = None):
-    from zrth.lean.infer.vampire.engine import TA2MagicVampire
+    from zrth.lean.infer.vampire.engine import VampireEngine
 
-    magic = TA2MagicVampire(module_at(fixture / f"{name}.py"),
+    magic = VampireEngine(module_at(fixture / f"{name}.py"),
                             vampire=vampire or vampire_or_skip(),
                             timeout=timeout, log=lambda *_: None)
     return magic.infer(Claim(prp=prp, kind=kind))
@@ -389,10 +389,10 @@ def test_a_real_component_reaches_the_templates():
     gate lets it through and the search decides, rather than the gate.
     Getting as far as looking for the prover is getting past both gates.
     """
-    from zrth.lean.infer.vampire.engine import TA2MagicVampire, template
+    from zrth.lean.infer.vampire.engine import VampireEngine, template
     from zrth.lean.smt.claim import SynthContext
 
-    magic = TA2MagicVampire(module_at(LIMITS / "m_lra_lin.py"),
+    magic = VampireEngine(module_at(LIMITS / "m_lra_lin.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(= s0 0.0)", kind="buchi"),
@@ -424,10 +424,10 @@ def test_a_bool_column_is_carried_rather_than_refused():
     bounded, its Bool column is left out, and the search decides rather than
     the gate.
     """
-    from zrth.lean.infer.vampire.engine import TA2MagicVampire, template
+    from zrth.lean.infer.vampire.engine import VampireEngine, template
     from zrth.lean.smt.claim import SynthContext
 
-    magic = TA2MagicVampire(module_at(LIMITS / "m_boolint.py"),
+    magic = VampireEngine(module_at(LIMITS / "m_boolint.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(>= s1 0)", kind="safety"),
@@ -448,10 +448,10 @@ def test_a_module_with_nothing_to_bound_is_refused():
     """The limit of carrying a Bool unbounded: with no other column the
     invariant would be `true`, which is inductive and proves nothing, so
     the module is turned away up front rather than searched."""
-    from zrth.lean.infer.vampire.engine import TA2MagicVampire
+    from zrth.lean.infer.vampire.engine import VampireEngine
     from zrth.lean.smt.claim import SynthContext
 
-    magic = TA2MagicVampire(module_at(FIXTURES / "twobit_lia.py"),
+    magic = VampireEngine(module_at(FIXTURES / "twobit_lia.py"),
                             vampire="/nowhere", log=lambda *_: None)
     ctx = SynthContext.build(magic.module,
                              Claim(prp="(not (and s0 s1))", kind="safety"),
@@ -492,13 +492,13 @@ def test_what_vampire_answers_is_checked_before_it_is_emitted():
     -- here by making the check reject whatever came back."""
     import zrth.lean.infer.vampire.engine as mv
 
-    old = mv.TA2MagicVampire._checks_out
+    old = mv.VampireEngine._checks_out
     try:
-        mv.TA2MagicVampire._checks_out = lambda *_a, **_k: False
+        mv.VampireEngine._checks_out = lambda *_a, **_k: False
         with pytest.raises(Refused, match="derived no inductive invariant"):
             derive("m_countdown", "safety", "(<= s0 100)", timeout=10)
     finally:
-        mv.TA2MagicVampire._checks_out = old
+        mv.VampireEngine._checks_out = old
 
 
 def test_vampire_derives_a_countdowns_invariant_and_ranking():

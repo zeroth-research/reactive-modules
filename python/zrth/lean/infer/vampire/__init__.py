@@ -18,9 +18,9 @@ def _resolve(opts: dict):
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicVampire
+    from .engine import VampireEngine
 
-    magic = TA2MagicVampire(
+    engine = VampireEngine(
         inp.module,
         vampire=inp.config,
         timeout=inp.opts["vampire_timeout"],
@@ -28,7 +28,7 @@ def _run(inp: InferInput) -> InferResult:
         log=inp.log,
         encoding=inp.smt,
     )
-    return InferResult(magic.infer(inp.claim, inp.given))
+    return InferResult(engine.infer(inp.claim, inp.given))
 
 
 ROUTE = InferRoute(

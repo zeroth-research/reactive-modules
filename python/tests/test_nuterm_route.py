@@ -20,7 +20,7 @@ from zrth.sugar import ite
 from zrth.lean.core.certificate import Claim
 from zrth.lean.core.errors import Refused
 from zrth.lean.infer.nuterm.engine import (
-    TA2MagicLearn,
+    NutermEngine,
     _parse_property,
     _prune,
     _smt_affine,
@@ -97,7 +97,7 @@ def _learn(module, prp, kind, pre=None):
     """The claim asked about and the route's answer to it. `--pre` fills both
     preconditions."""
     claim = Claim(prp=prp, kind=kind, init_pre=pre, update_pre=pre)
-    return claim, TA2MagicLearn(module, log=lambda *a: None).infer(claim)
+    return claim, NutermEngine(module, log=lambda *a: None).infer(claim)
 
 
 def _verdicts(module, claim, cert):
@@ -221,7 +221,7 @@ def test_a_rule_shape_the_procedure_cannot_read_is_a_refusal_not_a_traceback():
 
 def test_a_run_with_no_property_is_refused():
     with pytest.raises(Refused, match="--safety or --buchi"):
-        TA2MagicLearn(_countdown()).infer(Claim())
+        NutermEngine(_countdown()).infer(Claim())
 
 
 # ---------------------------------------------------------------------------

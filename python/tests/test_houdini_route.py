@@ -67,9 +67,9 @@ BOTH = pytest.mark.parametrize("solver", ["cvc5", "vampire"])
 
 def infer(name: str, kind: str, prp: str, *, solver="cvc5",
           timeout: float = 60, fixture: Path = LIMITS, log=None):
-    from zrth.lean.infer.houdini.engine import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import HoudiniEngine
 
-    magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"), solver=solver,
+    magic = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
                             timeout=timeout, log=log or (lambda *_: None))
     return magic.infer(Claim(prp=prp, kind=kind))
 
@@ -77,12 +77,12 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.infer.houdini.engine import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import HoudiniEngine
     from zrth.lean.smt.obligations import Obligations
     from zrth.lean.smt.claim import SynthContext
     from zrth.lean.infer.common.synth import columns
 
-    magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
+    magic = HoudiniEngine(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, Claim(prp=prp, kind=kind),
                                    route="houdini",

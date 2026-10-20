@@ -204,7 +204,7 @@ def test_ai_does_not_infer_a_safety_certificate():
 def test_ai_takes_a_precondition():
     """`--pre` is not a candidate this route would have to hold to the
     obligations -- it is an assumption the reply may lean on, and both
-    `magic.ai` prompts already carry it (`test_magic_ai.py`)."""
+    `infer.ai.engine` prompts already carry it (`test_ai_route.py`)."""
     assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai",
                 "--pre", "(>= e0 0)"]) == ""
 
@@ -224,7 +224,7 @@ def test_nuterm_refuses_what_it_would_discard(flag, value):
     """`main.py:627`, from the row's `seeds` + `seeds_refusal`.
 
     `--pre` is no longer one of these: it is the entry assumption Houdini
-    checks initiation under, and `test_magic_learn.py` measures that it is
+    checks initiation under, and `test_nuterm_route.py` measures that it is
     used rather than merely accepted."""
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", flag, value])
     assert flag in message and "comes from the learner" in message

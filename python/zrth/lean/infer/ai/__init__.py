@@ -7,16 +7,16 @@ from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import TA2MagicAI
+    from .engine import AiEngine
 
-    magic = TA2MagicAI(
+    engine = AiEngine(
         inp.project.encoding(""), model=inp.model, base_url=inp.base_url,
         log=inp.log,
     )
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
     # behind it, which is what this route's `returns="lean"` declares. No
     # answer is an empty result, which main reports against the row.
-    return InferResult(lean=magic.infer(inp.claim))
+    return InferResult(lean=engine.infer(inp.claim))
 
 
 ROUTE = InferRoute(

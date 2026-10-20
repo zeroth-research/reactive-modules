@@ -229,8 +229,8 @@ def floor_real(tm, term, scale: int = 1):
 
     The reading :func:`component_readings` gives a Real under
     `floor_reals`, for a caller that holds the term rather than the
-    component -- `magic.vampire` floors a column it has already built for
-    the rank while the same column keeps its rationals in the invariant
+    component -- `infer.vampire.engine` floors a column it has already built
+    for the rank while the same column keeps its rationals in the invariant
     rows. :func:`floor_real_src` is the other half, the SMT-LIB a
     certificate carries; the two have to say the same thing, so they are
     written next to each other.
@@ -447,8 +447,8 @@ def affine_smt(const: int, coeffs, names) -> str:
     Written out here rather than printed from the model's own term: what this
     string has to survive is being parsed back and rendered as the body of a
     Lean definition, and a printer that `let`-binds a repeated subterm
-    produces something that cannot be one (`magic.learn._smt_term` refuses
-    exactly that).
+    produces something that cannot be one (`infer.nuterm.engine._smt_term`
+    refuses exactly that).
     """
     parts = [] if not int(const) else [smt_int(const)]
     for c, n in zip(coeffs, names):
