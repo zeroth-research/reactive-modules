@@ -353,6 +353,14 @@ class TacticPlan:
         return "first | " + " | ".join(self.closers)
 
     @property
+    def close_binds_state(self) -> bool:
+        """Whether `cert_close` takes the obligation's state binder, as
+        `cert_facts` does: when a closer names the state, which only a
+        product hint does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`).
+        Every other plan's `cert_close` stays the macro it always was."""
+        return bool(getattr(self.hints, "nlinarith_hints", None))
+
+    @property
     def state_case_tactic(self) -> str:
         """Enumerate the state, as the body of a macro over its binder `$v`.
 

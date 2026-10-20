@@ -383,13 +383,25 @@ def test_product_hints_are_added_before_the_bare_nlinarith():
     plan = plan_for(
         LeanContext(_int_module()),
         "fun s => ((s 0 0) * (s 0 0))",       # nonlinear, so nlinarith is in
-        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((s 0 0) - 1)"]),
+        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]),
     )
     closers = plan.closers
-    assert "nlinarith [mul_self_nonneg ((s 0 0) - 1)]" in closers
-    assert closers.index("nlinarith [mul_self_nonneg ((s 0 0) - 1)]") < closers.index(
+    assert "nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]" in closers
+    assert closers.index("nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]") < closers.index(
         "nlinarith"
     )
+
+
+def test_a_product_hint_reads_the_obligations_own_state():
+    """The hints are spliced into `cert_close`, a macro, and a hygienic macro
+    reads a bare `s` as a fresh `s✝`. So `cert_close` takes the obligation's
+    state binder exactly when a hint names it, and is unchanged otherwise."""
+    ctx = LeanContext(_int_module())
+    text = "fun s => ((s 0 0) * (s 0 0))"
+    assert not plan_for(ctx, text).close_binds_state
+    hinted = plan_for(ctx, text, hints=_solver_hints(
+        nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]))
+    assert hinted.close_binds_state
 
 
 def test_hints_never_remove_a_closer():

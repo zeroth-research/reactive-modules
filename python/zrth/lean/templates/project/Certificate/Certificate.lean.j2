@@ -40,7 +40,10 @@ macro "cert_prep" : tactic =>
   `(tactic| ({{ plan.prep_tactic }}))
 
 -- Close it: only the provers this state can use, cheapest first.
-macro "cert_close" : tactic =>
+{% if plan.close_binds_state -%}
+-- Takes the obligation's own state binder, which cvc5's product hints name.
+{% endif -%}
+macro "cert_close"{% if plan.close_binds_state %} v:ident{% endif %} : tactic =>
   `(tactic| {{ plan.close_tactic }})
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
@@ -77,7 +80,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
@@ -87,7 +90,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_floors s
    try simp_mat
    try cert_states s
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
 
 section TS
 
@@ -122,7 +125,7 @@ theorem inv_imp_P : ∀ s, inv s → P s := by
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close)
+    all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
 
 theorem hP : lts.StateSet_isInvariant P := by
     intro s hs
@@ -146,7 +149,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close)
+    all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
 
 {{ noncomp }}def buchi := rule_buchi
   lts

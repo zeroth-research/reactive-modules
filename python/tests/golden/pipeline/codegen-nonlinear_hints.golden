@@ -61,8 +61,9 @@ macro "cert_prep" : tactic =>
   `(tactic| ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)))
 
 -- Close it: only the provers this state can use, cheapest first.
-macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
+-- Takes the obligation's own state binder, which cvc5's product hints name.
+macro "cert_close" v:ident : tactic =>
+  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((($v) 0 0) - (($v) 0 0)), mul_self_nonneg ((($v) 0 0) + (($v) 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
@@ -98,7 +99,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close s)
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
@@ -108,7 +109,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_floors s
    try simp_mat
    try cert_states s
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close s)
 
 section TS
 
@@ -143,7 +144,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close)
+    all_goals (cert_prep <;> cert_close s)
 
 def buchi := rule_buchi
   lts
@@ -227,8 +228,9 @@ macro "cert_prep" : tactic =>
   `(tactic| ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)))
 
 -- Close it: only the provers this state can use, cheapest first.
-macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
+-- Takes the obligation's own state binder, which cvc5's product hints name.
+macro "cert_close" v:ident : tactic =>
+  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | nlinarith [mul_self_nonneg ((($v) 0 0) - (($v) 0 0)), mul_self_nonneg ((($v) 0 0) + (($v) 0 0))] | nlinarith | positivity | (constructor <;> first | omega | linarith | nlinarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (simp_all; nlinarith) | (split_ifs at * <;> simp_all <;> omega) | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith))
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
@@ -264,7 +266,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close s)
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
@@ -274,7 +276,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_floors s
    try simp_mat
    try cert_states s
-   all_goals (cert_prep <;> cert_close)
+   all_goals (cert_prep <;> cert_close s)
 
 section TS
 
@@ -309,7 +311,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close)
+    all_goals (cert_prep <;> cert_close s)
 
 def buchi := rule_buchi
   lts

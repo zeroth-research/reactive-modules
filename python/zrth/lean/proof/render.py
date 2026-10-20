@@ -117,12 +117,15 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     # into a check. `mul_self_nonneg (a - b)` and `(a + b)` between them
     # span the products of two atoms, which is what the arithmetic rules
     # produce.
+    # Over `($v)` too: the hints are spliced into `cert_close`, a macro, and
+    # a hygienic macro reads a bare `s` as a fresh `s✝` rather than as the
+    # obligation's state.
     seen: set[str] = set()
     nlinarith: list[str] = []
     for a_term, b_term in hints.products:
         try:
-            a = smt_to_lean_body(a_term, ctrl_next)
-            b = smt_to_lean_body(b_term, ctrl_next)
+            a = smt_to_lean_body(a_term, ctrl_next, param_name="($v)")
+            b = smt_to_lean_body(b_term, ctrl_next, param_name="($v)")
         except Exception:
             continue
         for hint in (f"mul_self_nonneg ({a} - {b})",
