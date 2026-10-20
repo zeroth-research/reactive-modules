@@ -5,7 +5,7 @@ import torch
 from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
 from zrth.lean.ir.sorts import itype_name
-from zrth.lean.context import LeanContext
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.proof.render import generate_certificate_lean
 from zrth.lean.project import generate_main_lean
 
@@ -512,7 +512,7 @@ def test_effect_gets_only_the_reconstructions_it_uses():
 
 def test_recon_filter_keeps_order_and_transitive_uses():
     """The filter is order-preserving and reaches a fixed point."""
-    from zrth.lean.translate._shared import _needed_recon
+    from zrth.lean.codegen.encodings.common import _needed_recon
 
     lets = [
         "  let _m0 : T := f extl_l",
@@ -550,8 +550,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
 
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
-    from zrth.lean.literals import ConstantRegistry
-    from zrth.lean.native import translate_terms_lean, translate_terms_scalar
+    from zrth.lean.codegen.literals import ConstantRegistry
+    from zrth.lean.codegen.terms import translate_terms_lean, translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]
     with pytest.raises(ValueError, match="written by no term"):
@@ -576,7 +576,7 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     import importlib.util
     from pathlib import Path
 
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.encodings import ModuleToLean4
 
     path = Path(__file__).parent / "limits" / "mods" / f"{mod}.py"
     spec = importlib.util.spec_from_file_location(f"_alone_{mod}", path)

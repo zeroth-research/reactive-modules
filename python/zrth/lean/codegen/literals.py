@@ -5,8 +5,8 @@ from __future__ import annotations
 
 
 from zrth import BitVec, Bool, Int, Real, Sort, Term, Wire
-from .ir.sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
-from .ir.values import decimal_fraction
+from ..ir.sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
+from ..ir.values import decimal_fraction
 
 
 # ======================================================================

@@ -5,7 +5,7 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.core.errors import Refused
 from zrth.lean.ir.sorts import flat_element_type, wire_shape
-from zrth.lean.context import LeanContext
+from zrth.lean.codegen.context import LeanContext
 
 from zrth.lean.proof.render import (
     generate_certificate_lean,
@@ -24,12 +24,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from zrth import Module, Wire, X
-from .native import (
+from .codegen.terms import (
     product_type,
     build_tuple,
 )
 
-from .translate import ModuleToLean4
+from .codegen.encodings import ModuleToLean4
 from .lean_names import (
     CERT_LIB, DATA, LINTERS_OFF, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
 )

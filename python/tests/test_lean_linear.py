@@ -13,8 +13,8 @@ import pytest
 import torch
 
 from zrth import BitVec, Bool, Wire, Term, LIA, LRA, Int, Real
-from zrth.lean.literals import linear_list_literals
-from zrth.lean.native import _linear_expr
+from zrth.lean.codegen.literals import linear_list_literals
+from zrth.lean.codegen.terms import _linear_expr
 
 
 def _int_linear(A, B, out_rows):
@@ -150,7 +150,7 @@ def test_bitvec_literal_uses_of_int():
     tests/lean/Playground.lean.
     """
     from zrth import Wire, BitVec
-    from zrth.lean.literals import lean_literal
+    from zrth.lean.codegen.literals import lean_literal
 
     dt = Wire(BitVec(8, [1, 1])).dtype
     assert lean_literal(dt, -3) == "(BitVec.ofInt 8 (-3))"
@@ -188,7 +188,7 @@ def test_non_negative_bitvec_constant_still_emits():
 def test_one_printer_spells_every_literal(sort, value, lean):
     """Ints ascribed whatever their sign, Reals exact -- a float read by its
     decimal form, which is also what the SMT encoding states."""
-    from zrth.lean.literals import lean_literal
+    from zrth.lean.codegen.literals import lean_literal
 
     assert lean_literal(sort, value) == lean
 

@@ -105,7 +105,7 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 
 def _counter_ctx():
-    from zrth.lean.context import LeanContext
+    from zrth.lean.codegen.context import LeanContext
     from zrth.lean.inputs.python import load_module
 
     fixture = Path(__file__).parent / "fixtures" / "counter.py"

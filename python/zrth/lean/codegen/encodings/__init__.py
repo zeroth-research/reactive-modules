@@ -1,24 +1,26 @@
-"""Lean4 translation package.
+"""The module's Lean encodings: ``ModuleToLean4``, one submodule per encoding.
 
-Public API: ``ModuleToLean4``; one submodule per encoding.
+`functional`, `circuit`, `scalar` and `relational` (the matrix and the
+scalar relational ones) are the encodings; `skeleton` is the shape every
+relational encoding has, and `common` what the scalar ones share.
 """
 
 from functools import cached_property
 
-from zrth.lean.context import LeanContext
+from zrth.lean.codegen.context import LeanContext
 from zrth import Module
 
-from zrth.lean.translate._shared import scalar_bindings_with_recon, prepend_recon
-from zrth.lean.translate.functional import atom_to_lean_functional, constants_block
-from zrth.lean.translate.circ import (
+from zrth.lean.codegen.encodings.common import scalar_bindings_with_recon, prepend_recon
+from zrth.lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
+from zrth.lean.codegen.encodings.circuit import (
     atom_to_lean_circuit as _atom_to_lean_circuit,
     to_lean_equiv_theorems as _to_lean_equiv_theorems,
 )
-from zrth.lean.translate.scalar import (
+from zrth.lean.codegen.encodings.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
 )
-from zrth.lean.translate.relational import (
+from zrth.lean.codegen.encodings.relational import (
     atom_to_lean_rel as _atom_to_lean_rel,
     atom_to_lean_mat_rel as _atom_to_lean_mat_rel,
 )

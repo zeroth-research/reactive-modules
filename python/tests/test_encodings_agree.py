@@ -1,7 +1,7 @@
 """The module's encodings agree with what the module does.
 
 `smt.encode` turns a module into cvc5 terms, which every SMT route, the
-pre-check and the fbk bridge reason about; `native.py` turns it into Lean,
+pre-check and the fbk bridge reason about; `codegen/terms.py` turns it into Lean,
 which every certificate is a theorem about. Nothing relates the two except
 that they were written to mean the same thing. The equivalence theorems
 relate the Lean encodings to each other, and can stay provable while all of

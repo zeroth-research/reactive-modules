@@ -108,8 +108,8 @@ from .proof.render import (
 from .core.certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .core.errors import Refused
-from .context import LeanContext
-from .native import lean_gaps
+from .codegen.context import LeanContext
+from .codegen.terms import lean_gaps
 from . import inputs
 from .infer_route import (
     InferInput, InferResult, ProjectHandle, owned_files,
@@ -127,7 +127,7 @@ from .smt.record import note
 from .smt.encoding import lazy
 from .smt.precheck import pre_check, predicate_terms
 from .proof.facts import solver_hints
-from .translate import ModuleToLean4
+from .codegen.encodings import ModuleToLean4
 
 
 def _build_cert(settings: Settings, project_dir: Path,

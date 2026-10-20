@@ -1,14 +1,14 @@
 """Circuit (Box algebra) translation."""
 
-from zrth.lean.native import product_type
-from zrth.lean.circ import (
+from zrth.lean.codegen.terms import product_type
+from zrth.lean.codegen.boxes import (
     CircLayer,
     ty_list,
     native_to_vt,
     natives_to_vt,
     translate_terms_circ,
 )
-from zrth.lean.context import LeanContext
+from zrth.lean.codegen.context import LeanContext
 
 # Simp lemmas for reducing a single circuit layer
 _LAYER_SIMP = [

@@ -15,13 +15,13 @@ from zrth.lean.ir.sorts import (
     is_constant_name,
 )
 from zrth.lean.ir.layout import product_accessor
-from zrth.lean.literals import (
+from zrth.lean.codegen.literals import (
     ConstantRegistry,
     constant_expr,
     linear_list_literals,
 )
 
-from zrth.lean.native import check_argmax_output
+from zrth.lean.codegen.terms import check_argmax_output
 from zrth.lean.ir.ops import box_for
 
 from dataclasses import dataclass

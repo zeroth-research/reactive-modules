@@ -27,7 +27,7 @@ from zrth.lean.proof.render import generate_zeroth_hammer_lean, lean_certificate
 from zrth.lean.core.certificate import Certificate, Claim
 from zrth.lean.lean_names import LINTERS_OFF
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
-from zrth.lean.translate.scalar import _argmax_scalar_def_lines
+from zrth.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CORE_DIR = _LEAN_DIR / "Core"
@@ -404,7 +404,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
     # flattening lines up, and no certificate carries a Scalar section, so
     # this is the only thing that compiles them.
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.encodings import ModuleToLean4
 
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
@@ -456,7 +456,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
     from zrth.lean.proof.render import generate_data_lean
-    from zrth.lean.context import LeanContext
+    from zrth.lean.codegen.context import LeanContext
     from zrth.lean.fbk.proveit import property_to_bool_lean
     from zrth.lean.fbk.na import atom_to_lean_na
     from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge

@@ -108,7 +108,7 @@ Paths are relative to `python/zrth/lean/`.
   `System` and `Certificate`.
 - **`Uninterpreted` has no Lean form** (needs a decision). It is the limit
   matrix's only generation failure (`OpUninterp`). Every route refuses such
-  a module before writing the project (`native.lean_gaps`, naming the block
+  a module before writing the project (`codegen.terms.lean_gaps`, naming the block
   and the wire). Keep that refusal as the answer, or emit an `opaque`
   declaration and accept that no proof can say anything about the symbol.
 - **`TensorGet` / `ToUnsigned` are dead op keys** (needs a decision). No

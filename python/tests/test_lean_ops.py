@@ -23,8 +23,8 @@ import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
 from zrth.lean.ir.sorts import itype_name
-from zrth.lean.context import LeanContext
-from zrth.lean.native import lean_gaps
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.terms import lean_gaps
 from zrth.lean.ir import ops
 from zrth.lean.ir.ops import (
     COLUMNS,
@@ -350,7 +350,7 @@ def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
     # before the table is asked at all.
     assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
         == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, ops.Inline("native._special"), see_mat)) is None
+    assert ops.gap_of(_cells(unsupported, ops.Inline("codegen.terms._special"), see_mat)) is None
 
 
 # ══════════════════════════════════════════════════════════════════════

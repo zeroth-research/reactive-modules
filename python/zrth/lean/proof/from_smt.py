@@ -15,7 +15,7 @@ from zrth import Wire, Sort
 from ..core.errors import Refused
 from ..ir.sorts import dtype_shape, is_scalar_shape, wire_shape
 from ..ir.layout import product_accessor
-from ..literals import lean_bitvec, lean_int, lean_real
+from ..codegen.literals import lean_bitvec, lean_int, lean_real
 from ..smt.terms import min_max_of, selector_index, state_dependent
 
 

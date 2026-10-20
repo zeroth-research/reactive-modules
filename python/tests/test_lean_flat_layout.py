@@ -35,11 +35,11 @@ from zrth.lean.ir.layout import (
     mat_from_scalars,
     flat_layout,
 )
-from zrth.lean.context import LeanContext
-from zrth.lean.native import product_type_scalar
-from zrth.lean.translate._shared import scalar_bindings_with_recon
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.terms import product_type_scalar
+from zrth.lean.codegen.encodings.common import scalar_bindings_with_recon
 from zrth.lean.fbk.na import slot_accessors
-from zrth.lean.translate.scalar import _pack_body, _unpack_body
+from zrth.lean.codegen.encodings.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
 # genuinely 2-D wire, and a mixed list where the wire index and the slot
@@ -298,7 +298,7 @@ def test_every_sort_is_two_dimensional_so_one_reading_suffices():
     Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is no other
     case for an encoding to read differently. A 1xn wire's Lean type,
     element order, rebuilt matrix and recon lemma all agree on it."""
-    from zrth.lean.translate.scalar import _recon_lemma_lines
+    from zrth.lean.codegen.encodings.scalar import _recon_lemma_lines
 
     for shape in ([], [3], [2, 3, 4]):
         with pytest.raises(ValueError):

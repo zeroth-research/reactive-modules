@@ -11,7 +11,7 @@ import torch
 import pytest
 
 from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
-from zrth.lean.context import LeanContext
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.proof.tactics import features_for, is_nonlinear, plan_for
 
 

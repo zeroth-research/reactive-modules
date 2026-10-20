@@ -83,7 +83,7 @@ def test_a_real_valued_state_is_named_too():
 
     from zrth import LRA, Module, Real, Term, Var, X
     from zrth.lean.magic.ai import _state_type_line
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.encodings import ModuleToLean4
 
     s = Var(Real([1, 1]))
     module = Module.sequential(

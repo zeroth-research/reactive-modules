@@ -5,7 +5,7 @@ rest of the pipeline refers to them: the lake build target and its `sorry`
 filter, the fbk bridge's imports, the files the fbk-proveit route returns
 and owns. Each is defined here once, so a reference cannot drift from what
 was written. A leaf: it imports nothing from the package, so `project`,
-`translate/` and the route rows can all use it. The templates under
+`fbk/` and the route rows can all use it. The templates under
 `templates/project/` spell the same names, and `tests/test_lean_names.py`
 holds the two together.
 """

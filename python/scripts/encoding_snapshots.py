@@ -46,10 +46,10 @@ def _write(out: Path, name: str, produce) -> None:
 
 def snapshot(path: Path, out: Path) -> None:
     from zrth.lean import inputs
-    from zrth.lean.context import LeanContext
-    from zrth.lean.native import lean_gaps
+    from zrth.lean.codegen.context import LeanContext
+    from zrth.lean.codegen.terms import lean_gaps
     from zrth.lean.project import ENCODINGS, generate_standalone_cert_lean
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.encodings import ModuleToLean4
     from zrth.lean.fbk.na import atom_to_lean_na, check_na_supported
     from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
 

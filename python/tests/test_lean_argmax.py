@@ -174,7 +174,7 @@ def test_codegen_guard_still_states_the_one_index_contract():
     Kept so the contract is stated where the Lean is emitted: both variants
     produce a `Mat _ 1 1`, so a wider wire cannot be served.
     """
-    from zrth.lean.native import check_argmax_output
+    from zrth.lean.codegen.terms import check_argmax_output
 
     check_argmax_output([1, 1])  # the only shape argmax can fill
     check_argmax_output(None)  # opt out
@@ -189,7 +189,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
     Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
     theorems into one file for an Int and a Real Argmax of equal width.
     """
-    from zrth.lean.native import argmax_scalar_name
+    from zrth.lean.codegen.terms import argmax_scalar_name
 
     names = {
         argmax_scalar_name(ety, 4)
@@ -206,7 +206,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
 def test_same_width_variants_emit_distinct_definitions():
     """Two element types at one width must not produce one name twice."""
     import re
-    from zrth.lean.translate.scalar import _argmax_scalar_def_lines
+    from zrth.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
     src = "\n".join(
         _argmax_scalar_def_lines("Int", 4) + _argmax_scalar_def_lines("Real", 4)

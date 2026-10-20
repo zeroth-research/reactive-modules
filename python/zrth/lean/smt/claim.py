@@ -146,7 +146,7 @@ class SynthContext:
         # cvc5 has no term for -- `Transpose`, say -- is a refusal either way,
         # but raised from the middle of a search it is a `ValueError`
         # traceback several steps past the fact, for a user who asked about
-        # a module. Named up front instead, which is what `native.lean_gaps`
+        # a module. Named up front instead, which is what `codegen.terms.lean_gaps`
         # does for the Lean side.
         try:
             enc.init_state(enc.extl_next)

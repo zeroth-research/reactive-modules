@@ -59,7 +59,7 @@ Lean is written:
 - the route's `precheck` refuses a module that its procedure cannot read;
 - `lean_gaps` refuses an operator with no Lean form.
 
-### 4. Lean project (`project.py`, `translate/`, `templates/`)
+### 4. Lean project (`project.py`, `codegen/encodings/`, `templates/`)
 
 `create_project` writes the project to `-o DIR -p NAME`:
 
@@ -217,13 +217,13 @@ topologically-sorted dataflow graph.
 | `core/errors.py` | `Refused`, the error a run is refused with |
 | `ir/sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
 | `ir/layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
-| `literals.py` | Constants as Lean text, `ConstantRegistry` |
-| `context.py` | `LeanContext`, what every encoding of one module shares |
+| `codegen/literals.py` | Constants as Lean text, `ConstantRegistry` |
+| `codegen/context.py` | `LeanContext`, what every encoding of one module shares |
 | `common.py` | Re-exports the five above, for importers not migrated yet |
 | `ir/ops.py` | The op table: one row per theory variant, one column per backend |
-| `native.py` | Translates term lists → Lean functional `let`-binding bodies |
-| `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py` |
+| `codegen/terms.py` | Translates term lists → Lean functional `let`-binding bodies |
+| `codegen/boxes.py` | Translates term lists → `Box` circuit layers |
+| `codegen/encodings/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circuit.py`, `scalar.py`, `relational.py`; `skeleton.py`, the shape every relational encoding has, and `common.py`, what the scalar ones share |
 | `fbk/` | The `--infer fbk-proveit` route's machinery: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`proveit`) |
 | `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
@@ -258,7 +258,7 @@ scalar.  This keeps the algebra uniform.  Float-typed modules require
 
 ---
 
-## `LeanContext` (`context.py`)
+## `LeanContext` (`codegen/context.py`)
 
 Created once per module; shared across all code generators.  It extracts:
 
@@ -275,7 +275,7 @@ Created once per module; shared across all code generators.  It extracts:
 
 ---
 
-## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
+## Encoding 1 — Functional (`codegen/terms.py`, `codegen/encodings/functional.py`)
 
 `translate_terms_lean(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
@@ -302,7 +302,7 @@ native matrix forms.
 
 ---
 
-## Encoding 2 — Circuit (`circ.py`, `translate/circ.py`)
+## Encoding 2 — Circuit (`codegen/boxes.py`, `codegen/encodings/circuit.py`)
 
 The same computation is re-expressed as a `Box` (categorical wiring diagram)
 inside `namespace Circ`.  The translation:
@@ -335,7 +335,7 @@ plumbing lemmas.
 
 ---
 
-## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
+## Encoding 3 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
@@ -359,7 +359,7 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`translate._shared.scalar_bindings_with_recon` builds the input bindings: a
+`codegen.encodings.common.scalar_bindings_with_recon` builds the input bindings: a
 one-element wire is bound to its bare accessor, so downstream ops receive bare
 values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
@@ -388,7 +388,7 @@ and the equivalence theorems.
 
 ---
 
-## `ModuleToLean4` (`translate/__init__.py`)
+## `ModuleToLean4` (`codegen/encodings/__init__.py`)
 
 The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
@@ -442,7 +442,7 @@ that is `None` becomes a `True` / `sorry` placeholder.
 **Where Lean text comes from.** Jinja templates (`templates/project/`) render
 the files and their fixed structure: the project skeleton, `Data.lean`, the
 certificate's proof skeleton. Python renders expressions and the parts whose
-shape follows the module: the encodings (`translate/`), the predicates
+shape follows the module: the encodings (`codegen/encodings/`), the predicates
 (`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
 and a `--cert-file` certificate need is one template partial, rendered by both
 (`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
@@ -1496,12 +1496,12 @@ rather than gaining a second one.
 
 ## Adding a New Encoding
 
-1. Add a translation function in `native.py` (or a new file) analogous to
+1. Add a translation function in `codegen/terms.py` (or a new file) analogous to
    `translate_terms_lean`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
-2. Add a module under `translate/` that wraps the result in the
+2. Add a module under `codegen/encodings/` that wraps the result in the
    appropriate namespace / function signature, and a method on
-   `ModuleToLean4` (`translate/__init__.py`) that calls it.
+   `ModuleToLean4` (`codegen/encodings/__init__.py`) that calls it.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
 4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
@@ -1510,8 +1510,8 @@ rather than gaining a second one.
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
-`translate/_skeleton.py`, as `Rel`, `ScalarRel` (both in
-`translate/relational.py`) and the NA model (`fbk/na.py`) do.  It is
+`codegen/encodings/skeleton.py`, as `Rel`, `ScalarRel` (both in
+`codegen/encodings/relational.py`) and the NA model (`fbk/na.py`) do.  It is
 parameterised on the type builder, the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a

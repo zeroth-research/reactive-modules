@@ -18,7 +18,7 @@ from zrth.lean.ir.sorts import (
     flat_element_type,
 )
 from zrth.lean.ir.layout import flat_indices, flat_layout
-from zrth.lean.literals import (
+from zrth.lean.codegen.literals import (
     ConstantRegistry,
     constant_expr,
     linear_list_literals,

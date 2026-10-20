@@ -2,7 +2,7 @@
 
 from zrth.lean.ir.sorts import dtype_to_lean_type, flat_element_type, wire_shape
 from zrth.lean.ir.layout import FlatLayout, product_accessor, mat_from_scalars, flat_layout
-from zrth.lean.native import build_tuple, product_type_scalar
+from zrth.lean.codegen.terms import build_tuple, product_type_scalar
 
 
 def has_block(ctx, block: str) -> bool:

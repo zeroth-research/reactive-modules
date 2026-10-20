@@ -290,7 +290,7 @@ def test_an_operator_cvc5_cannot_encode_is_refused_before_the_search():
     The sort gate passes it, so until the transition is encoded nothing has
     noticed, and the failure used to arrive as a `ValueError` traceback out
     of whichever obligation a route built first. `build` forces the
-    encoding and names the operator, which is what `native.lean_gaps` does
+    encoding and names the operator, which is what `codegen.terms.lean_gaps` does
     for the Lean side.
     """
     from zrth.lean.magic.linear import TA2MagicLinear

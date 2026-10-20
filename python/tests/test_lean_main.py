@@ -11,7 +11,7 @@ import pytest
 
 from zrth import Term, Module, Int, Bool, BitVec, Real, LIA, LRA, BV, Var, X
 from zrth.lean.project import generate_main_lean
-from zrth.lean.translate import ModuleToLean4
+from zrth.lean.codegen.encodings import ModuleToLean4
 
 
 def _module_with_extl():

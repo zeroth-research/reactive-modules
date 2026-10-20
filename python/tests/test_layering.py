@@ -36,6 +36,7 @@ LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "core": (frozenset({"zrth.lean.core"}), frozenset()),
     "ir": (frozenset({"zrth.lean.ir"}), frozenset({"core"})),
     "artifacts": (frozenset({"zrth.lean.artifacts"}), frozenset({"core"})),
+    "codegen": (frozenset({"zrth.lean.codegen"}), frozenset({"core", "ir"})),
     "smt": (frozenset({"zrth.lean.smt"}), frozenset({"core", "ir", "artifacts"})),
 }
 

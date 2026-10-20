@@ -1,6 +1,6 @@
 """Scalar encoding translation."""
 
-from zrth.lean.native import (
+from zrth.lean.codegen.terms import (
     elem_ty_slug,
     product_type,
     product_type_scalar,
@@ -15,8 +15,8 @@ from zrth.lean.ir.sorts import (
     wire_shape,
 )
 from zrth.lean.ir.layout import flat_size, mat_from_scalars, flat_layout
-from zrth.lean.context import LeanContext
-from zrth.lean.translate._shared import (
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.encodings.common import (
     prepend_recon,
     scalar_bindings_with_recon,
     has_block,

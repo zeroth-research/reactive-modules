@@ -252,7 +252,7 @@ def _lean_value(wire, tensor) -> str:
     """`tensor` as a Lean `Mat` literal of `wire`'s sort, in the form the
     encoding prints its own constants in (`ir.layout.mat_from_scalars`)."""
     from zrth.lean.ir.layout import mat_from_scalars
-    from zrth.lean.literals import lean_literal
+    from zrth.lean.codegen.literals import lean_literal
     from zrth.lean.ir.sorts import flat_element_type
 
     elems = [lean_literal(wire.dtype, v) for v in flat(wire, tensor)]
@@ -278,9 +278,9 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     noncomputable, and a module with no Lean form has nothing to run.
     """
     from zrth.lean.ir.layout import product_accessor
-    from zrth.lean.context import LeanContext
-    from zrth.lean.native import build_tuple, lean_gaps
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.context import LeanContext
+    from zrth.lean.codegen.terms import build_tuple, lean_gaps
+    from zrth.lean.codegen.encodings import ModuleToLean4
 
     wires = list(module.ctrl) + list(module.extl)
     if any(isinstance(w.dtype, Real) for w in wires):

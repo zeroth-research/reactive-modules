@@ -39,12 +39,12 @@ it rebuilds the `Mat` and calls `matVecAffine`.
 import re
 
 from zrth.lean.ir.layout import flat_layout
-from zrth.lean.context import LeanContext
-from zrth.lean.native import product_type, product_type_scalar
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.terms import product_type, product_type_scalar
 from zrth.lean.lean_names import (
     DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
 )
-from zrth.lean.translate._shared import scalar_eq_name
+from zrth.lean.codegen.encodings.common import scalar_eq_name
 from zrth.lean.fbk.na import SlotBodies, check_na_shape, check_na_supported
 
 

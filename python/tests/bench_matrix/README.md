@@ -178,7 +178,7 @@ Finding the wall this way is also what turned up a missing budget: the two
 `*_circ_eq` theorems ran at Lean's default `maxHeartbeats` while `Scalar`'s
 equivalents have long carried `2000000`. Every net above four places timed
 out inside `simp` — `BUILD-FAIL` on every route, for modules nothing else was
-wrong with. [`../../zrth/lean/translate/circ.py`](../../zrth/lean/translate/circ.py)
+wrong with. [`../../zrth/lean/codegen/encodings/circuit.py`](../../zrth/lean/codegen/encodings/circuit.py)
 now raises it, and the same net builds `System.Circ` in 13 s.
 
 **What is left of the wall, measured.** With the sum encoding and the raised
