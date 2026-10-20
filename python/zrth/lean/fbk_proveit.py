@@ -377,9 +377,7 @@ def _parse(module, src: str, flag: str, encoding=None):
     return term
 
 
-def property_to_bool_lean(
-    module, property_smt: str, n_state: int = 0, encoding=None
-) -> str:
+def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
@@ -389,8 +387,8 @@ def property_to_bool_lean(
     Both sides get that map from `na.slot_accessors`, which is what keeps
     the property and the transition talking about the same variables.
 
-    `n_state` is ignored; the layout comes from the module's own wires.
-    `encoding` is the run's `ModuleEncoding`, which the property is read on.
+    The layout comes from the module's own wires. `encoding` is the run's
+    `ModuleEncoding`, which the property is read on.
     """
     from .context import LeanContext
     from .smt_to_lean import smt_to_lean_bool

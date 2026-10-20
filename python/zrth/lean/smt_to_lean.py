@@ -70,11 +70,6 @@ def build_var_map(
     return var_accessor, var_wire
 
 
-def _state_access(state_wires: list[Wire]) -> tuple[dict[str, str], dict[str, Wire]]:
-    """Convenience: bind `s0..sN-1` → `s.acc_i [0 0]`."""
-    return build_var_map([("s", "s", state_wires)])
-
-
 def smt_to_lean(
     term: cvc5.Term,
     state_wires: list[Wire],

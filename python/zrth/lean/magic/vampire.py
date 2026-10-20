@@ -190,10 +190,6 @@ except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
 
-# The templates, in the order they are tried.
-TEMPLATES = ("intervals", "differences")
-DEFAULT_TEMPLATE = TEMPLATES[0]
-
 # A branch is one assignment of the transition's `ite` conditions, so the
 # case count doubles with each. Past this the question is too long to be
 # worth asking, and the route says so rather than printing it.

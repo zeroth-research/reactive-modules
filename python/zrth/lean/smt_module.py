@@ -1,12 +1,10 @@
 """SMT wrapper around a reactive Module: symbolic input/output in cvc5.
 
 Exposes `ModuleSMT` — given a `Module`, provides:
-  * `fresh_inputs(prefix)` — mint cvc5 consts for the ctrl-latched and
-    extl-latched/next input wires.
+  * `fresh_ctrl` / `fresh_extl_l` / `fresh_extl_n` — mint cvc5 consts for
+    the ctrl-latched and extl-latched/next input wires.
   * `init_state(extl_n)` / `update_state(ctrl, extl_l, extl_n)` — return
     the ctrl-next outputs as a list of cvc5 terms (one per component).
-  * `init_pre(...)` / `update_pre(...)` — optional precondition formulas
-    translated from Python IR term lists (defaults to `True`).
 
 State is carried as a Python list of per-component cvc5 terms, matching
 the left-nested tuple layout used elsewhere in the codegen.
@@ -102,41 +100,3 @@ class ModuleSMT:
             bindings[w.id] = v
         wt = translate_terms(self.tm, self.update_terms, bindings)
         return [wt[w.id] for w in self.ctrl_next]
-
-    # --- preconditions --------------------------------------------------
-
-    def _pre_formula(
-        self,
-        terms: list | None,
-        bindings: dict[int, cvc5.Term],
-    ) -> cvc5.Term:
-        """Translate a list of IR terms for a precondition (last wire is
-        the `Mat Bool 1 1` result). Returns `true` if `terms` is None/empty."""
-        if not terms:
-            return self.tm.mkBoolean(True)
-        wt = translate_terms(self.tm, list(terms), bindings)
-        from .smt_encode import mat_select, wire_shape
-
-        out_wire = terms[-1].write[0]
-        out = wt[out_wire.id]
-        return mat_select(self.tm, out, wire_shape(out_wire), 0, 0)
-
-    def init_pre(
-        self,
-        terms: list | None,
-        extl_l: list[cvc5.Term],
-        extl_n: list[cvc5.Term],
-    ) -> cvc5.Term:
-        bindings = {w.id: v for w, v in zip(self.extl_latched, extl_l)}
-        bindings.update({w.id: v for w, v in zip(self.extl_next, extl_n)})
-        return self._pre_formula(terms, bindings)
-
-    def update_pre(
-        self,
-        terms: list | None,
-        extl_l: list[cvc5.Term],
-        extl_n: list[cvc5.Term],
-    ) -> cvc5.Term:
-        bindings = {w.id: v for w, v in zip(self.extl_latched, extl_l)}
-        bindings.update({w.id: v for w, v in zip(self.extl_next, extl_n)})
-        return self._pre_formula(terms, bindings)

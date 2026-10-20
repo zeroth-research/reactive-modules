@@ -199,7 +199,7 @@ def _wide_matrix() -> Module:
 
 def _na(module: Module, prop_smt: str) -> str:
     ctx = LeanContext(module)
-    prop = property_to_bool_lean(module, prop_smt, len(ctx.ctrl_next))
+    prop = property_to_bool_lean(module, prop_smt)
     return atom_to_lean_na(ctx, prop, module_name="T")
 
 
@@ -214,7 +214,7 @@ def _na_pre(module: Module, prop_smt: str, pre_smt: str) -> str:
     """:func:`_na` for a run that was given a precondition."""
     ctx = LeanContext(module)
     enc = _encoding(module, pre_smt)
-    prop = property_to_bool_lean(module, prop_smt, len(ctx.ctrl_next))
+    prop = property_to_bool_lean(module, prop_smt)
     return atom_to_lean_na(ctx, prop, module_name="T",
                            bodies=enc.bodies, pre_lean=enc.pre_lean)
 

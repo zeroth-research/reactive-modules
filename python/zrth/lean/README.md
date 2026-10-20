@@ -1379,10 +1379,6 @@ A row says:
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
-* **the input** — `reads_source`: the route is handed the file the module
-  was read from (`InferInput.source`, a `SourceText`) and the names claims
-  may use (`InferInput.names`). A route that does not declare it gets
-  `None` for both.
 * **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
   declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
   undeclared role, and the filtering (stale module, stale property, stale
