@@ -34,23 +34,25 @@ PACKAGE = sorted(LEAN.rglob("*.py"))
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "core": (frozenset({"zrth.lean.core"}), frozenset()),
-    "ir": (frozenset({"zrth.lean.ir"}), frozenset({"core"})),
+    "lowering": (frozenset({"zrth.lean.lowering"}), frozenset({"core"})),
     "artifacts": (frozenset({"zrth.lean.artifacts"}), frozenset({"core"})),
-    "codegen": (frozenset({"zrth.lean.codegen"}), frozenset({"core", "ir"})),
-    "smt": (frozenset({"zrth.lean.smt"}), frozenset({"core", "ir", "artifacts"})),
+    "codegen": (frozenset({"zrth.lean.codegen"}),
+                frozenset({"core", "lowering"})),
+    "smt": (frozenset({"zrth.lean.smt"}),
+            frozenset({"core", "lowering", "artifacts"})),
     # The project's vocabulary, templates, lakefile, build and `Main.lean`;
     # `scaffold`, which writes the certificate's files, sits above `proof`.
     "project": (frozenset({
         "zrth.lean.project.names", "zrth.lean.project.templates",
         "zrth.lean.project.lakefile", "zrth.lean.project.build",
         "zrth.lean.project.main_lean",
-    }), frozenset({"core", "ir", "codegen"})),
+    }), frozenset({"core", "lowering", "codegen"})),
     "proof": (frozenset({"zrth.lean.proof"}),
-              frozenset({"core", "ir", "codegen", "smt", "project"})),
-    "scaffold": (frozenset({"zrth.lean.project.scaffold"}),
-                 frozenset({"core", "ir", "codegen", "project", "proof"})),
-    "fbk": (frozenset({"zrth.lean.fbk"}),
-            frozenset({"core", "ir", "codegen", "smt", "project", "proof"})),
+              frozenset({"core", "lowering", "codegen", "smt", "project"})),
+    "scaffold": (frozenset({"zrth.lean.project.scaffold"}), frozenset({
+        "core", "lowering", "codegen", "project", "proof"})),
+    "fbk": (frozenset({"zrth.lean.fbk"}), frozenset({
+        "core", "lowering", "codegen", "smt", "project", "proof"})),
 }
 
 

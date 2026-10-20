@@ -694,8 +694,8 @@ def test_an_explicit_invariant_wins_over_an_inherited_one(tmp_path):
 
 
 def test_the_registry_rejects_two_rows_with_one_name():
-    """`ir/ops.py` guards its op table the same way: a shadowed row would also
-    show the name twice in `--infer`'s choices."""
+    """`lowering/ops.py` guards its op table the same way: a shadowed row
+    would also show the name twice in `--infer`'s choices."""
     from zrth.lean.infer_route import index_routes
 
     assert index_routes(ROUTES).keys() == set(route_names())

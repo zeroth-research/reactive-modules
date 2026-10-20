@@ -8,13 +8,13 @@ from zrth.lean.codegen.terms import (
     build_tuple,
     argmax_scalar_name,
 )
-from zrth.lean.ir.sorts import (
+from zrth.lean.lowering.sorts import (
     dtype_to_lean_type,
     flat_element_type,
     itype_name,
     wire_shape,
 )
-from zrth.lean.ir.layout import flat_size, mat_from_scalars, flat_layout
+from zrth.lean.lowering.elements import flat_size, mat_from_scalars, flat_layout
 from zrth.lean.codegen.context import LeanContext
 from zrth.lean.codegen.encodings.common import (
     prepend_recon,

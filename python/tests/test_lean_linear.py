@@ -108,7 +108,7 @@ def test_is_scalar_tensor_respects_shape_for_bool():
     """Bool skipped the shape check that Int/BitVec get, so a Bool matrix
     was treated as a scalar and inlined via `tensor.item()`."""
     from zrth import Wire, Bool, Int, BitVec
-    from zrth.lean.ir.sorts import is_scalar_tensor
+    from zrth.lean.lowering.sorts import is_scalar_tensor
 
     assert is_scalar_tensor(Wire(Bool([1, 1]))) is True
     assert is_scalar_tensor(Wire(Bool([2, 3]))) is False

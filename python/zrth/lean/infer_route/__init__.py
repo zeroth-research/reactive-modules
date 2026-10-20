@@ -91,8 +91,8 @@ DEFAULT_ROUTE = "ai-cegis"
 def index_routes(routes: "tuple[InferRoute, ...]") -> dict[str, InferRoute]:
     """The rows by name, refusing a duplicate.
 
-    `ir/ops.py` guards its op table the same way: a shadowed row would also
-    make `--infer` offer the same name twice.
+    `lowering/ops.py` guards its op table the same way: a shadowed row would
+    also make `--infer` offer the same name twice.
     """
     by_name: dict[str, InferRoute] = {}
     for r in routes:

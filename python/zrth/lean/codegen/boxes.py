@@ -8,13 +8,13 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.ir.sorts import (
+from zrth.lean.lowering.sorts import (
     dtype_shape,
     dtype_to_lean_type,
     itype_name,
     is_constant_name,
 )
-from zrth.lean.ir.layout import product_accessor
+from zrth.lean.lowering.elements import product_accessor
 from zrth.lean.codegen.literals import (
     ConstantRegistry,
     constant_expr,
@@ -22,7 +22,7 @@ from zrth.lean.codegen.literals import (
 )
 
 from zrth.lean.codegen.terms import check_argmax_output
-from zrth.lean.ir.ops import box_for
+from zrth.lean.lowering.ops import box_for
 
 from dataclasses import dataclass
 

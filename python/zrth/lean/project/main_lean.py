@@ -8,7 +8,7 @@ from __future__ import annotations
 from zrth import Module, Wire, X
 
 from ..core.errors import Refused
-from ..ir.sorts import flat_element_type, wire_shape
+from ..lowering.sorts import flat_element_type, wire_shape
 from ..codegen.terms import build_tuple, product_type
 from .names import (
     LINTERS_OFF,

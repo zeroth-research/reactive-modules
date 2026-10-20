@@ -49,8 +49,8 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from ..ir.sorts import dtype_shape, itype_name, sort_shape
-from ..ir.layout import product_accessor
+from ..lowering.sorts import dtype_shape, itype_name, sort_shape
+from ..lowering.elements import product_accessor
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -126,7 +126,7 @@ _SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (BitVec, "BitVec"))
 
 def _sort_name(dtype) -> str:
     """The theory a sort's elements are in, a tag (`BitVec` without its
-    width), not a Lean type: `ir.sorts.lean_elem_type` is that."""
+    width), not a Lean type: `lowering.sorts.lean_elem_type` is that."""
     for cls, name in _SORT_NAMES:
         if isinstance(dtype, cls):
             return name

@@ -21,7 +21,7 @@ import torch
 
 from zrth import Bool, BitVec, Int, Real, X
 from zrth.eval import execute_init, execute_update
-from zrth.lean.ir.sorts import wire_shape
+from zrth.lean.lowering.sorts import wire_shape
 
 TESTS = Path(__file__).parent
 
@@ -250,10 +250,11 @@ def disagreements_smt(module, *, seed: int = 0) -> list[str]:
 
 def _lean_value(wire, tensor) -> str:
     """`tensor` as a Lean `Mat` literal of `wire`'s sort, in the form the
-    encoding prints its own constants in (`ir.layout.mat_from_scalars`)."""
-    from zrth.lean.ir.layout import mat_from_scalars
+    encoding prints its own constants in
+    (`lowering.elements.mat_from_scalars`)."""
+    from zrth.lean.lowering.elements import mat_from_scalars
     from zrth.lean.codegen.literals import lean_literal
-    from zrth.lean.ir.sorts import flat_element_type
+    from zrth.lean.lowering.sorts import flat_element_type
 
     elems = [lean_literal(wire.dtype, v) for v in flat(wire, tensor)]
     return mat_from_scalars(elems, wire_shape(wire), flat_element_type(wire))
@@ -277,7 +278,7 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     row-major. Raises `Skip` for a module Lean cannot run: a Real is
     noncomputable, and a module with no Lean form has nothing to run.
     """
-    from zrth.lean.ir.layout import product_accessor
+    from zrth.lean.lowering.elements import product_accessor
     from zrth.lean.codegen.context import LeanContext
     from zrth.lean.codegen.terms import build_tuple, lean_gaps
     from zrth.lean.codegen.encodings import ModuleToLean4

@@ -18,13 +18,13 @@ import re
 import cvc5
 from cvc5 import Kind
 
-from ..ir.sorts import wire_shape
+from ..lowering.sorts import wire_shape
 from .encode import wire_sort
 from .module import ModuleSMT
 
 
 def _wire_rc(wire) -> tuple[int, int]:
-    """(rows, cols) of a wire's matrix shape (`ir.sorts.wire_shape`)."""
+    """(rows, cols) of a wire's matrix shape (`lowering.sorts.wire_shape`)."""
     shape = wire_shape(wire)
     return shape.m, shape.n
 
