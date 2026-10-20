@@ -69,26 +69,31 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
           timeout: float = 60, fixture: Path = LIMITS, log=None):
     from zrth.lean.infer.houdini.engine import HoudiniEngine
 
-    magic = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
-                          timeout=timeout, log=log or (lambda *_: None))
-    return magic.infer(Claim(prp=prp, kind=kind))
+    engine = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
+                           timeout=timeout, log=log or (lambda *_: None))
+    return engine.infer(Claim(prp=prp, kind=kind))
 
 
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
-    """A route mid-flight: its context, obligations and candidate parser,
-    without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.infer.houdini.engine import HoudiniEngine
-    from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.smt.claim import SynthContext
+    """A search over no simulated runs: its context, obligations and
+    candidate parser, and the steps the seam's cases ask about."""
     from zrth.lean.infer.common.synth import columns
+    from zrth.lean.infer.houdini.evaluate import Evaluator
+    from zrth.lean.infer.houdini.search import Search
+    from zrth.lean.infer.houdini.simulate import Draws, Runs
+    from zrth.lean.smt.claim import SynthContext
+    from zrth.lean.smt.obligations import Obligations
 
-    magic = HoudiniEngine(module_at(fixture / f"{name}.py"),
-                          log=lambda *_: None)
-    magic.ctx = SynthContext.build(magic.module, Claim(prp=prp, kind=kind),
-                                   route="houdini",
-                                   takes=("int", "bool", "bv", "real", "tuple"))
-    magic.cols = columns(magic.ctx)
-    return magic, Obligations(magic.ctx)
+    ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
+                             Claim(prp=prp, kind=kind), route="houdini",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    ob = Obligations(ctx)
+    search = Search(ctx, ob, Evaluator(ctx.tm), columns(ctx),
+                    runs=Runs(states=[], rounds=[]),
+                    draws=Draws(ctx, (), seed=1),
+                    wide=Draws(ctx, (), seed=2, wide=True),
+                    pins={}, log=lambda *_: None)
+    return search, ob
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -258,14 +263,14 @@ def test_a_false_obligation_comes_back_refuted_with_the_facts_it_breaks():
 
     from zrth.lean.smt.solvers import Cvc5Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    kept = magic._parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
     assert len(kept) == 3
-    solver = Cvc5Solver(magic.ctx.tm, seconds=30)
+    solver = Cvc5Solver(search.ctx.tm, seconds=30)
     answer = solver.prove(ob.preserved(kept, kept), 5, model=True)
     assert answer.verdict is Verdict.REFUTED
     assert answer.broken == frozenset({"g2"})       # only `50 <= s0`
-    assert isinstance(magic.ctx.tm, cvc5.TermManager)
+    assert isinstance(search.ctx.tm, cvc5.TermManager)
 
 
 def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
@@ -319,10 +324,10 @@ def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
     cvc5 hands both back: the round the fit learns from next time."""
     from zrth.lean.smt.solvers import Cvc5Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    inv = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
-    rising = magic._parse(["(- 100 s0)"], "ranking", want="Int")[0]
-    answer = Cvc5Solver(magic.ctx.tm, seconds=30).prove(
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    inv = search.parse(["(<= 0 s0)", "(<= s0 100)"])
+    rising = search.parse(["(- 100 s0)"], "ranking", want="Int")[0]
+    answer = Cvc5Solver(search.ctx.tm, seconds=30).prove(
         ob.drops(inv, rising), 5, model=True)
     assert answer.verdict is Verdict.REFUTED
     (s,), (sp,) = answer.values[:1], answer.values[1:]
@@ -341,9 +346,8 @@ def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
     """
     from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    magic.ob = ob
-    facts = magic._parse(["(<= 0 s0)", "(= s0 0)", "(<= s0 50)", "(<= s0 100)"])
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(= s0 0)", "(<= s0 50)", "(<= s0 100)"])
     assert len(facts) == 4
     asked = []
 
@@ -364,7 +368,7 @@ def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
     solver = Scripted([Answer(Verdict.REFUTED, broken=one),
                        Answer(Verdict.REFUTED, broken=one),
                        Answer(Verdict.PROVED)], seconds=30)
-    kept = magic._at_entry(solver, facts, 5)
+    kept = search.at_entry(solver, facts, 5)
 
     assert [f.src for f in kept] == ["(<= 0 s0)", "(<= s0 100)"]
     # Four facts, then three, then two: it asked again after each model
@@ -378,9 +382,8 @@ def test_entry_stops_when_a_model_names_nothing_to_drop():
     loop ends rather than spinning on an answer it cannot act on."""
     from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    magic.ob = ob
-    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)"])
     calls = []
 
     class Mute(Solver):
@@ -392,7 +395,7 @@ def test_entry_stops_when_a_model_names_nothing_to_drop():
             return (Answer(Verdict.PROVED) if not query.probes
                     else Answer(Verdict.UNKNOWN))
 
-    kept = magic._at_entry(Mute(seconds=30), facts, 5)
+    kept = search.at_entry(Mute(seconds=30), facts, 5)
     assert [f.src for f in kept] == ["(<= 0 s0)", "(<= s0 100)"]
     assert calls == [2, 1, 1]           # the batch, then fact by fact
 
@@ -403,17 +406,16 @@ def test_a_solver_with_no_model_falls_back_to_asking_fact_by_fact():
     prover leaves to do -- and it must reach the same set."""
     from zrth.lean.smt.solvers import Cvc5Solver
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    magic.ob = ob
-    kept = magic._parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
-    solver = Cvc5Solver(magic.ctx.tm, seconds=30)
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
+    solver = Cvc5Solver(search.ctx.tm, seconds=30)
 
     with_model = solver.prove(ob.preserved(kept, kept), 5, model=True)
     assert with_model.broken                        # cvc5 gave one
-    from_model = magic._survivors(solver, with_model, kept, None, 5)
+    from_model = search.survivors(solver, with_model, kept, None, 5)
 
     blind = replace(with_model, broken=None)        # as Vampire would answer
-    one_at_a_time = magic._survivors(
+    one_at_a_time = search.survivors(
         solver, blind, kept,
         lambda fs: [ob.preserved(fs, [f]) for f in fs], 5)
 
@@ -433,9 +435,8 @@ def test_the_cut_is_taken_again_over_what_it_returned():
     """
     from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    magic.ob = ob
-    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)",
                           "(<= s0 200)", "(<= s0 300)"])
     pools = []
 
@@ -446,7 +447,7 @@ def test_the_cut_is_taken_again_over_what_it_returned():
             return Answer(Verdict.PROVED,
                           core=frozenset(named[:(len(named) + 1) // 2]))
 
-    kept = magic._shrink(Half(seconds=30), facts, facts[1:2], 5)
+    kept = search.shrink(Half(seconds=30), facts, facts[1:2], 5)
 
     assert [f.src for f in kept] == ["(<= s0 100)"]
     # 4, 4 (the closure, asked until it adds nothing), then 2, then 1. The
@@ -461,9 +462,8 @@ def test_a_cut_that_stops_answering_keeps_the_round_before_it():
     round's proofs, so what the first cut reached still stands."""
     from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    magic.ob = ob
-    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)",
                           "(<= s0 200)", "(<= s0 300)"])
 
     class Once(Solver):
@@ -477,7 +477,7 @@ def test_a_cut_that_stops_answering_keeps_the_round_before_it():
                 return Answer(Verdict.UNKNOWN)
             return Answer(Verdict.PROVED, core=frozenset(named[:2]))
 
-    kept = magic._shrink(Once(seconds=30), facts, facts[1:2], 5)
+    kept = search.shrink(Once(seconds=30), facts, facts[1:2], 5)
 
     # The first cut is two facts and the second round cannot be had. The
     # two are kept -- but only because they were proved inductive on their
@@ -489,16 +489,16 @@ def test_a_query_carries_its_transition_once_and_names_every_fact():
     """What the seam promises a solver: the round stated once as `defines`,
     the hypotheses named for a core, the goal's conjuncts named for a model.
     A goal that is one thing gets no probes -- `REFUTED` already says it."""
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    kept = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)"])
 
     q = ob.preserved(kept, kept)
-    assert len(q.defines) == len(magic.ctx.state)
+    assert len(q.defines) == len(search.ctx.state)
     assert [n for n, _t in q.hyps] == ["h0", "h1", "pre"]
     assert [n for n, _t in q.probes] == ["g0", "g1"]
 
     assert ob.preserved(kept, kept[:1]).probes == ()
-    rank = magic._parse(["s0"], "ranking", want="Int")[0]
+    rank = search.parse(["s0"], "ranking", want="Int")[0]
     assert ob.drops(kept, rank).probes == ()
 
 
@@ -508,8 +508,8 @@ def test_the_vampire_script_states_the_round_once_and_names_the_goal():
     under a name of its own so a core is never empty by accident."""
     from zrth.lean.smt.solvers import VampireSolver
 
-    magic, ob = a_search("m_lra_lin", "buchi", "(= s0 0.0)")
-    kept = magic._parse(["(<= 0.0 s0)", "(<= s0 5.0)"])
+    search, ob = a_search("m_lra_lin", "buchi", "(= s0 0.0)")
+    kept = search.parse(["(<= 0.0 s0)", "(<= s0 5.0)"])
     script = VampireSolver._script(ob.preserved(kept, kept))
 
     assert script.startswith("(set-logic ALL)")
@@ -538,8 +538,8 @@ def test_vampires_answer_is_read_off_its_output(tmp_path):
         exe.chmod(0o755)
         return VampireSolver(str(exe), seconds=30, cores=1)
 
-    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
-    kept = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)"])
     q = ob.preserved(kept, kept)
 
     proof = stub("unsat\n(\nh1\ngoal\n)").prove(q, 5, core=True)
@@ -654,9 +654,9 @@ def test_no_obligation_names_anything_of_tuple_sort():
     """
     from zrth.lean.smt.solvers import VampireSolver
 
-    magic, ob = a_search("m_relu_vec", "buchi",
-                         "(= ((_ tuple.select 0) s0) 0)")
-    fact = magic._parse(["(<= 0 ((_ tuple.select 0) s0))"])
+    search, ob = a_search("m_relu_vec", "buchi",
+                          "(= ((_ tuple.select 0) s0) 0)")
+    fact = search.parse(["(<= 0 ((_ tuple.select 0) s0))"])
     script = VampireSolver._script(ob.preserved(fact, fact))
     assert "Tuple" not in script and "tuple" not in script
     assert "v_s0_0" in script and "v_sp0_0" in script
@@ -679,8 +679,8 @@ def test_each_mode_is_bounded_by_what_its_round_reaches():
     names, computed rather than read."""
     from zrth.lean.infer.houdini.modes import mode_bounds
 
-    magic, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
-    facts = mode_bounds(magic.ctx, ob, log=lambda *_: None)
+    search, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
+    facts = mode_bounds(search.ctx, ob, log=lambda *_: None)
     assert "(=> s1 (<= s0 23.0))" in facts
     assert "(=> (not s1) (<= 17.0 s0))" in facts
     assert "(<= s0 23.875)" in facts
