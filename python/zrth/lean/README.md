@@ -212,27 +212,25 @@ topologically-sorted dataflow graph.
 
 ## Module Files
 
-| File | Role |
+The rows run from the bottom layer up: a package imports only the packages
+above it in the table, except `project/scaffold`, which also imports
+`proof/`. `tests/test_layering.py` holds every module to its layer.
+
+| Package | What it holds |
 |------|------|
-| `core/errors.py` | `Refused`, the error a run is refused with |
-| `lowering/sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
-| `lowering/elements.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
-| `codegen/literals.py` | Constants as Lean text, `ConstantRegistry` |
-| `codegen/context.py` | `LeanContext`, what every encoding of one module shares |
-| `common.py` | Re-exports the five above, for importers not migrated yet |
-| `lowering/ops.py` | The op table: one row per theory variant, one column per backend |
-| `codegen/terms.py` | Translates term lists → Lean functional `let`-binding bodies |
-| `codegen/boxes.py` | Translates term lists → `Box` circuit layers |
-| `codegen/encodings/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circuit.py`, `scalar.py`, `relational.py`; `skeleton.py`, the shape every relational encoding has, and `common.py`, what the scalar ones share |
-| `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
-| `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean` |
-| `project/` | The generated project on disk: `scaffold` writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), `lakefile` its dependencies, `main_lean` the `--executable` program, `build` runs `lake build`; `names` are the files and modules it is made of and `templates` the Jinja environment |
-| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
-| `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
-| `proof/` | The rest of the certificate's Lean: `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`); `tactics`, the plan read off them |
+| `core/` | The vocabulary every layer is written in, importing nothing of `zrth.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option a route or an input format declares) |
+| `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
+| `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) and `record` (`found`, `note`, the writes a route makes) |
+| `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `claim` (`SynthContext`, a claim read against the encoding), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `solvers` (cvc5 and Vampire answering a `Query`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer), `slots`, `vampire` (the Vampire driver) |
+| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer) |
+| `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, `generate_certificate_lean`), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
+| `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
 | `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) and what a route is given and hands back (`io`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
 | `infer/common/` | What more than one route uses: `llm`, the model both LLM routes ask; `synth`, what a searching route reads a module as (its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use); `options`, the options two rows share |
 | `infer/fbk_proveit/` | The `--infer fbk-proveit` route: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`engine`) |
+| `cli/` | The command line: `parser` (the flags), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
+| `pipeline/` | `uv run verith`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certify` (the certificate rendered, the route run, the certificate rendered again from its answer), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
 
 ---
 
