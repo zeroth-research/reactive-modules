@@ -2,10 +2,10 @@
 
 ``--infer houdini`` proposes and a solver decides.  *What* it proposes --
 the invariant facts read off simulated runs of the module, the ranking
-shapes tried smallest first -- is :mod:`zrth.lean.infer.houdini.engine`,
-and is the same whichever solver answers.  This module is the seam between the two: an
-obligation as a *question* rather than as a file, and the solvers that
-answer one.
+shapes tried smallest first -- is :mod:`zrth.lean.infer.houdini`
+(``candidates``, ``ranks``), and is the same whichever solver answers.
+This module is the seam between the two: an obligation as a *question*
+rather than as a file, and the solvers that answer one.
 
 **A query names more than it asks.**  Besides its hypotheses and its goal a
 :class:`Query` names two things, so that a solver able to report them can:

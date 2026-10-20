@@ -148,7 +148,7 @@ def test_the_evaluator_divides_the_way_smt_lib_does(a, b):
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.infer.houdini.engine import Evaluator
+    from zrth.lean.infer.houdini.evaluate import Evaluator
 
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
@@ -215,7 +215,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.infer.houdini.engine import Evaluator
+    from zrth.lean.infer.houdini.evaluate import Evaluator
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")

@@ -1,4 +1,12 @@
-"""`--infer houdini`: Houdini over facts read off simulated runs, a solver deciding each."""
+"""`--infer houdini`: Houdini over facts read off simulated runs, a solver
+deciding each.
+
+The engine runs the stages in order: `simulate` runs the module (its terms
+valued by `evaluate`), `candidates` reads facts off the runs and `modes`
+computes the bounds each mode of the Bool columns keeps, `ranks` fits
+ranking functions to the rounds, and `engine` puts them to the solver
+`solvers` names.
+"""
 
 from __future__ import annotations
 
