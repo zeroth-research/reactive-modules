@@ -329,3 +329,39 @@ def test_compose_hiding_coupled_variables():
 
     # the coupling took place regardless: hiding only restricts visibility
     assert y not in m.obs and y not in m.extl
+
+
+def test_a_method_with_star_args_takes_however_many_variables_there_are():
+    # a module whose variables are a list binds them positionally through `*args`
+    class Sum(sugar.Module):
+        def init(self, *inputs):
+            return 0
+
+        def update(self, acc, *inputs):
+            for x in inputs:
+                acc = acc + x
+            return acc
+
+    acc, xs = Var(INT), [Var(INT) for _ in range(3)]
+    m = Sum(theory=LIA, ctrl=(acc,), extl=tuple(xs))
+    assert set(m.extl) == set(xs) and len(m.atoms[0].update) == 4  # three Add, one Id
+
+
+def test_the_arity_is_still_checked_for_named_parameters():
+    class Short(sugar.Module):
+        def init(self, *inputs):
+            return 0
+
+        def update(self, acc, x):
+            return acc
+
+    acc, xs = Var(INT), (Var(INT), Var(INT))
+    with pytest.raises(ValueError, match="expects 3 params, got 2"):
+        Short(theory=LIA, ctrl=(acc,), extl=xs)
+
+    class TooManyFixed(sugar.Module):
+        def update(self, acc, x, y, *rest):
+            return acc
+
+    with pytest.raises(ValueError, match="expects 2 params, got 3"):
+        TooManyFixed(theory=LIA, ctrl=(acc,), extl=(xs[0],))

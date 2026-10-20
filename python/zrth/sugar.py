@@ -18,7 +18,9 @@ module is built in the constructor:
 
 The methods receive the variables **unpacked, as positional parameters**: ``init`` takes
 the ``extl`` variables, ``update`` and ``delay`` take ``ctrl`` followed by ``extl`` (all
-of them — arities are checked). A parameter reads as the variable's latched value;
+of them — arities are checked). A method written with ``*args`` takes however many there
+are, for a module whose variables are a list; it then owns the binding, and only the
+number of returned values is checked. A parameter reads as the variable's latched value;
 ``X(v)`` is its next and ``d(v)`` its derivative expression. Each method returns a tuple
 aligned with ``ctrl`` (a single value for a single variable): entry *i* drives
 ``ctrl[i]``'s next wire (``init`` / ``update``) or its derivative wire (``delay``).
@@ -99,21 +101,29 @@ def _zero_flow(theory, var) -> _Term:
     return _Term.constant(op, [base_d(var)])
 
 
-def _build_init_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "init", None)
+def _call(cls, names, ctrl, variables, theory):
+    """Run the block's method on one `Expr` per variable, bound positionally, and return
+    `(name, values)` aligned with `ctrl`; `(name, None)` when the method is not defined."""
+    name, fn = _method(cls, *names)
     if fn is None:
-        return None
-    nparams = len(inspect.signature(fn).parameters)
+        return name, None
+    params = list(inspect.signature(fn).parameters.values())
+    variadic = any(p.kind is p.VAR_POSITIONAL for p in params)
+    args = tuple(expr(v, theory=theory) for v in variables)
+    fixed = len(params) - 1 - variadic
+    if fixed > len(args) or (not variadic and fixed != len(args)):
+        raise ValueError(f"{name} expects {len(args)} params, got {fixed}")
+    vals = _as_tuple(fn(None, *args))
+    if len(vals) != len(ctrl):
+        raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
+    return name, vals
 
-    # we assume all arguments are taken , otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"init expects len(extl) == {len(args)} params, got {nparams - 1}")
 
+def _build_init_block(cls, ctrl, extl, theory) -> list:
     with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
-        if len(vals) != len(ctrl):
-            raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
+        name, vals = _call(cls, ("init",), ctrl, extl, theory)
+        if vals is None:
+            return None
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
             terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
@@ -121,20 +131,10 @@ def _build_init_block(cls, ctrl, extl, theory) -> list:
 
 
 def _build_update_block(cls, ctrl, extl, theory) -> list:
-    name, fn = _method(cls, "update", "next")
-    if fn is None:
-        return None
-    nparams = len(inspect.signature(fn).parameters)
-
-    # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"{name} expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
-
     with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
-        if len(vals) != len(ctrl):
-            raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
+        name, vals = _call(cls, ("update", "next"), ctrl, ctrl + extl, theory)
+        if vals is None:
+            return None
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
             terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
@@ -142,20 +142,10 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
 
 
 def _build_delay_block(cls, ctrl, extl, theory) -> list:
-    name, fn = _method(cls, "delay", "flow")
-    if fn is None:
-        return None
-    nparams = len(inspect.signature(fn).parameters)
-
-    # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"{name} expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
-
     with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
-        if len(vals) != len(ctrl):
-            raise ValueError(f"{name} expects {len(ctrl)} return values, got {len(vals)}")
+        name, vals = _call(cls, ("delay", "flow"), ctrl, ctrl + extl, theory)
+        if vals is None:
+            return None
         for var, val in zip(ctrl, vals):
             if val is None:
                 raise TypeError(
