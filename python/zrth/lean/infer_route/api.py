@@ -14,6 +14,7 @@ from ..errors import Refused
 from ..options import Opt
 
 if TYPE_CHECKING:
+    from ..inputs import Names, SourceText
     from zrth import Module
 
     from ..cert import LeanCertificate
@@ -201,6 +202,10 @@ class InferInput:
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
     smt: "Callable[[], ModuleEncoding] | None" = None
+    # The input verith read and the names a claim may use, for a row that
+    # declares `reads_source`; `None` for every other row.
+    source: "SourceText | None" = None
+    names: "Names | None" = None
 
     # --- resuming from `artifacts/` -------------------------------------
 
@@ -326,6 +331,13 @@ class InferRoute:
     # --- the project ----------------------------------------------------
     reads: tuple[str, ...] = ()     # ENCODINGS suffixes; "" is the functional one
     owns: tuple[str, ...] = ()      # project-relative paths it may write
+
+    # --- the input ------------------------------------------------------
+    # Whether the route is handed the input the module was read from and
+    # the names claims may use (`InferInput.source` / `.names`). Declared
+    # like `reads`: a route that did not ask is handed neither, so what a
+    # route reads of the run is what its row says.
+    reads_source: bool = False
 
     # --- `artifacts/`, the workspace across runs ------------------------
     # Roles (`artifacts.ROLES`) this route can start from, so that a second
