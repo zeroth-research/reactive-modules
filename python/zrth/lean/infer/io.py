@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from ..core.certificate import Certificate, Claim, LeanAnswer
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from ..proof.render import LeanCertificate
     from ..codegen.context import LeanContext
     from ..smt.encoding import ModuleEncoding
+    from ..smt.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -171,15 +172,17 @@ class InferInput:
     # What the route starts from: `--invariant` / `--ranking`, or an
     # invariant `taking_inv` resumed from `artifacts/`.
     given: Certificate
-    opts: dict                          # this route's own options, by dest
-    config: object | None = None        # what `resolve` returned
-    prechecked: object | None = None    # what `precheck` returned
+    opts: Mapping[str, Any]             # this route's own options, by dest
+    # What the row's `resolve` and `precheck` returned, each of a type
+    # only that row and its engine know.
+    config: object | None = None
+    prechecked: object | None = None
     # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
     # a question of its own. The obligation queries have always been on it
     # (`smt.limits.SmtBudget`); a route that *searches* has to be, for the
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
-    budget: object | None = None
+    budget: "SmtBudget | None" = None
     model: str | None = None            # meaningful iff the row uses an LLM
     base_url: str | None = None
     log: Callable = print
