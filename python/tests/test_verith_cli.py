@@ -186,7 +186,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from zrth.lean.core.errors import Refused
 
     def said(route) -> str:
-        return certify.refused(SimpleNamespace(route=route), Refused("why")).code
+        return certify.refused(route, Refused("why")).code
 
     assert said(None) == "error: why"
     assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
@@ -647,8 +647,6 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     """The parse-time gate cannot see what `--infer` came back with: an LLM
     that answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`."""
-    from types import SimpleNamespace
-
     from zrth.lean.pipeline import outputs
     from zrth.lean.proof.render import LeanCertificate, LeanPredicates
 
@@ -657,26 +655,21 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
 
     built: list[Path] = []
     monkeypatch.setattr(outputs, "build_certificate", built.append)
-    on = SimpleNamespace(build_cert=True)
-
-    outputs.build_cert(on, Path("/complete"), lean(prp="p", inv="i", ranking="r"))
+    outputs.build_cert(Path("/complete"), lean(prp="p", inv="i", ranking="r"))
     assert built == [Path("/complete")]
 
     with pytest.raises(SystemExit, match="no ranking"):
-        outputs.build_cert(on, Path("/p"), lean(prp="p", inv="i"))
+        outputs.build_cert(Path("/p"), lean(prp="p", inv="i"))
     with pytest.raises(SystemExit, match="no invariant, ranking"):
-        outputs.build_cert(on, Path("/p"), lean(prp="p"))
+        outputs.build_cert(Path("/p"), lean(prp="p"))
     # A safety certificate has no ranking to be missing.
-    outputs.build_cert(on, Path("/safe"), lean(kind="safety", prp="p", inv="i"))
+    outputs.build_cert(Path("/safe"), lean(kind="safety", prp="p", inv="i"))
     assert built == [Path("/complete"), Path("/safe")]
 
     # --fbk-proveit installs ic3ia's certificate, which nothing here
     # describes, so there is nothing to be complete about.
-    outputs.build_cert(on, Path("/proveit"), None)
+    outputs.build_cert(Path("/proveit"), None)
     assert built == [Path("/complete"), Path("/safe"), Path("/proveit")]
-
-    outputs.build_cert(SimpleNamespace(build_cert=False), Path("/off"), None)
-    assert len(built) == 3
 
 
 def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(

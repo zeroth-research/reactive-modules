@@ -29,9 +29,8 @@ from ..proof.render import (
 )
 
 
-def build_cert(settings: Settings, project_dir: Path,
-               lean_cert: "LeanCertificate | None") -> None:
-    """Honour `--build-cert`, once the certificate is written.
+def build_cert(project_dir: Path, lean_cert: "LeanCertificate | None") -> None:
+    """`--build-cert`, once the certificate is written.
 
     `lean_cert` is what the project's certificate was generated from, or
     `None` when the certificate came from elsewhere (`--infer fbk-proveit`
@@ -40,8 +39,6 @@ def build_cert(settings: Settings, project_dir: Path,
     answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`.
     """
-    if not settings.build_cert:
-        return
     if lean_cert is not None:
         defs = lean_cert.defs
         # A safety certificate has no ranking function to be missing.
@@ -62,9 +59,9 @@ def build_cert(settings: Settings, project_dir: Path,
         raise SystemExit(f"error: --build-cert: {e}") from e
 
 
-def hammer_only(settings: Settings) -> None:
+def hammer_only(hammer_file: str) -> None:
     """`--hammer-file`: write ZerothHammer.lean and return. No module needed."""
-    out = Path(settings.hammer_file)
+    out = Path(hammer_file)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_zeroth_hammer_lean())
@@ -73,13 +70,13 @@ def hammer_only(settings: Settings) -> None:
     print(f"Wrote {out}")
 
 
-def standalone(settings: Settings, module, lean_cert) -> None:
+def standalone(cert_file: str, module, lean_cert) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
     No project, so no route: the predicates are the ones supplied, which is
     why every route that reads or writes a project is refused alongside it.
     """
-    out = Path(settings.cert_file)
+    out = Path(cert_file)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_standalone_cert_lean(module, lean_cert))

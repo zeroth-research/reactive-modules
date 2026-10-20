@@ -843,7 +843,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     monkeypatch.setattr(certify, "render", refuse)
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
-        pre_check=None,
+        pre_check=None, smt_tactics="none",
         route=SimpleNamespace(name="test-route", errors_self_named=False),
     )
     with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):

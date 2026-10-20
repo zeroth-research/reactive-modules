@@ -463,16 +463,6 @@ def test_a_real_state_keeps_norm_num_in_prep():
 # ══════════════════════════════════════════════════════════════════════
 
 
-class _Settings:
-    """The two fields `render` reads, without building a whole CLI parse."""
-
-    def __init__(self, smt_tactics="cvc5"):
-        from zrth.lean.smt.limits import SmtBudget
-
-        self.smt_tactics = smt_tactics
-        self.budget = SmtBudget()
-
-
 def _countdown():
     from zrth.analyzer import convert_method
 
@@ -498,13 +488,15 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.pipeline.certify import render
 
+    from zrth.lean.smt.limits import SmtBudget
+
     module = _countdown()
     claim = Claim(prp="(= s0 0)")
-    settings = _Settings(smt_tactics)
+    hints = SmtBudget() if smt_tactics == "cvc5" and verbatim is None else None
     # Before: the property is all there is to read the shape of.
-    before = render(settings, module, claim, Certificate(), hints=False)
-    after = render(settings, module, claim, Certificate(inv, ranking),
-                   hints=verbatim is None, restated=True, verbatim=verbatim)
+    before = render(module, claim, Certificate(), hints=None)
+    after = render(module, claim, Certificate(inv, ranking), hints=hints,
+                   restated=True, verbatim=verbatim)
     return module, before, after
 
 

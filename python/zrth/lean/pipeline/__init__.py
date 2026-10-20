@@ -108,6 +108,7 @@ from ..infer import ProjectHandle
 from ..smt.encoding import lazy
 from ..smt.precheck import pre_check
 from .certify import (
+    hint_budget,
     lean_context,
     record_predicates,
     regenerate,
@@ -125,7 +126,7 @@ def main():
     settings = parse_args(argv)
 
     if settings.hammer_file:
-        hammer_only(settings)
+        hammer_only(settings.hammer_file)
         return
 
     problem = load(settings)
@@ -162,13 +163,14 @@ def main():
     # no route reads `Certificate/`, so cvc5 is asked for hints only about
     # the certificate the project ends up with.
     try:
-        lean_cert = render(settings, smt, claim, given,
-                           hints=settings.route is None)
+        lean_cert = render(
+            smt, claim, given,
+            hints=hint_budget(settings) if settings.route is None else None)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings, module, lean_cert)
+        standalone(settings.cert_file, module, lean_cert)
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)
@@ -196,7 +198,8 @@ def main():
         handle.write_files(result.files)
         show_certificate(result.cert, problem.names)
 
-    build_cert(settings, project_dir, lean_cert)
+    if settings.build_cert:
+        build_cert(project_dir, lean_cert)
 
     print(f"\nProject ready at: {project_dir}")
 
