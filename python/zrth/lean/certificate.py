@@ -4,7 +4,7 @@ Every predicate here is SMT-LIB source over the state `s0..sN-1` and the
 inputs `e0..` (awaited) / `el0..` (latched) -- the text
 `smt.predicates.parse_predicate` reads. The Python predicate DSL is accepted at
 the CLI and library edge only; Lean is produced from these in one place,
-`cert.render_certificate`.
+`proof.render.render_certificate`.
 
 A leaf module: it imports neither cvc5 nor Jinja, so a route, the CLI and
 the solver layer can all depend on it.

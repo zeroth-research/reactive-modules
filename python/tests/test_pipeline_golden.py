@@ -22,7 +22,7 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.cert import (
+from zrth.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
 )
@@ -151,7 +151,7 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.cert import prepare
+    from zrth.lean.proof.render import prepare
     from zrth.lean.smt.limits import SmtBudget
     from zrth.lean.proof.facts import solver_hints
 

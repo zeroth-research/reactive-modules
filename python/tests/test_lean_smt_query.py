@@ -364,7 +364,7 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
 
 def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
-    from zrth.lean.cert import print_hints
+    from zrth.lean.proof.render import print_hints
 
     q = ModuleQueries.build(countdown(), CLAIM,
                             replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
@@ -410,9 +410,9 @@ def test_hints_survive_a_module_cvc5_cannot_encode():
 
 def test_translation_can_be_asked_not_to_share():
     """`share=False` prints every subterm in full -- for reading; the
-    certificate itself is printed shared, hints or not (`cert.prepare`).
+    certificate itself is printed shared, hints or not (`proof.render.prepare`).
     """
-    from zrth.lean.cert import render_certificate
+    from zrth.lean.proof.render import render_certificate
     from zrth.lean.smt.precheck import predicate_terms
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
@@ -424,7 +424,7 @@ def test_translation_can_be_asked_not_to_share():
 
 def test_a_lean_answer_is_printed_as_it_was_given():
     """`--infer ai`'s reply is Lean already; the property beside it is not."""
-    from zrth.lean.cert import render_certificate
+    from zrth.lean.proof.render import render_certificate
     from zrth.lean.smt.precheck import predicate_terms
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)

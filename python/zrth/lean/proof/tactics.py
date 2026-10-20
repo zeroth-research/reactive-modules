@@ -49,8 +49,8 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from .sorts import dtype_shape, itype_name, sort_shape
-from .layout import product_accessor
+from ..sorts import dtype_shape, itype_name, sort_shape
+from ..layout import product_accessor
 
 
 # ══════════════════════════════════════════════════════════════════════

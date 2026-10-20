@@ -5,7 +5,7 @@ from zrth import Wire, Term, Module, LIA, Bool, Var, X
 from zrth.lean.project import (
     create_project,
 )
-from zrth.lean.cert import lean_certificate
+from zrth.lean.proof.render import lean_certificate
 from zrth.lean.certificate import Certificate, Claim
 
 from os.path import dirname

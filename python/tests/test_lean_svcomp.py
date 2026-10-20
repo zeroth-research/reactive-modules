@@ -16,7 +16,7 @@ from pathlib import Path
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.project import create_project, write_data_lean
-from zrth.lean.cert import lean_certificate
+from zrth.lean.proof.render import lean_certificate
 from zrth.lean.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"

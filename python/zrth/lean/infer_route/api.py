@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ..inputs import Names, SourceText
     from zrth import Module
 
-    from ..cert import LeanCertificate
+    from ..proof.render import LeanCertificate
     from ..context import LeanContext
     from ..smt.encoding import ModuleEncoding
 

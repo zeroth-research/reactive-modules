@@ -7,7 +7,7 @@ from zrth.lean.errors import Refused
 from zrth.lean.sorts import flat_element_type, wire_shape
 from zrth.lean.context import LeanContext
 
-from zrth.lean.cert import (
+from zrth.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
     generate_zeroth_hammer_lean,
@@ -520,7 +520,7 @@ def write_certificate_lean(
 
     The *definitions* live in ``Certificate/Data.lean`` beside it, but the
     proof tactics are generated from the shape of the predicates (see
-    ``zrth.lean.tactics``), so this file has to be rewritten whenever they
+    ``zrth.lean.proof.tactics``), so this file has to be rewritten whenever they
     change — after ``--infer``, for instance.
     """
     if ctx is None:

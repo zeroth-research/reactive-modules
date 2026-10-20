@@ -100,7 +100,7 @@ import sys
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
-from .cert import (
+from .proof.render import (
     LeanCertificate,
     generate_zeroth_hammer_lean,
     prepare,
@@ -282,7 +282,7 @@ def _render(settings: Settings, smt, claim: "Claim | None",
 
     The predicates are parsed once, and that one parse is printed as Lean,
     read for its shape (`predicate_facts`) and, with `hints` under
-    `--smt-tactics cvc5`, put to `solver_hints` (`cert.prepare` says how
+    `--smt-tactics cvc5`, put to `solver_hints` (`proof.render.prepare` says how
     the two meet). `verbatim` is an answer that is Lean already.
     """
     if claim is None:

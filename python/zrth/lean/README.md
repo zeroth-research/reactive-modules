@@ -117,7 +117,7 @@ to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-p
 [Adding an Inference Route](#adding-an-inference-route-infer_route) says how
 to write a new one.
 
-### 6. Lean certificate (`cert.py`, `smt/precheck.py`, `tactics.py`, `proof/from_smt.py`)
+### 6. Lean certificate (`proof/render.py`, `smt/precheck.py`, `proof/tactics.py`, `proof/from_smt.py`)
 
 The route's answer becomes the project's certificate. Without a route,
 the same steps turn the given predicates into the certificate, before
@@ -129,7 +129,7 @@ stage 4:
   shape by `predicate_facts`.
 - Under `--smt-tactics cvc5`, it is also put to cvc5 for hints
   (`solver_hints`).
-- `cert.prepare` joins these into a `LeanCertificate`: the definitions in
+- `proof.render.prepare` joins these into a `LeanCertificate`: the definitions in
   `Data.lean`, and the tactic plan in `Certificate.lean`.
 
 `--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
@@ -225,10 +225,10 @@ topologically-sorted dataflow graph.
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` (with `fbk_bool.py`, cvc5 terms as the `Bool` Lean `lean2vmt` reads) |
 | `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
-| `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
+| `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
-| `proof/` | `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`) |
+| `proof/` | The rest of the certificate's Lean: `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`); `tactics`, the plan read off them |
 | `magic/synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
 | `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
 
@@ -411,7 +411,7 @@ The project writes one file per row of `project.ENCODINGS`, each from its
 
 ---
 
-## Certificate Generation (`cert.py`)
+## Certificate Generation (`proof/render.py`)
 
 A **certificate** adds five predicates and a proof skeleton on top of the
 module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
@@ -442,7 +442,7 @@ that is `None` becomes a `True` / `sorry` placeholder.
 the files and their fixed structure: the project skeleton, `Data.lean`, the
 certificate's proof skeleton. Python renders expressions and the parts whose
 shape follows the module: the encodings (`translate/`), the predicates
-(`render_certificate`), the tactic plan (`tactics.py`). A piece both a project
+(`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
 and a `--cert-file` certificate need is one template partial, rendered by both
 (`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
 than one file uses is one constant in `lean_names.py`.
@@ -451,7 +451,7 @@ than one file uses is one constant in `lean_names.py`.
 
 `predicate_terms` parses with cvc5 and refuses a predicate by the flag it
 came from; `render_certificate(q, share=..., verbatim=...)` translates the
-terms. `share=False` prints repeated subterms in full; `cert.prepare`
+terms. `share=False` prints repeated subterms in full; `proof.render.prepare`
 always shares, because a hint's `if_pos` matches once `simp` has
 zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
 `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
@@ -459,7 +459,7 @@ for a caller that wants no solver hints.
 
 ---
 
-## Tactic plans (`tactics.py`)
+## Tactic plans (`proof/tactics.py`)
 
 The three obligations used to be closed by one hardcoded chain, textually
 identical in every certificate — wasteful in both directions: an integer
@@ -498,7 +498,7 @@ across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
 
-## ZerothHammer (`cert.py`)
+## ZerothHammer (`proof/render.py`)
 
 A Lean 4 elaborator tactic that cascades proof strategies:
 
@@ -1412,7 +1412,7 @@ A row says:
 A route is handed a frozen `InferInput` — the `Claim`, the `given`
 predicates it starts from, the run's encoding and budget — and answers with
 a new `InferResult`: SMT-LIB in `cert`, which the pipeline prints as Lean in
-one place (`cert.render_certificate`), or, for the one `returns="lean"` row
+one place (`proof.render.render_certificate`), or, for the one `returns="lean"` row
 (`ai`), Lean in `lean`.  `files` carries whole files the route produced
 (project-relative path to text); the pipeline writes them after the
 predicates, through the handle, so each has to be a path the row owns.

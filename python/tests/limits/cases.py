@@ -578,7 +578,7 @@ CASES += [
 # units, weights permuted) and it passes, so 3 and 5 bracket the knee from
 # both sides. NN2Width6Big is the decisive control: the *same* 6-unit ranking
 # net and the *same* `if x = 0 then reset else x-1` transition, but over the
-# 32-slot module, which `tactics.py` classifies as "slow" and therefore gives
+# 32-slot module, which `proof/tactics.py` classifies as "slow" and therefore gives
 # 2 000 000 heartbeats instead of 400 000.
 CASES += [
     C(name="NN2Width3", group="nn2", mod="m_countdown", expect="?",

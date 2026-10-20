@@ -6,7 +6,7 @@ from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
 from zrth.lean.sorts import itype_name
 from zrth.lean.context import LeanContext
-from zrth.lean.cert import generate_certificate_lean
+from zrth.lean.proof.render import generate_certificate_lean
 from zrth.lean.project import generate_main_lean
 
 
@@ -265,7 +265,7 @@ def test_certificate_bool_has_no_scalar_constants_in_simp():
 
 
 def test_data_lean_has_sorry_when_no_property():
-    from zrth.lean.cert import generate_data_lean
+    from zrth.lean.proof.render import generate_data_lean
     m = _make_twobitcounter()
     ctx = LeanContext(m)
     data = generate_data_lean(ctx)

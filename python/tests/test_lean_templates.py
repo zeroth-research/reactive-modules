@@ -114,7 +114,7 @@ def _counter_ctx():
 
 def test_the_certificate_simp_set_unfolds_them():
     """Computing the fold is no use if the definition never opens."""
-    from zrth.lean.cert import generate_certificate_lean
+    from zrth.lean.proof.render import generate_certificate_lean
 
     cert = generate_certificate_lean(_counter_ctx())
     simp_mat = [ln for ln in cert.splitlines()

@@ -639,7 +639,7 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.cert import LeanCertificate, LeanPredicates
+    from zrth.lean.proof.render import LeanCertificate, LeanPredicates
 
     def lean(**defs):
         return LeanCertificate(LeanPredicates(**defs))

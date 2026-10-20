@@ -23,7 +23,7 @@ import torch
 
 from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.cert import generate_zeroth_hammer_lean, lean_certificate
+from zrth.lean.proof.render import generate_zeroth_hammer_lean, lean_certificate
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.lean_names import LINTERS_OFF
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
@@ -455,7 +455,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # inlining all of them in the order the project has them is the same
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
-    from zrth.lean.cert import generate_data_lean
+    from zrth.lean.proof.render import generate_data_lean
     from zrth.lean.context import LeanContext
     from zrth.lean.fbk_proveit import property_to_bool_lean
     from zrth.lean.translate.fbk import atom_to_lean_na

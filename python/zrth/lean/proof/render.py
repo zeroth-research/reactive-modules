@@ -8,7 +8,7 @@ from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.errors import PredicateRefused, Refused
 from zrth.lean.context import LeanContext
 from zrth.lean.lean_names import MAT_SIMP, rm_def
-from zrth.lean.tactics import plan_for
+from zrth.lean.proof.tactics import plan_for
 from zrth.lean.template_env import render
 
 if TYPE_CHECKING:
@@ -96,7 +96,7 @@ class LeanHints:
 def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     """`hints` printed. A condition or a factor the printer cannot express
     is left out: a hint is an optimisation, never needed for the proof."""
-    from .proof.from_smt import smt_to_lean_body
+    from .from_smt import smt_to_lean_body
 
     determined = []
     for cond, value in hints.determined:
@@ -151,7 +151,7 @@ def render_certificate(
     `verbatim` is an answer that is Lean already; its `inv` and `ranking`
     are taken as they are.
     """
-    from .proof.from_smt import smt_to_lean, smt_to_lean_nat
+    from .from_smt import smt_to_lean, smt_to_lean_nat
 
     msmt = q.msmt
 
@@ -214,9 +214,9 @@ def prepare(
     definitions with `simp`'s default `zeta`, which substitutes the `let`s
     away before the hint's `if_pos` runs.
     """
-    from .proof.facts import predicate_facts
+    from .facts import predicate_facts
 
-    from .proof.from_smt import smt_to_lean_body
+    from .from_smt import smt_to_lean_body
 
     printed = print_hints(hints, q.msmt.ctrl_next) if hints is not None else None
     facts = predicate_facts(q)
@@ -241,9 +241,9 @@ def lean_certificate(
 ) -> LeanCertificate:
     """`claim` and `cert` printed for codegen, with the facts their terms
     give and no solver hints."""
-    from .proof.facts import predicate_facts
+    from .facts import predicate_facts
 
-    from .smt.precheck import predicate_terms
+    from ..smt.precheck import predicate_terms
 
     q = predicate_terms(module, claim, cert)
     return LeanCertificate(

@@ -1,4 +1,4 @@
-"""Tests for shape-directed certificate tactic generation (`zrth.lean.tactics`).
+"""Tests for shape-directed certificate tactic generation (`zrth.lean.proof.tactics`).
 
 The plan decides what the three proof obligations are allowed to try. Getting
 it wrong is expensive in both directions — a missing prover loses a proof that
@@ -12,7 +12,7 @@ import pytest
 
 from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
 from zrth.lean.context import LeanContext
-from zrth.lean.tactics import features_for, is_nonlinear, plan_for
+from zrth.lean.proof.tactics import features_for, is_nonlinear, plan_for
 
 
 # ── the nonlinearity detector ────────────────────────────────────────────
@@ -174,7 +174,7 @@ def test_unbounded_state_is_not_enumerated():
 
 def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
-    from zrth.lean.tactics import MAX_ENUMERABLE_SLOTS
+    from zrth.lean.proof.tactics import MAX_ENUMERABLE_SLOTS
 
     b = Var(BitVec(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
     wide = Module.sequential(
@@ -339,7 +339,7 @@ def test_without_facts_everything_falls_back_to_the_text():
 
 
 def _hinted(**fields):
-    from zrth.lean.cert import LeanHints
+    from zrth.lean.proof.render import LeanHints
 
     return plan_for(
         LeanContext(_int_module()),
@@ -409,7 +409,7 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
 
 
 def _solver_hints(**fields):
-    from zrth.lean.cert import LeanHints
+    from zrth.lean.proof.render import LeanHints
 
     return LeanHints(**fields)
 
@@ -649,7 +649,7 @@ def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""
-    from zrth.lean.cert import generate_zeroth_hammer_lean
+    from zrth.lean.proof.render import generate_zeroth_hammer_lean
     hammer = generate_zeroth_hammer_lean()
     for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
         assert f'"{name}"' in hammer
