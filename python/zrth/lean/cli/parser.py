@@ -117,6 +117,17 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    _add_input(parser)
+    _add_claim(parser)
+    _add_routes(parser)
+    _add_outputs(parser)
+    _add_smt(parser)
+    return parser
+
+
+def _add_input(parser: argparse.ArgumentParser) -> None:
+    """The input: the module file, the format it is read in and that
+    format's own options, and where the project is written."""
     parser.add_argument(
         "module_file",
         nargs="?",
@@ -158,6 +169,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
     )
+
+
+def _add_claim(parser: argparse.ArgumentParser) -> None:
+    """The claim, as SMT-LIB in the module's names: the property under
+    the proof rule it is proved by, and the predicates the certificate
+    is given."""
     parser.add_argument(
         "--safety",
         default=None,
@@ -217,6 +234,12 @@ def build_parser() -> argparse.ArgumentParser:
             "'(ite (X @intf.5) (ite (X @intf.4) 1 2) 0)'."
         ),
     )
+
+
+def _add_routes(parser: argparse.ArgumentParser) -> None:
+    """The route that infers the certificate, the model the LLM routes
+    ask, and every route's own options, grouped by the routes that
+    declare them."""
     parser.add_argument(
         "--infer",
         nargs="?",
@@ -263,6 +286,10 @@ def build_parser() -> argparse.ArgumentParser:
             alias.flag, default=None, metavar="DIR", help=alias.help
         )
 
+
+def _add_outputs(parser: argparse.ArgumentParser) -> None:
+    """What the run writes besides the project, whether it builds it,
+    and what it does with `artifacts/`."""
     parser.add_argument(
         "--cert-file",
         default=None,
@@ -310,6 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
             f"pass when a bad artifact is being inherited by every run."
         ),
     )
+
+
+def _add_smt(parser: argparse.ArgumentParser) -> None:
+    """What cvc5 is asked about the certificate, and the time it is
+    given."""
     parser.add_argument(
         "--pre-check",
         default="none",
@@ -359,4 +391,3 @@ def build_parser() -> argparse.ArgumentParser:
             f"small queries still cannot exceed this."
         ),
     )
-    return parser
