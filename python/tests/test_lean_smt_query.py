@@ -316,6 +316,22 @@ def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
     assert predicate_facts(None) is None
 
 
+def test_floors_are_read_off_a_shared_term_once():
+    """What a floor applies to is collected over the term's DAG: walked as
+    a tree, sixty doublings of one `to_int` are 2^60 visits of it."""
+    from cvc5 import Kind
+    from zrth.lean.proof.facts import _floor_args
+
+    tm = cvc5.TermManager()
+    x = tm.mkConst(tm.getRealSort(), "x")
+    t = tm.mkTerm(Kind.TO_INTEGER, x)
+    for _ in range(60):
+        t = tm.mkTerm(Kind.ADD, t, t)
+    out = []
+    _floor_args(t, out)
+    assert out == [x]
+
+
 # ══════════════════════════════════════════════════════════════════════
 # Solver-informed tactics
 # ══════════════════════════════════════════════════════════════════════

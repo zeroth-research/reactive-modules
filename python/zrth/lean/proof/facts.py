@@ -105,12 +105,21 @@ def _facts_walk(t, acc: dict) -> None:
 
 def _floor_args(t, out: list) -> None:
     """Append the argument of each outermost `to_int` in `t`, left to
-    right, skipping one already in `out`."""
+    right, skipping one already in `out`.
+
+    Walked over the DAG, each node once: a term repeats its subterms by
+    sharing them, and walked as a tree `(+ x2 x2)` over `(+ x1 x1)` over
+    ... is 2^n visits of one node. A node met again appends nothing new,
+    since its first visit appended whatever it holds.
+    """
     from cvc5 import Kind
 
-    stack = [t]
+    stack, seen = [t], set()
     while stack:
         node = stack.pop()
+        if node.getId() in seen:
+            continue
+        seen.add(node.getId())
         if node.getKind() == Kind.TO_INTEGER:
             if all(node[0] != seen for seen in out):
                 out.append(node[0])
