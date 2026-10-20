@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
 # in the row costs a bare run nothing.
-from ..houdini_solver import DEFAULT_TIMEOUT
+from ..smt.solvers import DEFAULT_TIMEOUT
 from .api import InferInput, InferResult, InferRoute, Opt
 from .shared import VAMPIRE
 

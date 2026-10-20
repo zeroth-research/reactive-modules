@@ -84,7 +84,7 @@ HOUDINI = [
                          ids=[c[0] for c in HOUDINI])
 def test_houdini_vampire_scripts_are_unchanged(name, path, kind, prp, facts,
                                                rank):
-    from zrth.lean.houdini_solver import VampireSolver
+    from zrth.lean.smt.solvers import VampireSolver
 
     ctx, ob = _context(path, kind, prp, "houdini")
     kept = _candidates(ctx, facts)

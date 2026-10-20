@@ -53,11 +53,11 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from .errors import Refused
-from .smt.obligations import Query
-from .smt.limits import bounded_solver
-from .smt.script import decimals, script
-from .smt.vampire import resolve_vampire, run_vampire
+from ..errors import Refused
+from .obligations import Query
+from .limits import bounded_solver
+from .script import decimals, script
+from .vampire import resolve_vampire, run_vampire
 
 SOLVERS = ("cvc5", "vampire")
 DEFAULT_SOLVER = "cvc5"

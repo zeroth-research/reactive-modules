@@ -150,7 +150,7 @@ An answer literal is a substitution *a* refutation used, and a refutation of
 a mis-stated question proves nothing about the module -- nor does one branch
 of a disjunctive answer.  So the coefficients Vampire returns are put back
 into the template and the obligations are re-asked of cvc5 -- through the
-same :mod:`zrth.lean.houdini_solver` seam `--infer houdini` uses, in
+same :mod:`zrth.lean.smt.solvers` seam `--infer houdini` uses, in
 milliseconds.  A certificate that does not survive that is reported as not
 found, with what Vampire said.  This is not Houdini: nothing is filtered and
 nothing is proposed, it is the one check that the derivation is honest.
@@ -165,7 +165,7 @@ from itertools import combinations, product
 
 from ..certificate import Certificate, Claim
 from ..errors import PredicateRefused, Refused
-from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
+from ..smt.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from ..smt import obligations as obl
 from ..smt.obligations import Candidate, Obligations

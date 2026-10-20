@@ -26,7 +26,7 @@ solver decides what stays:
 
 Which solver
 ============
-``--houdini-solver`` picks it and :mod:`zrth.lean.houdini_solver` is the
+``--houdini-solver`` picks it and :mod:`zrth.lean.smt.solvers` is the
 seam.  The engine here never asks which one it is holding; it asks each
 query for an unsat core and for a counter-model and uses whichever came
 back.  The difference the choice makes is one thing, and it runs through
@@ -120,7 +120,7 @@ from itertools import product
 
 from ..certificate import Certificate, Claim
 from ..errors import PredicateRefused, Refused
-from ..houdini_solver import (
+from ..smt.solvers import (
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,
     Solver,

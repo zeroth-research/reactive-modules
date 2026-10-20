@@ -4,7 +4,7 @@ from __future__ import annotations
 
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
 # in the row costs a bare run nothing.
-from ..houdini_solver import (
+from ..smt.solvers import (
     DEFAULT_CORES,
     DEFAULT_SOLVER,
     DEFAULT_TIMEOUT,
@@ -15,7 +15,7 @@ from .shared import VAMPIRE
 
 
 def _resolve(opts: dict):
-    from ..houdini_solver import resolve_solver
+    from ..smt.solvers import resolve_solver
 
     return resolve_solver(opts["houdini_solver"], opts["vampire"],
                           opts["vampire_cores"])
