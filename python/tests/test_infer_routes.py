@@ -647,7 +647,7 @@ def test_artifacts_defaults_to_use():
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
-    """`InferInput.resumable_inv`'s answer for a store that already holds artifacts.
+    """`infer.resume.resumable_inv`'s answer for a store that already holds artifacts.
 
     The store does the role/language/status filtering (it is the half that
     knows what a stale artifact is and reports what it dropped); what is
@@ -655,15 +655,16 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     """
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer import InferInput
+    from zrth.lean.infer.resume import resumable_inv
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
-    return InferInput(
+    return resumable_inv(InferInput(
         project=handle,
         module=None,
         claim=Claim(prp="(= s0 0)", kind=kind),
         given=Certificate(inv=supplied_inv),
         opts={},
-    ).resumable_inv()
+    ))
 
 
 def test_an_inductive_invariant_is_taken_as_given(tmp_path):

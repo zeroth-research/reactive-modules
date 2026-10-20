@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from ...core.options import Opt
 from ..io import InferInput, InferResult
+from ..resume import resumable_inv, taking_inv
 from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
     from .engine import SmtLinearEngine
 
-    inp = inp.taking_inv(
-        inp.resumable_inv(strengthen=inp.claim.is_safety),
+    inp = taking_inv(
+        inp, resumable_inv(inp, strengthen=inp.claim.is_safety),
         ("adding to it the conjuncts the property needs"
          if inp.claim.is_safety
          else "taking its invariant as given and ranking over it"),

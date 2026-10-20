@@ -62,7 +62,8 @@ from . import (
     sygus,
     vampire,
 )
-from .io import FIXABLE, InferInput, InferResult, ProjectHandle
+from .io import InferInput, InferResult, ProjectHandle
+from .resume import FIXABLE
 from .route import Alias, InferRoute
 
 __all__ = [

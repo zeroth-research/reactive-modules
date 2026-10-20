@@ -122,7 +122,7 @@ def test_a_learned_buchi_certificate_holds_under_cvc5():
 
 def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: both halves `proved` and SMT-LIB, which
-    is what `infer.FIXABLE` and `InferInput.resumable_inv` ask for, so
+    is what `infer.FIXABLE` and `infer.resume.resumable_inv` ask for, so
     a following `--infer ai-cegis` starts from them instead of asking the
     model again."""
     from types import SimpleNamespace

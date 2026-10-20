@@ -226,7 +226,7 @@ layer.
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
-| `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) and what a route is given and hands back (`io`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
+| `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) what a route is given and hands back (`io`) and what it resumes from (`resume`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
 | `infer/common/` | What more than one route uses: `llm`, the model both LLM routes ask; `synth`, what a searching route reads a module as (its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use); `options`, the options two rows share |
 | `infer/fbk_proveit/` | The `--infer fbk-proveit` route: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`engine`) |
 | `cli/` | The command line: `parser` (the flags), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
@@ -1423,8 +1423,10 @@ one place (`proof.render.render_certificate`), or, for the one `returns="lean"` 
 (project-relative path to text); the pipeline writes them after the
 predicates, through the handle, so each has to be a path the row owns.
 `fbk-proveit` answers with its certificate and the proof that its model is
-the module this way.  A route that resumes from `artifacts/` does so through
-`InferInput.resumable_inv`, `taking_inv` and `ruled_out`.
+the module this way.  A route that resumes from `artifacts/` reads it through
+`ProjectHandle.resume`; the two that take an invariant an earlier run proved
+as given do so through `infer.resume` (`resumable_inv`, `taking_inv`, and
+`ruled_out` for the shapes an earlier search proved empty).
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
 checks the op matrix: a row declaring an encoding no row emits, an artifact

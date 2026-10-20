@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from ...core.options import Opt
 from ..io import InferInput, InferResult
+from ..resume import resumable_inv, ruled_out, taking_inv
 from ..route import InferRoute
 
 
 def _run(inp: InferInput) -> InferResult:
     from .engine import AiCegisEngine
 
-    inp = inp.taking_inv(
-        inp.resumable_inv(),
+    inp = taking_inv(
+        inp, resumable_inv(inp),
         # On `--safety` the invariant *is* the certificate, so there is
         # nothing left to infer and no LLM call to make: saying "and
         # inferring the ranking function" there would name a field
@@ -26,7 +27,7 @@ def _run(inp: InferInput) -> InferResult:
         inp.module,
         model=inp.model,
         base_url=inp.base_url,
-        known=inp.ruled_out(),
+        known=ruled_out(inp),
         budget_s=inp.opts["cegis_budget"],
         encoding=inp.smt,
         budget=inp.budget,
