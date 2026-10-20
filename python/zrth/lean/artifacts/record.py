@@ -1,7 +1,8 @@
 """What a route leaves in `artifacts/`: a predicate it found, or a note.
 
-Both take the store a route was handed, which is `None` under `--artifacts
-ignore`, and then write nothing.
+Both take the store a route was handed, and write nothing when it is
+`None`: a run with no project to keep `artifacts/` in. Under `--artifacts
+ignore` there is a store, and both write to it.
 """
 
 from __future__ import annotations

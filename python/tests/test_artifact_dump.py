@@ -184,8 +184,8 @@ def test_resolve_answers_a_question_without_rewriting_it(tmp_path):
 
 
 def test_resolve_is_silent_about_a_question_never_asked(tmp_path):
-    """`--artifacts ignore` indexes nothing, and an answer to nothing is not
-    an error -- the pre-check has to run identically either way."""
+    """An answer about an obligation that was never written is not an
+    error: the pre-check has to run identically whatever was written."""
     store = _store(tmp_path)
     store.encoded("obligation", "obligation-hrank", "(check-sat)", what="x")
     store.resolve("obligation-nosuch.smt2", status="refuted", why="...")

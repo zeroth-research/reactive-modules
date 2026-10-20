@@ -405,8 +405,8 @@ class ArtifactStore:
         counterexample in `why`, is the difference between a next run that
         knows this certificate is wrong and one that re-derives it.
 
-        Silent when the artifact was never indexed (`--artifacts ignore`
-        writes nothing, and there is then no entry to answer).
+        Silent when the artifact was never indexed: there is then no entry
+        to answer, and an answer to nothing is not an error.
         """
         if status not in STATUSES:
             raise ValueError(f"unknown artifact status {status!r}; one of {STATUSES}")
