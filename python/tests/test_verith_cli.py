@@ -143,6 +143,17 @@ def test_a_refusal_is_an_error_line_not_a_traceback():
             assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
 
 
+def test_a_fault_in_the_module_file_keeps_its_traceback():
+    """What the user's `module()` raises is not a refusal by the loader, and
+    one `error:` line would read like "must define `module`"."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        broken = Path(tmpdir) / "broken.py"
+        broken.write_text("def module():\n    return None.state\n")
+        r = _verith(str(broken), "-o", tmpdir, "-p", "Broken")
+        assert r.returncode != 0
+        assert "Traceback" in r.stderr and "AttributeError" in r.stderr, r.stderr
+
+
 # `update` reads an `Uninterpreted` wire, which no Lean column can write.
 _NO_LEAN_FORM_MODULE = """\
 import torch

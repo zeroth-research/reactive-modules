@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.options import Opt
-from .api import InputAdapter, Problem, SourceText
+from .api import InputAdapter, InputError, Problem, SourceText
 from .names import Names
 
 
@@ -71,7 +71,7 @@ def _call(filepath: str | Path, module_def: str = "module"):
 
     spec = importlib.util.spec_from_file_location("_user_diagrams", path)
     if spec is None:
-        raise RuntimeError(
+        raise InputError(
             f"Failed to load module from file: `{filepath}`, module: `{module_def}`"
         )
 
@@ -80,7 +80,7 @@ def _call(filepath: str | Path, module_def: str = "module"):
     spec.loader.exec_module(module)
 
     if not hasattr(module, module_def):
-        raise AttributeError(
+        raise InputError(
             f"Module file {path} must define `{module_def}` which is a function returning `Module` or a sub-class of `Module` with contructor without arguments."
         )
 
