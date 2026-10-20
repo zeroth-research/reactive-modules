@@ -21,8 +21,8 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.artifacts import ArtifactStore, module_digest
-from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.errors import Refused
+from zrth.lean.core.certificate import Certificate, Claim
+from zrth.lean.core.errors import Refused
 
 MODS = Path(__file__).parent / "limits" / "mods"
 

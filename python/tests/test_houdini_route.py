@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Claim
-from zrth.lean.errors import Refused
+from zrth.lean.core.certificate import Claim
+from zrth.lean.core.errors import Refused
 from zrth.lean.smt.solvers import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"

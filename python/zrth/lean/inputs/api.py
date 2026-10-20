@@ -9,7 +9,7 @@ from typing import Any
 
 from zrth import Module
 
-from ..options import Opt
+from ..core.options import Opt
 from .names import Names
 
 

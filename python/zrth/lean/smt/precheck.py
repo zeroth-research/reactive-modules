@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from ..certificate import Certificate, Claim, LeanAnswer
-from ..errors import Refused
+from ..core.certificate import Certificate, Claim, LeanAnswer
+from ..core.errors import Refused
 from . import obligations as ob
 from .limits import call_ms
 from .encoding import encoding_of

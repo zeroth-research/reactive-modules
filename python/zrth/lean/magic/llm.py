@@ -10,8 +10,8 @@ Neither package is imported until a client is made: `cli` imports
 
 import os
 
-from ..certificate import Claim
-from ..errors import Refused
+from ..core.certificate import Claim
+from ..core.errors import Refused
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 

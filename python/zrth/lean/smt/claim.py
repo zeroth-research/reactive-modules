@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..certificate import Claim
-from ..errors import Refused
+from ..core.certificate import Claim
+from ..core.errors import Refused
 from .encoding import encoding_of
 
 

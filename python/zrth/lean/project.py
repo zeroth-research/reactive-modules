@@ -3,7 +3,7 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.errors import Refused
+from zrth.lean.core.errors import Refused
 from zrth.lean.sorts import flat_element_type, wire_shape
 from zrth.lean.context import LeanContext
 

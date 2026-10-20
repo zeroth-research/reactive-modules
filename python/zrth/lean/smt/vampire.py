@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..errors import Refused
+from ..core.errors import Refused
 
 ENV = "VAMPIRE"
 

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cvc5
 
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.core.certificate import Certificate, Claim
 from zrth.lean.smt.precheck import ModuleQueries
 
 CASES = [

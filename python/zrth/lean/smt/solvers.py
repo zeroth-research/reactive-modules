@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from ..errors import Refused
+from ..core.errors import Refused
 from .obligations import Query
 from .limits import bounded_solver
 from .script import decimals, script

@@ -91,7 +91,7 @@ sys.path.insert(0, str(SP))
 
 from suites import all_rows, column_of                          # noqa: E402
 
-from zrth.lean.certificate import Claim                         # noqa: E402
+from zrth.lean.core.certificate import Claim                         # noqa: E402
 from zrth.lean.inputs.python import load_module                # noqa: E402
 from zrth.lean.smt.claim import SynthContext                      # noqa: E402
 

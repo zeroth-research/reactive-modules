@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
-from ..certificate import Certificate, Claim, LeanAnswer
-from ..errors import Refused
-from ..options import Opt
+from ..core.certificate import Certificate, Claim, LeanAnswer
+from ..core.errors import Refused
+from ..core.options import Opt
 
 if TYPE_CHECKING:
     from ..inputs import Names, SourceText

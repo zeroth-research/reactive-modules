@@ -483,7 +483,7 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     """The certificate as the pipeline renders it before a route runs, and
     after the route has answered."""
     pytest.importorskip("cvc5")
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.main import _render
 
     module = _countdown()
@@ -555,7 +555,7 @@ def test_an_answer_in_lean_is_planned_from_the_property_alone():
     """Nothing parses printed Lean back into a term, so a route that
     answers in Lean leaves the facts those of the property and asks cvc5
     nothing."""
-    from zrth.lean.certificate import LeanAnswer
+    from zrth.lean.core.certificate import LeanAnswer
 
     answer = LeanAnswer(inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
     _module, before, after = _before_and_after(None, None, verbatim=answer)

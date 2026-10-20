@@ -172,7 +172,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
 
     def said(route) -> str:
         return m._refused(SimpleNamespace(route=route), Refused("why")).code
@@ -266,7 +266,7 @@ def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     property: that is the question it was asked."""
     from zrth.lean import main as m
     from zrth.lean.artifacts import ArtifactStore
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
 
     def recorded(store) -> dict[str, str]:
         return {a.role: a.what for a in store.list() if a.indexed}

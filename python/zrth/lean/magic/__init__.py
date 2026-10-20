@@ -27,7 +27,7 @@ what keeps `verith --help` cheap. Importing a route from this package's
 `__init__` would undo that.
 """
 
-from ..certificate import Certificate, Claim
+from ..core.certificate import Certificate, Claim
 
 
 class TA2Magic:

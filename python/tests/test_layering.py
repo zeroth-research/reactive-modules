@@ -33,9 +33,7 @@ PACKAGE = sorted(LEAN.rglob("*.py"))
 # it), and the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "core": (frozenset({
-        "zrth.lean.certificate", "zrth.lean.errors", "zrth.lean.options",
-    }), frozenset()),
+    "core": (frozenset({"zrth.lean.core"}), frozenset()),
     "ir": (frozenset({
         "zrth.lean.sorts", "zrth.lean.layout", "zrth.lean.literals",
         "zrth.lean.ops",
@@ -75,9 +73,9 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from zrth.lean import errors` loads
-        `zrth.lean.errors`, `from zrth.lean.errors import Refused` loads
-        `zrth.lean.errors`."""
+        """The module this import loads: `from zrth.lean.core import errors`
+        loads `zrth.lean.core.errors`, and so does `from zrth.lean.core.errors
+        import Refused`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"
         return self.module

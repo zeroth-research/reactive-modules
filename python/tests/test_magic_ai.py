@@ -4,7 +4,7 @@ import os
 import subprocess
 import pytest
 
-from zrth.lean.certificate import Claim, LeanAnswer
+from zrth.lean.core.certificate import Claim, LeanAnswer
 from zrth.lean.magic.ai import TA2MagicAI
 
 COUNTER_SOURCE = """\

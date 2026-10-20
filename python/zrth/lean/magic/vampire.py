@@ -163,8 +163,8 @@ import time
 from dataclasses import dataclass
 from itertools import combinations, product
 
-from ..certificate import Certificate, Claim
-from ..errors import PredicateRefused, Refused
+from ..core.certificate import Certificate, Claim
+from ..core.errors import PredicateRefused, Refused
 from ..smt.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
 from ..smt import obligations as obl

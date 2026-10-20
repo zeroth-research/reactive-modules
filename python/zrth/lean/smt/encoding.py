@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
-from ..errors import PredicateRefused
+from ..core.errors import PredicateRefused
 from .limits import bounded_solver
 
 
@@ -92,7 +92,7 @@ class ModuleEncoding:
     def queries(self, claim, cert=None):
         """`smt.precheck.ModuleQueries` for `claim` and `cert`, built once per
         pair. Raises as its constructor does."""
-        from ..certificate import Certificate
+        from ..core.certificate import Certificate
         from .precheck import ModuleQueries
 
         key = (claim, cert or Certificate())

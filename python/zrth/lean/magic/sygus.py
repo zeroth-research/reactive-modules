@@ -64,8 +64,8 @@ and the artifact is the answer being *reusable*.
 
 from __future__ import annotations
 
-from ..certificate import Certificate, Claim
-from ..errors import Refused
+from ..core.certificate import Certificate, Claim
+from ..core.errors import Refused
 from . import TA2Magic
 from ..smt.claim import READING_KINDS, SynthContext
 from ..smt.limits import bounded_solver, call_ms

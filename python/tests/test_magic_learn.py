@@ -17,8 +17,8 @@ import torch
 from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from zrth.analyzer import convert_method
 from zrth.sugar import ite
-from zrth.lean.certificate import Claim
-from zrth.lean.errors import Refused
+from zrth.lean.core.certificate import Claim
+from zrth.lean.core.errors import Refused
 from zrth.lean.magic.learn import (
     TA2MagicLearn,
     _parse_property,
@@ -130,7 +130,7 @@ def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     from types import SimpleNamespace
 
     from zrth.lean.artifacts import ArtifactStore
-    from zrth.lean.certificate import Certificate
+    from zrth.lean.core.certificate import Certificate
     from zrth.lean.infer_route import FIXABLE
     from zrth.lean.infer_route.nuterm import ROUTE
 

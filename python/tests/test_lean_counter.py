@@ -6,7 +6,7 @@ from zrth.lean.project import (
     create_project,
 )
 from zrth.lean.proof.render import lean_certificate
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.core.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path

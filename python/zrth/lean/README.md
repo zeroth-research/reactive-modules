@@ -214,7 +214,7 @@ topologically-sorted dataflow graph.
 
 | File | Role |
 |------|------|
-| `errors.py` | `Refused`, the error a run is refused with |
+| `core/errors.py` | `Refused`, the error a run is refused with |
 | `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
 | `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
 | `literals.py` | Constants as Lean text, `ConstantRegistry` |
@@ -224,7 +224,7 @@ topologically-sorted dataflow graph.
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` (with `fbk_bool.py`, cvc5 terms as the `Bool` Lean `lean2vmt` reads) |
-| `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
+| `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
@@ -418,7 +418,7 @@ module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
 (internally; on the command line the same variables are spelled
 `(X @intf.0)`, `(X @extl.0)`, `@extl.0`, see "Writing a claim on the command
 line" below)
-(`certificate.Claim` and `certificate.Certificate`). `predicate_terms`
+(`core.certificate.Claim` and `core.certificate.Certificate`). `predicate_terms`
 parses them against the module, and `render_certificate` prints them as
 Lean `fun` expressions into a `LeanPredicates`; it is the only place they
 are printed. Codegen takes a `LeanCertificate`: those definitions and

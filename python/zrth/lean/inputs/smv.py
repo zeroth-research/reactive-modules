@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..options import Opt
+from ..core.options import Opt
 from .api import InputAdapter, InputError, Problem, SourceText, StatedClaim
 from .names import Names, usable
 

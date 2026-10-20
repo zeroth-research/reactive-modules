@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Claim
+from zrth.lean.core.certificate import Claim
 
 pytest.importorskip("cvc5")
 

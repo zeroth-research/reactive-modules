@@ -1,10 +1,10 @@
-"""The certificate types (`zrth.lean.certificate`)."""
+"""The certificate types (`zrth.lean.core.certificate`)."""
 
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from zrth.lean.certificate import Certificate, Claim, LeanAnswer
+from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 
 
 def test_the_types_are_values():

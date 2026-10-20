@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from zrth.lean.cli import build_parser, parse_args
-from zrth.lean.errors import Refused
+from zrth.lean.core.errors import Refused
 from zrth.lean.infer_route import (
     ROUTES,
     InferResult,
@@ -493,7 +493,7 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 
 def test_an_empty_result_is_one_with_no_predicates_and_no_files():
     """`empty` is true only when the route handed back nothing at all."""
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     assert InferResult().empty
     assert not InferResult(Certificate(inv="(= s0 0)")).empty
@@ -519,7 +519,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
                owns=()):
     """Put one synthetic row through `main._infer`."""
     from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
@@ -534,7 +534,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
 
 
 def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
-    from zrth.lean.certificate import Certificate
+    from zrth.lean.core.certificate import Certificate
 
     result = InferResult(Certificate("(= s0 0)", "s0"))
     assert _run_infer(monkeypatch, tmp_path, result) is result
@@ -543,7 +543,7 @@ def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
 def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
     """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
     `smt` row has nowhere to go."""
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     both = InferResult(Certificate("(= s0 0)", "s0"),
                        LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
@@ -552,7 +552,7 @@ def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
 
 
 def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
     assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
@@ -573,7 +573,7 @@ def test_a_files_route_hands_back_files_and_no_predicates(monkeypatch, tmp_path)
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
-    from zrth.lean.certificate import Certificate
+    from zrth.lean.core.certificate import Certificate
 
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
@@ -653,7 +653,7 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer_route import InferInput
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
@@ -833,7 +833,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer_route import InferResult
 
     def refuse(*a, **k):
@@ -861,7 +861,7 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
 
     from zrth.lean import inputs
     from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.core.certificate import Certificate, Claim
 
     from pathlib import Path
 

@@ -12,7 +12,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort
-from ..errors import Refused
+from ..core.errors import Refused
 from ..sorts import dtype_shape, is_scalar_shape, wire_shape
 from ..layout import product_accessor
 from ..literals import lean_bitvec, lean_int, lean_real

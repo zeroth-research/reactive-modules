@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
-from ..errors import Refused
+from ..core.errors import Refused
 from ..smt.claim import SynthContext, reading_kind
 from ..smt.record import found, note
 from ..smt.script import decimals, smt_int, smt_lit

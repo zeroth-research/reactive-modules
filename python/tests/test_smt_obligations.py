@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.core.certificate import Certificate, Claim
 
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402

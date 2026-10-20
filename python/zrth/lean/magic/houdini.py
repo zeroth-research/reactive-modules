@@ -118,8 +118,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
 
-from ..certificate import Certificate, Claim
-from ..errors import PredicateRefused, Refused
+from ..core.certificate import Certificate, Claim
+from ..core.errors import PredicateRefused, Refused
 from ..smt.claim import SynthContext
 from ..smt.solvers import (
     DEFAULT_SOLVER,

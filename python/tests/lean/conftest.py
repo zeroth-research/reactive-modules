@@ -24,7 +24,7 @@ import torch
 from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.proof.render import generate_zeroth_hammer_lean, lean_certificate
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.core.certificate import Certificate, Claim
 from zrth.lean.lean_names import LINTERS_OFF
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
 from zrth.lean.translate.scalar import _argmax_scalar_def_lines

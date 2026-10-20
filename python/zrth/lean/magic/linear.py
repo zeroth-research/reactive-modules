@@ -86,8 +86,8 @@ what answered.
 
 from __future__ import annotations
 
-from ..certificate import Certificate, Claim
-from ..errors import Refused
+from ..core.certificate import Certificate, Claim
+from ..core.errors import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 

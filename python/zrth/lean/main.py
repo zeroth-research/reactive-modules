@@ -105,9 +105,9 @@ from .proof.render import (
     generate_zeroth_hammer_lean,
     prepare,
 )
-from .certificate import Certificate, Claim, LeanAnswer
+from .core.certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
-from .errors import Refused
+from .core.errors import Refused
 from .context import LeanContext
 from .native import lean_gaps
 from . import inputs

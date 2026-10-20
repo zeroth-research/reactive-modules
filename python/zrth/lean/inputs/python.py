@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..options import Opt
+from ..core.options import Opt
 from .api import InputAdapter, Problem, SourceText
 from .names import Names
 

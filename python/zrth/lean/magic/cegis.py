@@ -19,8 +19,8 @@ except ImportError:
 
 from zrth import Module
 
-from ..certificate import Certificate, Claim
-from ..errors import Refused
+from ..core.certificate import Certificate, Claim
+from ..core.errors import Refused
 from . import TA2Magic
 from .llm import DEFAULT_MODEL, describe_preconditions, make_client
 from ..smt.obligations import (

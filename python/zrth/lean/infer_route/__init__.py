@@ -42,7 +42,7 @@ share goes in ``shared.py`` or in an engine under :mod:`zrth.lean.smt`.
 
 from __future__ import annotations
 
-from ..errors import Refused
+from ..core.errors import Refused
 from . import (
     ai,
     ai_cegis,

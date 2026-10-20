@@ -11,7 +11,7 @@ from __future__ import annotations
 import cvc5
 from cvc5 import Kind
 
-from ..errors import Refused
+from ..core.errors import Refused
 from ..literals import lean_int
 from ..smt.terms import selector_index
 

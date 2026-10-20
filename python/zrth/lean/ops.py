@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .errors import Refused
+from .core.errors import Refused
 from .sorts import itype_name
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here

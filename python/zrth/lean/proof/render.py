@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from zrth.lean.native import product_type
-from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.errors import PredicateRefused, Refused
+from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
+from zrth.lean.core.errors import PredicateRefused, Refused
 from zrth.lean.context import LeanContext
 from zrth.lean.lean_names import MAT_SIMP, rm_def
 from zrth.lean.proof.tactics import plan_for
