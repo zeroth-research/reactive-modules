@@ -93,7 +93,7 @@ from dataclasses import dataclass
 
 from ...smt.claim import SynthContext
 from ...smt.limits import bounded_solver, call_ms
-from ...smt.script import decimals
+from ...smt.script import affine_smt, conjunction_smt, decimals
 from ...smt.obligations import (
     Frame,
     Obligations,
@@ -104,8 +104,6 @@ from ...smt.obligations import (
 )
 from ..common.synth import (
     Search,
-    affine_smt,
-    conjunction_smt,
     denominator_scale,
     program_constants,
     program_rationals,

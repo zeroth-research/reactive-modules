@@ -1,4 +1,5 @@
-"""SMT-LIB out: the script printer, and the literals written into one.
+"""SMT-LIB out: the script printer, the literals written into one, and
+the sums and conjunctions a route writes a certificate's predicates as.
 
 Every script handed to a solver outside this process, or left in
 `artifacts/` for a reader, is printed by :func:`script`.
@@ -72,6 +73,53 @@ def decimals(text: str) -> str:
         return smt_real(Fraction(-int(neg) if neg else int(num), int(den)))
 
     return _RATIONAL.sub(fix, text)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Predicates written out
+# ══════════════════════════════════════════════════════════════════════════
+#
+# A route that found a predicate writes it as text rather than printing the
+# term it found it as: the string is parsed back and rendered as the body of
+# a Lean definition, and a printer that `let`-binds a repeated subterm writes
+# something that cannot be one (`infer.nuterm.engine._smt_term` refuses
+# exactly that).
+
+
+def sum_smt(parts: Iterable[str]) -> str:
+    """SMT-LIB terms added up: `0` for none, one as itself."""
+    parts = list(parts)
+    if not parts:
+        return "0"
+    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+
+
+def affine_smt(const, coeffs, names, *, lit=smt_int) -> str:
+    """``k + Σ cᵢ·nᵢ`` as SMT-LIB, with the terms that say nothing dropped.
+
+    A coefficient of one is the term itself and minus one its negation;
+    `lit` writes the rest and the constant (`smt_real` over a Real form).
+    """
+    parts = [lit(const)] if const else []
+    for c, n in zip(coeffs, names):
+        if c == 1:
+            parts.append(n)
+        elif c == -1:
+            parts.append(f"(- {n})")
+        elif c:
+            parts.append(f"(* {lit(c)} {n})")
+    return sum_smt(parts)
+
+
+def conjunction_smt(parts: Iterable[str]) -> str:
+    """SMT-LIB Bool terms as one: `true` for none, one as itself, each
+    once and none of them `true`."""
+    rendered = list(dict.fromkeys(p for p in parts if p and p != "true"))
+    if not rendered:
+        return "true"
+    if len(rendered) == 1:
+        return rendered[0]
+    return "(and " + " ".join(rendered) + ")"
 
 
 # ══════════════════════════════════════════════════════════════════════════

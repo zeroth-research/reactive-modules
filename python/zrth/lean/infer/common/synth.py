@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 
 from ...smt.claim import SynthContext, reading_kind
 from ...artifacts.record import found, note
-from ...smt.script import decimals, smt_int, smt_lit
+from ...smt.script import decimals, smt_lit
 from ...smt.terms import free_constants, literals, nodes
 
 try:
@@ -416,44 +416,6 @@ def moduli(constants: tuple[int, ...]) -> tuple[int, ...]:
     """
     ks = {2} | {abs(c) for c in constants if 2 <= abs(c) <= 16}
     return tuple(sorted(ks))
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# SMT-LIB out
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def affine_smt(const: int, coeffs, names) -> str:
-    """``k + Σ cᵢ·sᵢ`` as SMT-LIB, with the terms that say nothing dropped.
-
-    Written out here rather than printed from the model's own term: what this
-    string has to survive is being parsed back and rendered as the body of a
-    Lean definition, and a printer that `let`-binds a repeated subterm
-    produces something that cannot be one (`infer.nuterm.engine._smt_term`
-    refuses exactly that).
-    """
-    parts = [] if not int(const) else [smt_int(const)]
-    for c, n in zip(coeffs, names):
-        c = int(c)
-        if c == 1:
-            parts.append(n)
-        elif c == -1:
-            parts.append(f"(- {n})")
-        elif c:
-            parts.append(f"(* {smt_int(c)} {n})")
-    if not parts:
-        return "0"
-    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
-
-
-def conjunction_smt(parts) -> str:
-    """SMT-LIB Bool terms as one. Empty is `true`, one is itself."""
-    rendered = list(dict.fromkeys(p for p in parts if p and p != "true"))
-    if not rendered:
-        return "true"
-    if len(rendered) == 1:
-        return rendered[0]
-    return "(and " + " ".join(rendered) + ")"
 
 
 def body_of(solution) -> tuple:

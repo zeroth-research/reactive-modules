@@ -57,7 +57,7 @@ from zrth import Module
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
 from ..engine import Engine
-from ...smt.script import smt_int
+from ...smt.script import affine_smt, conjunction_smt, smt_int
 
 
 def _engine():
@@ -91,44 +91,18 @@ def _engine():
 # SMT-LIB in and out
 # ---------------------------------------------------------------------------
 
-def _smt_affine(coeffs, const, names) -> str:
-    """``k + Σ cᵢ·sᵢ`` as an SMT-LIB term, written out in full.
-
-    Printed here rather than through z3's ``sexpr``, which ``let``-binds the
-    subterm a ReLU repeats -- and what this string has to survive is being read
-    back and rendered as the body of a Lean definition."""
-    parts = [] if not int(const) else [smt_int(const)]
-    for c, n in zip(coeffs, names):
-        c = int(c)
-        if c == 1:
-            parts.append(n)
-        elif c == -1:
-            parts.append(f"(- {n})")
-        elif c:
-            parts.append(f"(* {smt_int(c)} {n})")
-    if not parts:
-        return "0"
-    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
-
-
 def _smt_ranking(layers, names) -> str:
     """``V`` as an SMT-LIB Int term over ``names``: a ReLU as an ``ite``.
 
     ``layers`` is ``[(W1, b1), (W2, b2)]`` with integer entries, the same weights
     the composed module computed with, so the term and the wire the procedure
-    certified are one function."""
+    certified are one function. Written out in full rather than through z3's
+    ``sexpr``, which ``let``-binds the pre-activation a ReLU repeats."""
     (W1, b1), (W2, b2) = layers
-    parts = [] if not int(b2[0]) else [smt_int(b2[0])]
-    for j in range(W1.shape[0]):
-        c = int(W2[0][j])
-        if not c:
-            continue
-        pre = _smt_affine(W1[j], b1[j], names)
-        unit = f"(ite (> {pre} 0) {pre} 0)"
-        parts.append(unit if c == 1 else f"(* {smt_int(c)} {unit})")
-    if not parts:
-        return "0"
-    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+    units = [f"(ite (> {pre} 0) {pre} 0)"
+             for pre in (affine_smt(int(b1[j]), [int(c) for c in W1[j]], names)
+                         for j in range(W1.shape[0]))]
+    return affine_smt(int(b2[0]), [int(c) for c in W2[0]], units)
 
 
 def _smt_term(pred) -> str:
@@ -146,18 +120,6 @@ def _smt_term(pred) -> str:
             f"certificate's definition cannot carry: {src[:160]}"
         )
     return src
-
-
-def _smt_conjunction(terms) -> str:
-    """SMT-LIB Bool terms as one. Empty is ``true``, one is itself."""
-    # A seeded candidate the lattice also proposes survives as both, and the
-    # same conjunct twice is noise in every file it reaches.
-    rendered = list(dict.fromkeys(terms))
-    if not rendered:
-        return "true"
-    if len(rendered) == 1:
-        return rendered[0]
-    return "(and " + " ".join(rendered) + ")"
 
 
 def _prune(conjuncts, timeout_ms: int = 2000) -> list:
@@ -456,7 +418,7 @@ class NutermEngine(Engine):
         # The seeded property is printed as it was written, which is the same
         # predicate and the only conjunct big enough for z3 to reach for a
         # `let`; the rest are the z3 terms the proof carried.
-        return _smt_conjunction([prp_src if lbl == "P" else _smt_term(t)
+        return conjunction_smt([prp_src if lbl == "P" else _smt_term(t)
                                  for lbl, t in kept])
 
     def _buchi_certificate(self, eng, system, prp, prp_src: str) -> tuple:
@@ -554,7 +516,7 @@ class NutermEngine(Engine):
         kept = _prune([(i, t) for i, t in enumerate(result.system.invariants)])
         self.log(f"[nuterm] invariant: {len(kept)} of "
                  f"{len(result.system.invariants)} conjuncts after pruning")
-        return _smt_conjunction([_smt_term(t) for _, t in kept])
+        return conjunction_smt([_smt_term(t) for _, t in kept])
 
     # --- terms and the answer -------------------------------------------
 

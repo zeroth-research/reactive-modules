@@ -171,7 +171,9 @@ from ..engine import Engine
 from ...smt import obligations as obl
 from ...smt.obligations import Candidate, Obligations
 from ...artifacts.record import found, note
-from ...smt.script import decimals, script, smt_int
+from ...smt.script import (
+    affine_smt, conjunction_smt, decimals, script, smt_int,
+)
 from ...smt.terms import free_constants, ite_conditions
 from ...smt.vampire import run_vampire
 from ...smt.claim import SynthContext
@@ -1059,8 +1061,7 @@ class VampireEngine(Engine):
         for row in tpl.rows:
             facts.append(f"(<= {smt_int(named[row.lo])} {row.smt})")
             facts.append(f"(<= {row.smt} {smt_int(named[row.hi])})")
-        inv = ("true" if not facts else facts[0] if len(facts) == 1
-               else "(and " + " ".join(facts) + ")")
+        inv = conjunction_smt(facts)
         if claim.is_safety:
             return inv, None
         # A coefficient of one is the column itself: `(* 1 s0)` is what the
@@ -1073,12 +1074,8 @@ class VampireEngine(Engine):
         cols = columns(self.ctx)
         reads = [floor_real_src(cols[i].src, cols[i].sort, self.scale)
                  for i in tpl.at]
-        terms = [reads[i] if named[c] == 1
-                 else f"(* {smt_int(named[c])} {reads[i]})"
-                 for i, c in enumerate(tpl.rank[:-1]) if named[c]]
-        const = named[tpl.rank[-1]]
-        parts = ([smt_int(const)] if const or not terms else []) + terms
-        rank = parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+        rank = affine_smt(named[tpl.rank[-1]],
+                          [named[c] for c in tpl.rank[:-1]], reads)
         return inv, rank
 
     def _checks_out(self, inv_src: str, rank_src: "str | None",
