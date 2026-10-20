@@ -50,7 +50,6 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
-from ...core.errors import Refused
 from ...smt.claim import SynthContext, reading_kind
 from ...artifacts.record import found, note
 from ...smt.script import decimals, smt_int, smt_lit
@@ -249,37 +248,20 @@ def floor_real_src(src: str, sort, scale: int = 1) -> str:
     return f"(to_int {src if scale == 1 else f'(* {scale}.0 {src})'})"
 
 
-def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
-             scale: int = 1, floor_reals: bool = True) -> list[Reading]:
-    """The columns `route` weighs this module by, or why one component is not.
+def readings(ctx: "SynthContext", *, scale: int = 1,
+             floor_reals: bool = True) -> list[Reading]:
+    """The columns a route weighs this module by, component by component.
 
-    `allow` is the route's own contract rather than the context's: a route
-    whose obligations are stated in integer arithmetic has nowhere to put a
-    Real column, while a template weighs whatever has a reading. Refused by
-    name either way -- naming the component and the route that does read it
-    is the difference between "try something else" and "try everything
-    else".
+    Every component has one: `SynthContext.build` has already refused a
+    module with a component of a kind the route does not take, by name.
 
     ``scale`` and ``floor_reals`` are passed through to
     :func:`component_readings`, which is where what a Real costs is
     written down.
     """
-    out: list[Reading] = []
-    refused: list[str] = []
-    for i, sort in enumerate(ctx.env.state_sorts):
-        if reading_kind(sort) not in allow:
-            refused.append(f"s{i} is {sort}")
-            continue
-        out.extend(component_readings(ctx, i, scale=scale,
-                                      floor_reals=floor_reals))
-    if refused:
-        raise Refused(
-            f"--infer {route} reads a state of scalar integers, and this "
-            f"module's is not one: {', '.join(refused)}. `--infer smt-linear` "
-            f"weighs a Bool component as 0/1 and a bitvector as its unsigned "
-            f"value, and `--infer ai-cegis` reads whatever cvc5 encodes."
-        )
-    return out
+    return [r for i in range(len(ctx.env.state_sorts))
+            for r in component_readings(ctx, i, scale=scale,
+                                        floor_reals=floor_reals)]
 
 
 # The most branch conditions `split_conditions` offers.

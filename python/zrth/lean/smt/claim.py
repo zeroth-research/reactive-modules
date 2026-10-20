@@ -92,14 +92,10 @@ class SynthContext:
         """The context, or the reason this module is not one `route` reads.
         `source` is the module, its encoding or a `smt.encoding.lazy` factory.
 
-        ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
-        is the same tuple :func:`readings` is given -- a route that declines
-        a kind here declines it there, so there is one answer to "what can
-        this route read" rather than two that have to agree. What a sort
-        costs beyond being readable is the route's own business:
-        `--infer sygus` takes the context's Bool and then refuses it in
-        `readings`, because its `synthFun` has nowhere to put a Bool column
-        even though the context can weigh one.
+        ``takes`` is the route's contract, as :data:`READING_KINDS`, and
+        this is the one place it is checked: there is one answer to "what
+        can this route read", and `infer.common.synth.readings` reads every
+        component of a context that was built.
 
         A kind outside ``takes`` is refused here, before a solver starts,
         and named: `--infer houdini` states its candidates in real

@@ -169,7 +169,7 @@ class SygusEngine(Engine):
         # so nothing here has to land in `Nat` and flooring would only lose
         # the property. `--infer smt-linear` reads the same component
         # through `to_int` because it also ranks; see `component_readings`.
-        cols = readings(ctx, allow=READS, route="sygus", floor_reals=False)
+        cols = readings(ctx, floor_reals=False)
         self.log(f"[sygus] columns: {', '.join(c.name for c in cols)}")
         consts = program_constants(ctx)
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")

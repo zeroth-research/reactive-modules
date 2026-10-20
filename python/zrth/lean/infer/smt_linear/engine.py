@@ -121,10 +121,9 @@ except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
 
-# What this route reads: every kind with an integer reading. One tuple for
-# both gates -- the context's, which refuses a component before a solver
-# starts, and `readings`', which turns the rest into columns -- because a
-# route that declines a kind in one place declines it in the other.
+# What this route reads: every kind with an integer reading. The context
+# refuses any other component before a solver starts, and `readings` turns
+# the rest into columns.
 READS = ("int", "bool", "bv", "real", "tuple")
 
 DEFAULT_ROWS = 2
@@ -273,7 +272,7 @@ class SmtLinearEngine(Engine):
         ctx = SynthContext.build(self.encoding or self.module, claim,
                                  route="smt-linear", takes=READS)
         scale = denominator_scale(program_rationals(ctx))
-        cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)
+        cols = readings(ctx, scale=scale)
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
         if scale != 1:
             self.log(f"[smt-linear] Real state: read through a floor after "
