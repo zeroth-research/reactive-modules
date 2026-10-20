@@ -228,7 +228,7 @@ def floor_real(tm, term, scale: int = 1):
 
     The reading :func:`component_readings` gives a Real under
     `floor_reals`, for a caller that holds the term rather than the
-    component -- `infer.vampire.engine` floors a column it has already built
+    component -- `infer.vampire.question` floors a column it has already built
     for the rank while the same column keeps its rationals in the invariant
     rows. :func:`floor_real_src` is the other half, the SMT-LIB a
     certificate carries; the two have to say the same thing, so they are

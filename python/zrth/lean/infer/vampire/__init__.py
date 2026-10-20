@@ -1,4 +1,12 @@
-"""`--infer vampire`: Vampire's answer literals return the certificate's coefficients."""
+"""`--infer vampire`: Vampire's answer literals return the certificate's
+coefficients.
+
+`branches` takes the transition's conditionals out, `template` leaves the
+certificate's coefficients open, `question` states the obligations over
+both as the script Vampire is asked, and `answers` reads its answer
+literals back. `engine` asks, template by template, and checks what comes
+back with cvc5.
+"""
 
 from __future__ import annotations
 

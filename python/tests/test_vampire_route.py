@@ -55,7 +55,8 @@ def vampire_or_skip() -> str:
 def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A module's context, obligations and branches, without asking anything."""
     from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.infer.vampire.engine import Question, split
+    from zrth.lean.infer.vampire.branches import split
+    from zrth.lean.infer.vampire.question import Question
     from zrth.lean.smt.claim import SynthContext
 
     ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
@@ -86,7 +87,8 @@ def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
 def test_the_round_is_split_on_the_conditions_its_ites_test():
     """`m_countdown` resets at zero, so its round is one `ite` and two cases,
     each with the condition as a guard rather than inside the term."""
-    from zrth.lean.infer.vampire.engine import ite_conditions, split
+    from zrth.lean.smt.terms import ite_conditions
+    from zrth.lean.infer.vampire.branches import split
 
     ctx, ob, _q = parts("m_countdown", "safety", "(<= s0 100)")
     assert [str(c) for c in ite_conditions(ob.next)] == ["(= v_s0 0)"]
@@ -109,7 +111,7 @@ def test_the_initial_state_is_split_apart_from_the_round():
     assert len(q.entry) == 1        # the initial state does not
     assert q.entry[0].guard == ()
 
-    from zrth.lean.infer.vampire.engine import templates
+    from zrth.lean.infer.vampire.template import templates
 
     script = q.conjecture(templates(ctx, ranked=False)[0], ctx.prp)
     # The entry obligation is the one conjunct with no `forall` over it, and
@@ -119,15 +121,15 @@ def test_the_initial_state_is_split_apart_from_the_round():
 
 
 def test_a_transition_with_too_many_conditions_is_refused_by_name():
-    from zrth.lean.infer.vampire.engine import _MAX_CONDITIONS
+    from zrth.lean.infer.vampire.branches import _MAX_CONDITIONS
 
     assert _MAX_CONDITIONS >= 1
     ctx, ob, _q = parts("m_countdown", "safety", "(<= s0 100)")
-    from zrth.lean.infer.vampire.engine import split
+    from zrth.lean.infer.vampire.branches import split
 
     # The bound is on the *count*, so it is checked by lowering it rather
     # than by finding a module with thirty conditionals.
-    import zrth.lean.infer.vampire.engine as mv
+    import zrth.lean.infer.vampire.branches as mv
 
     old = mv._MAX_CONDITIONS
     try:
@@ -150,7 +152,7 @@ def test_an_ite_that_survived_the_split_is_refused_rather_than_stated():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.infer.vampire.engine import refuse_ites
+    from zrth.lean.infer.vampire.question import refuse_ites
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getIntegerSort(), "v_s0")
@@ -177,7 +179,7 @@ def test_a_constant_no_quantifier_binds_is_refused_rather_than_printed():
 
 def test_the_conjecture_states_every_obligation_under_one_existential():
     ctx, _ob, q = parts("m_countdown", "safety", "(<= s0 100)")
-    from zrth.lean.infer.vampire.engine import templates
+    from zrth.lean.infer.vampire.template import templates
 
     tpl = templates(ctx, ranked=False)[0]
     script = q.conjecture(tpl, ctx.prp)
@@ -196,7 +198,7 @@ def test_buchi_is_two_questions_of_two_holes_not_one_of_four():
     and the rank are asked apart -- the rank over an invariant that is
     already numbers rather than holes."""
     ctx, _ob, q = parts("m_countdown", "buchi", "(= s0 0)")
-    from zrth.lean.infer.vampire.engine import templates
+    from zrth.lean.infer.vampire.template import templates
 
     tpl = templates(ctx, ranked=True)[0]
     assert tpl.holes == ("A0", "B0") and tpl.rank == ("R0", "Rc")
@@ -221,7 +223,7 @@ def test_only_the_question_that_needs_a_window_gets_one():
     has `inv -> prp` doing that already, and measured, the window costs it
     `m_max` and `m_toward5`. So it is asked for where it is needed."""
     ctx, _ob, q = parts("m_countdown", "safety", "(<= s0 100)")
-    from zrth.lean.infer.vampire.engine import templates, window_for
+    from zrth.lean.infer.vampire.template import templates, window_for
 
     tpl = templates(ctx, ranked=False)[0]
     window = window_for(ctx)
@@ -242,7 +244,7 @@ def test_a_template_row_is_one_body_read_two_ways():
     """A row is needed as a cvc5 term in the question and as SMT-LIB in the
     certificate, so it holds which columns it reads rather than text one
     side prints and the other parses back."""
-    from zrth.lean.infer.vampire.engine import Row
+    from zrth.lean.infer.vampire.template import Row
 
     assert Row("A0", "B0", (0,), ("s0",)).smt == "s0"
     assert Row("C0_1", "D0_1", (0, 1), ("s0", "s1")).smt == "(- s0 s1)"
@@ -270,7 +272,7 @@ def test_a_matrix_component_is_an_interval_per_element():
     from cvc5 import Kind
 
     from zrth.lean.infer.common.synth import columns
-    from zrth.lean.infer.vampire.engine import template
+    from zrth.lean.infer.vampire.template import template
 
     ctx, _ob, q = parts("m_relu_vec", "safety",
                         "(<= ((_ tuple.select 0) s0) 3)")
@@ -304,7 +306,7 @@ def test_a_matrix_component_is_an_interval_per_element():
     ("% SZS answers Tuple [[$uminus(3),7]|_] for cert", ((-3, 7),)),
 ])
 def test_an_answer_tuple_is_read_off_vampires_output(line, want):
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     got = Answers("/nowhere", seconds=1)._read(line, len(want[0]), 0.0)
     assert got is not None and got.answers == want
@@ -315,7 +317,7 @@ def test_every_alternative_of_a_disjunctive_answer_is_a_candidate():
     split refutation closes each branch under its own hypothesis. Vampire
     answers `m_countdown` with `[1,100]` first and `[0,100]` after it, and
     only the second is an invariant -- `s0 = 1` steps to `0`."""
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     got = Answers("/nowhere", seconds=1)._read(
         "% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert", 2, 0.0)
@@ -326,7 +328,7 @@ def test_every_alternative_of_a_disjunctive_answer_is_a_candidate():
 def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
     """Vampire reports `∀X0.[X0]` for a hole any value serves. Zero is the
     one the certificate reads best, and it is checked with the rest."""
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     got = Answers("/nowhere", seconds=1)._read(
         "% SZS answers Tuple [[∀X0.[X0],100]|_] for cert", 2, 0.0)
@@ -334,7 +336,7 @@ def test_a_hole_the_refutation_never_pinned_down_reads_as_zero():
 
 
 def test_an_answer_of_the_wrong_width_is_ignored():
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     said = []
     a = Answers("/nowhere", seconds=1, log=said.append)
@@ -343,7 +345,7 @@ def test_an_answer_of_the_wrong_width_is_ignored():
 
 
 def test_no_answer_at_all_is_no_certificate():
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     assert Answers("/nowhere", seconds=1)._read(
         "% Termination reason: Time limit", 2, 0.0) is None
@@ -359,7 +361,7 @@ def test_both_namings_are_asked_and_each_is_told_the_whole_budget(tmp_path):
     the wall clock is what actually bounds a call. And naming is asked both
     ways, because neither setting answers what the other does.
     """
-    from zrth.lean.infer.vampire.engine import Answers
+    from zrth.lean.infer.vampire.answers import Answers
 
     fake, log = tmp_path / "vampire", tmp_path / "argv"
     fake.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
@@ -389,7 +391,8 @@ def test_a_real_component_reaches_the_templates():
     gate lets it through and the search decides, rather than the gate.
     Getting as far as looking for the prover is getting past both gates.
     """
-    from zrth.lean.infer.vampire.engine import VampireEngine, template
+    from zrth.lean.infer.vampire.engine import VampireEngine
+    from zrth.lean.infer.vampire.template import template
     from zrth.lean.smt.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_lra_lin.py"),
@@ -424,7 +427,8 @@ def test_a_bool_column_is_carried_rather_than_refused():
     bounded, its Bool column is left out, and the search decides rather than
     the gate.
     """
-    from zrth.lean.infer.vampire.engine import VampireEngine, template
+    from zrth.lean.infer.vampire.engine import VampireEngine
+    from zrth.lean.infer.vampire.template import template
     from zrth.lean.smt.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_boolint.py"),
@@ -463,7 +467,7 @@ def test_a_module_with_nothing_to_bound_is_refused():
 
 
 def test_the_templates_are_tried_smallest_first():
-    from zrth.lean.infer.vampire.engine import templates
+    from zrth.lean.infer.vampire.template import templates
 
     ctx, _ob, _q = parts("m_toward2d", "safety", "(<= s0 10)")
     tpls = [t.name for t in templates(ctx, ranked=False)]

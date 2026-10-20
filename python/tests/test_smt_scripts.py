@@ -119,7 +119,9 @@ VAMPIRE = [
                          ids=[c[0] for c in VAMPIRE])
 def test_vampire_conjectures_are_unchanged(name, path, kind, prp, which,
                                            fixed):
-    from zrth.lean.infer.vampire.engine import Question, split, template
+    from zrth.lean.infer.vampire.branches import split
+    from zrth.lean.infer.vampire.question import Question
+    from zrth.lean.infer.vampire.template import template
 
     ctx, ob = _context(path, kind, prp, "vampire")
     q = Question(ctx, ob, split(ctx, ob.init, "the initial state"),
