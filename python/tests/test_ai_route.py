@@ -53,6 +53,20 @@ def test_a_backtick_inside_the_expression_is_not_a_quote():
     )
     assert inv == "fun s => s.1 0 0 = `x.name"
 
+
+
+def test_both_llm_routes_read_the_last_answer_line_of_each_field():
+    """A model that corrects itself writes the correction after the mistake,
+    and both routes read the lines the same way."""
+    from zrth.lean.infer.ai_cegis.prompt import parse_llm_reply
+    from zrth.lean.infer.common.llm import reply_fields
+
+    reply = "INVARIANT: (>= s0 0)\nno wait\n  INVARIANT: (>= s0 1)  \n"
+    assert reply_fields(reply, "INVARIANT", "RANKING") == {"INVARIANT": "(>= s0 1)"}
+    assert parse_llm_reply(reply, require_ranking=False) == ("(>= s0 1)", None)
+    with pytest.raises(ValueError, match="RANKING"):
+        parse_llm_reply(reply)
+
 # --- what the model is told about the state (no model) ---
 
 ONE_WIRE_INIT = "@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=\n  x0\n"

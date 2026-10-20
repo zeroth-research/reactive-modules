@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import cvc5
 
 from ...smt.predicates import PredicateParser, parse_predicate
+from ..common.llm import reply_fields
 
 
 CEGIS_GENERATE_SYSTEM = """\
@@ -148,13 +149,8 @@ def parse_llm_reply(
 
     Raises `ValueError` if a *required* field is missing.
     """
-    inv_src = ranking_src = None
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("INVARIANT:"):
-            inv_src = s[len("INVARIANT:") :].strip()
-        elif s.startswith("RANKING:"):
-            ranking_src = s[len("RANKING:") :].strip()
+    got = reply_fields(text, "INVARIANT", "RANKING")
+    inv_src, ranking_src = got.get("INVARIANT"), got.get("RANKING")
     missing = []
     if require_inv and inv_src is None:
         missing.append("INVARIANT")

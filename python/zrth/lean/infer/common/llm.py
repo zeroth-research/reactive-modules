@@ -24,6 +24,23 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 8192
 
 
+def reply_fields(text: str, *fields: str) -> dict[str, str]:
+    """The `FIELD: value` lines of a reply, by field, values stripped.
+
+    Both LLM routes ask for their answer as such lines after whatever the
+    model reasons first, so a line is read wherever it is and the last of
+    each field wins: a model that corrects itself writes the correction
+    after the mistake. A field the reply does not give is absent.
+    """
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        s = line.strip()
+        for f in fields:
+            if s.startswith(f"{f}:"):
+                out[f] = s[len(f) + 1:].strip()
+    return out
+
+
 def describe_preconditions(claim: Claim) -> str:
     """`claim`'s preconditions, as the line of a prompt that states them."""
     parts = []
