@@ -1,5 +1,5 @@
 """A module's transition as one scalar term per state slot: what the
-fbk-proveit NA encoding (`fbk/na`) prints, built on the run's
+fbk-proveit NA encoding (`infer/fbk_proveit/na`) prints, built on the run's
 encoding. The state, latched and awaited inputs are the encoding's
 constants `s*`, `el*` and `en*`, which is what the printer's accessor maps
 are keyed by."""

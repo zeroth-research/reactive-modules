@@ -108,7 +108,7 @@ from .core.errors import Refused
 from .codegen.context import LeanContext
 from .codegen.terms import lean_gaps
 from . import inputs
-from .infer_route import (
+from .infer import (
     InferInput, InferResult, ProjectHandle, owned_files,
 )
 from .project.scaffold import (

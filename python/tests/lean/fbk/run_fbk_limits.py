@@ -54,7 +54,7 @@ def main() -> int:
     p.add_argument("--json", help="write the full result table here")
     opts = p.parse_args()
 
-    from zrth.lean.fbk.proveit import ProveItError, resolve_ic3ia
+    from zrth.lean.infer.fbk_proveit.engine import ProveItError, resolve_ic3ia
     try:
         opts.ic3ia = resolve_ic3ia(opts.ic3ia)
     except ProveItError as e:

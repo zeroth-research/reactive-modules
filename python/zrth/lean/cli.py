@@ -6,7 +6,7 @@ property and its kind already decided and the inference route already looked
 up -- rather than an `argparse.Namespace` to re-derive facts from.
 
 Nothing here knows a route by name.  Every cross-flag rule about inference
-reads a field of the route's row in :mod:`zrth.lean.infer_route`: the check
+reads a field of the route's row in :mod:`zrth.lean.infer`: the check
 is generic, and the sentence printed when it fails comes from the row, so a
 refusal still says why *that* route refuses.  Adding a route is a row there
 and no edit here.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR
 from .inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
-from .infer_route import (
+from .infer import (
     DEFAULT_ROUTE,
     ROUTES,
     InferRoute,
@@ -29,7 +29,7 @@ from .infer_route import (
     route_by_name,
     route_names,
 )
-from .magic.llm import DEFAULT_MODEL
+from .infer.common.llm import DEFAULT_MODEL
 from .smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 _EPILOG = """\

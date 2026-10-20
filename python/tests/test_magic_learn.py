@@ -1,4 +1,4 @@
-"""The `--infer nuterm` route (`zrth.lean.magic.learn`).
+"""The `--infer nuterm` route (`zrth.lean.infer.nuterm.engine`).
 
 What the route promises is that the certificate it returns has already been
 proved, so the tests that matter put its output to verith's *own* obligations
@@ -19,7 +19,7 @@ from zrth.analyzer import convert_method
 from zrth.sugar import ite
 from zrth.lean.core.certificate import Claim
 from zrth.lean.core.errors import Refused
-from zrth.lean.magic.learn import (
+from zrth.lean.infer.nuterm.engine import (
     TA2MagicLearn,
     _parse_property,
     _prune,
@@ -124,15 +124,15 @@ def test_a_learned_buchi_certificate_holds_under_cvc5():
 
 def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: both halves `proved` and SMT-LIB, which
-    is what `infer_route.FIXABLE` and `InferInput.resumable_inv` ask for, so
+    is what `infer.FIXABLE` and `InferInput.resumable_inv` ask for, so
     a following `--infer ai-cegis` starts from them instead of asking the
     model again."""
     from types import SimpleNamespace
 
     from zrth.lean.artifacts import ArtifactStore
     from zrth.lean.core.certificate import Certificate
-    from zrth.lean.infer_route import FIXABLE
-    from zrth.lean.infer_route.nuterm import ROUTE
+    from zrth.lean.infer import FIXABLE
+    from zrth.lean.infer.nuterm import ROUTE
 
     store = ArtifactStore(dir=tmp_path / "artifacts", producer="nuterm")
     inp = SimpleNamespace(
@@ -308,7 +308,7 @@ def test_the_conjuncts_are_seeded_one_by_one():
     """A conjunction seeded whole survives only if all of it is inductive.
     Split, the half that is keeps working -- here `0 <= x` survives while the
     precondition's other half, about an input nothing preserves, does not."""
-    from zrth.lean.magic.learn import _conjuncts
+    from zrth.lean.infer.nuterm.engine import _conjuncts
     import z3
     a, b = z3.Int("a"), z3.Int("b")
     assert _conjuncts(z3.And(a >= 0, b >= 0)) == [a >= 0, b >= 0]

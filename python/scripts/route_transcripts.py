@@ -253,7 +253,8 @@ def index(path: Path) -> str:
 
 def install_llm(script: str) -> None:
     """Replace the LLM client of the ai and ai-cegis routes by scripted replies."""
-    from zrth.lean.magic import ai, cegis
+    from zrth.lean.infer.ai import engine as ai
+    from zrth.lean.infer.ai_cegis import engine as cegis
 
     gen = list(LLM[script].get("gen", []))
     ver = list(LLM[script].get("verify", []))

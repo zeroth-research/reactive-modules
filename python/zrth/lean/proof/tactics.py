@@ -678,15 +678,15 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     max_rec_depth = max(4096, 1500 * f.n_terms)
     # 2000000, which is what every other generated file carries
     # (`codegen/encodings/scalar.py`, `codegen/encodings/circuit.py`,
-    # `fbk/bridge.py`). This file used to start at 400000 and climb to 2M
-    # wherever the shape was known to be slow -- finite state, a bitvector,
-    # more than 8 slots or 32 terms, a branchy Real predicate, more than 16
-    # branch points. The list kept growing
-    # because a low floor is not what it looks like: a tactic that hits the
-    # cap *throws*, `first` catches that like any other failure and moves to
-    # a more expensive alternative, which burns up to the cap again. So the
-    # floor never cut a failure short, it multiplied the wasted work, and
-    # every rung was a shape someone had already been bitten by.
+    # `infer/fbk_proveit/bridge.py`). This file used to start at 400000 and
+    # climb to 2M wherever the shape was known to be slow -- finite state, a
+    # bitvector, more than 8 slots or 32 terms, a branchy Real predicate,
+    # more than 16 branch points. The list kept growing because a low floor
+    # is not what it looks like: a tactic that hits the cap *throws*, `first`
+    # catches that like any other failure and moves to a more expensive
+    # alternative, which burns up to the cap again. So the floor never cut a
+    # failure short, it multiplied the wasted work, and every rung was a shape
+    # someone had already been bitten by.
     #
     # Measured on the two cells that hit the old floor, one project apiece
     # with only this number changed: `svcomp_collatz_bounded` fails in 29 s

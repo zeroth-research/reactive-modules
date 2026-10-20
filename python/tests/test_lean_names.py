@@ -9,8 +9,8 @@ from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from zrth.lean.project.scaffold import create_project
-from zrth.lean.fbk.na import check_na_supported
-from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
+from zrth.lean.infer.fbk_proveit.na import check_na_supported
+from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -4,7 +4,7 @@
     uv run python tests/bench_matrix/render.py -o matrix.html
 
 No server, no network, no build step: one file that opens from the
-filesystem. The route descriptions are read from `zrth.lean.infer_route`
+filesystem. The route descriptions are read from `zrth.lean.infer`
 rather than restated, so the page cannot drift from the table that drives
 the CLI; everything else comes from the results file, including the machine
 the timings were taken on.
@@ -183,7 +183,7 @@ def column_docs():
     A column is not a route -- `houdini` and `houdini-vampire` are the same
     route decided by two different solvers -- so the list of columns comes
     from the harness that measured them and only the description comes from
-    `zrth.lean.infer_route`, which is what keeps the description from
+    `zrth.lean.infer`, which is what keeps the description from
     drifting away from what `--infer` accepts.
 
     The paths are placeholders because they only fill in a column's `args`,
@@ -192,7 +192,7 @@ def column_docs():
     the binary it names -- and take that column's measured cells with it.
     """
     from zrth.lean.cli import _SEED_FLAGS
-    from zrth.lean.infer_route import ROUTES
+    from zrth.lean.infer import ROUTES
 
     flag_of = {field: flag for field, _attr, flag in _SEED_FLAGS}
     by_name = {r.name: r for r in ROUTES}

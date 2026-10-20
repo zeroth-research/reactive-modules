@@ -126,8 +126,8 @@ def test_the_certificate_simp_set_unfolds_them():
 
 def test_the_fbk_bridge_simp_set_agrees_with_it():
     """The bridge proves the NA model is the module, over the same terms."""
-    from zrth.lean.fbk.na import check_na_supported
-    from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.na import check_na_supported
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     ctx = _counter_ctx()
     bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",

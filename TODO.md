@@ -2,7 +2,7 @@
 - Prune selectively -- if Vampire proves inv but not ranking, try preserving that inv
 - [later] Cooperative infer through artifacts: smt + vampire in parallel for 4 seconds; then one after another (with known artifacts) and nuterm; then ai-cegis; then ai-fix
 - [later] Try vampire instead of lean-smt in hammer
-- fbk-proveit: `_REVERT` / `_SMT_CLOSER` (`python/zrth/lean/fbk/proveit.py`) regex-patch the Lean proveit.py generates. A run warns when a patch finds nothing to change while the tactic it hooks onto is still there (2026-10-19). Revisit: fix it upstream in lean-ltl-certifying's template
+- fbk-proveit: `_REVERT` / `_SMT_CLOSER` (`python/zrth/lean/infer/fbk_proveit/engine.py`) regex-patch the Lean proveit.py generates. A run warns when a patch finds nothing to change while the tactic it hooks onto is still there (2026-10-19). Revisit: fix it upstream in lean-ltl-certifying's template
 - In Sygus, Houdini, ... (all that uses templates), allow generating the templates from the system -- simple way is to look at the definition of the system and guess the right template from that (linear, quadratic, using max/min, ...). More complex would be to unroll the transition relation (as SMT formula) several times and see what expressions we get and classify then what kind of template we might need.
 
 ## From the matrix
@@ -47,8 +47,8 @@ fail, and every `REFUTED` landed on a `truth=fails` row.
    verifies 6 of them since `68ac231`, so this buys a second opinion on
    modules that are already certified, at the cost of a wire/column split
    through ~1550 lines (`_farkas.py`, `_nodes.py`), `_termination.py`,
-   `magic/learn.py` and five test files. The current refusal is honest --
-   it names the wire and its sort.
+   `infer/nuterm/engine.py` and five test files. The current refusal is
+   honest -- it names the wire and its sort.
 
 20. **`truth` is `None` on 86 of the 87 limits/buchi and svcomp/buchi rows**,
     so on 40% of the page the matrix can only say a route answered, not that
@@ -87,11 +87,11 @@ Paths are relative to `python/zrth/lean/`.
   `_farkas.Inductive`/`LexDecrease` as its obligations. The Farkas engine
   is z3 throughout (its regions, the LP, `zrth.z3`), so moving it is a
   rewrite of the engine rather than a port of its front end, at the risk
-  of the 45/57 it certifies on the SV-COMP corpus. `magic/learn.py`, the
-  route's front end, reads and writes SMT-LIB through z3 for the same
+  of the 45/57 it certifies on the SV-COMP corpus.
+  `infer/nuterm/engine.py`, the route's front end, reads and writes SMT-LIB through z3 for the same
   reason.
-- **nuterm needs the editable install.** `magic/learn.py` imports `nuterm`,
-  which sits beside `zrth` in `python/` and is not in the wheel: maturin
+- **nuterm needs the editable install.** `infer/nuterm/engine.py` imports
+  `nuterm`, which sits beside `zrth` in `python/` and is not in the wheel: maturin
   packages `zrth` alone.
 
 ## Lean generation
@@ -169,7 +169,7 @@ Paths are relative to `python/zrth/lean/`.
 ## fbk-proveit
 
 - **Rebuild the bridge for `m_max`, `m_min` and `m_argmax`.** The bridge
-  (`fbk/bridge.py`, which writes `Certificate/Equivalence.lean`)
+  (`infer/fbk_proveit/bridge.py`, which writes `Certificate/Equivalence.lean`)
   closed for 14 of the 17 module shapes the route accepts. These three
   failed because `matMin`/`matMax`/`argmax_1d` did not reduce. `be70a43`
   made them reduce and put them in `MAT_SIMP`, which the bridge's cascade

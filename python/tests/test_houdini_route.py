@@ -31,7 +31,7 @@ import pytest
 
 from zrth.lean.core.certificate import Claim
 from zrth.lean.core.errors import Refused
-from zrth.lean.smt.solvers import SolverSpec
+from zrth.lean.infer.houdini.solvers import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -51,7 +51,7 @@ def solver_or_skip(kind: str):
     `--houdini-solver cvc5` resolves to nothing to look for, so the cvc5 half
     of every parametrised case below always runs.
     """
-    from zrth.lean.smt.solvers import resolve_solver
+    from zrth.lean.infer.houdini.solvers import resolve_solver
 
     try:
         return resolve_solver(kind)
@@ -67,7 +67,7 @@ BOTH = pytest.mark.parametrize("solver", ["cvc5", "vampire"])
 
 def infer(name: str, kind: str, prp: str, *, solver="cvc5",
           timeout: float = 60, fixture: Path = LIMITS, log=None):
-    from zrth.lean.magic.houdini import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import TA2MagicHoudini
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"), solver=solver,
                             timeout=timeout, log=log or (lambda *_: None))
@@ -77,10 +77,10 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic.houdini import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import TA2MagicHoudini
     from zrth.lean.smt.obligations import Obligations
     from zrth.lean.smt.claim import SynthContext
-    from zrth.lean.magic.synth import columns
+    from zrth.lean.infer.common.synth import columns
 
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
@@ -148,7 +148,7 @@ def test_the_evaluator_divides_the_way_smt_lib_does(a, b):
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.houdini import Evaluator
+    from zrth.lean.infer.houdini.engine import Evaluator
 
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
@@ -215,7 +215,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.houdini import Evaluator
+    from zrth.lean.infer.houdini.engine import Evaluator
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")
@@ -677,7 +677,7 @@ def test_each_mode_is_bounded_by_what_its_round_reaches():
     the heater on it never passes 23, and with it off never passes the
     23.875 one more tick of heating gives -- constants no program text
     names, computed rather than read."""
-    from zrth.lean.magic.modes import mode_bounds
+    from zrth.lean.infer.houdini.modes import mode_bounds
 
     magic, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
     facts = mode_bounds(magic.ctx, ob, log=lambda *_: None)
@@ -711,7 +711,7 @@ def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
 def test_cvc5_is_the_default_and_resolves_without_a_binary():
     """The reason it is the default: nothing to look for, and nothing to
     fail at parse time on a machine with no prover installed."""
-    from zrth.lean.smt.solvers import DEFAULT_SOLVER, resolve_solver
+    from zrth.lean.infer.houdini.solvers import DEFAULT_SOLVER, resolve_solver
 
     assert DEFAULT_SOLVER == "cvc5"
     assert resolve_solver("cvc5") == SolverSpec("cvc5", None, 4)
@@ -720,7 +720,7 @@ def test_cvc5_is_the_default_and_resolves_without_a_binary():
 def test_a_vampire_flag_without_the_vampire_solver_is_refused():
     """A flag that quietly did nothing would be worse than one that is an
     error, which is what the route's `extra_check` is for."""
-    from zrth.lean.infer_route import route_by_name
+    from zrth.lean.infer import route_by_name
 
     check = route_by_name("houdini").extra_check
     opts = {"houdini_solver": "cvc5", "vampire": "/x", "vampire_cores": None}

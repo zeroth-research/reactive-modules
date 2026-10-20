@@ -1,0 +1,573 @@
+"""TA2Magic by a learned ranking function, certified before it is offered.
+
+``--infer nuterm``. Where ``--infer ai`` and ``--infer ai-cegis`` ask an LLM for
+the certificate, this route learns one. A small ReLU network is trained on
+rollouts of the module to drop on the rounds the property does not hold, its
+weights are rounded to integers, and the candidate is put to a decision
+procedure: Farkas-certified regions over the module's own wires, with CEGAR
+finding the regions (:mod:`nuterm._farkas`). Only a candidate the
+procedure certifies comes back, so what verith is handed is a certificate that
+has already been proved -- ``--pre-check`` and ``lake build`` confirm it rather
+than discovering it.
+
+The invariant is inferred the same way and for the same reason: Houdini over a
+candidate lattice of sign and pairwise facts, each survivor certified as one
+inductive Safety claim. It is what the ranking obligation is allowed to assume,
+and it is what verith's ``inv`` becomes, so the two are the same fact.
+
+What each property asks for
+===========================
+``--buchi P`` -- ``G (F P)``. The rounds the rank must drop on are those where
+``P`` does not hold, and that the run leaves them again and again is exactly
+recurrence. This is the route's own shape: a rank is what it produces.
+
+``--safety P`` -- ``G P``. There is no rank (``rule_globally`` takes none), so
+the whole certificate is the invariant, and the property is seeded as one more
+Houdini candidate: it is an invariant when it survives with the rest. That makes
+this route an alternative to ``--fbk-proveit`` on a narrower class of programs --
+Houdini's lattice is fixed, where ic3ia's interpolants are not -- and it needs
+no ic3ia build.
+
+What the route needs of a module
+================================
+The procedure reads scalar integer wires and a deterministic transition, and
+refuses anything else by name -- a matrix-shaped state, a real or boolean
+component, a next value reading an awaited input. A property naming a state
+component the module never reads latched is refused too: such a component is not
+a column of the system the proof quantifies over.
+
+``--pre`` is taken as the entry assumption. Initiation is then checked from the
+states the precondition admits rather than from every state the init block can
+produce, which is the difference between finding an invariant and finding none:
+8 of the svcomp corpus's Houdini invariants hold only from the admitted states.
+It reaches the procedure as ``System.assuming`` -- see :meth:`TA2MagicLearn._assuming`
+for how a predicate over inputs becomes one over columns, and for the one input
+shape that is refused instead.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import z3
+from z3.z3util import get_vars
+
+from zrth import Module
+
+from ...core.certificate import Certificate, Claim
+from ...core.errors import Refused
+from ..engine import TA2Magic
+from ...smt.script import smt_int
+
+
+def _engine():
+    """The decision procedure and its trainer.
+
+    Imported here rather than at module scope: the packages live beside ``zrth``
+    rather than inside it, and a verith run that does not ask for this route
+    should not need them present."""
+    try:
+        from nuterm._bench import Bench
+        from nuterm._farkas import (certify, check_supported, inductive,
+                                    read_system)
+        from nuterm._invariants import as_predicates, infer_invariants
+        from nuterm._nodes import Unsupported
+        from nuterm._property import Liveness, Safety
+        from nuterm._train import learn_ranking
+    except ImportError as e:      # pragma: no cover - a broken checkout
+        raise Refused(
+            f"--infer nuterm needs the `nuterm` package, which is not "
+            f"importable: {e}"
+        ) from e
+    return SimpleNamespace(
+        Bench=Bench, certify=certify, check_supported=check_supported,
+        inductive=inductive, read_system=read_system, as_predicates=as_predicates,
+        infer_invariants=infer_invariants, Unsupported=Unsupported,
+        Liveness=Liveness, Safety=Safety, learn_ranking=learn_ranking,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SMT-LIB in and out
+# ---------------------------------------------------------------------------
+
+def _smt_affine(coeffs, const, names) -> str:
+    """``k + Σ cᵢ·sᵢ`` as an SMT-LIB term, written out in full.
+
+    Printed here rather than through z3's ``sexpr``, which ``let``-binds the
+    subterm a ReLU repeats -- and what this string has to survive is being read
+    back and rendered as the body of a Lean definition."""
+    parts = [] if not int(const) else [smt_int(const)]
+    for c, n in zip(coeffs, names):
+        c = int(c)
+        if c == 1:
+            parts.append(n)
+        elif c == -1:
+            parts.append(f"(- {n})")
+        elif c:
+            parts.append(f"(* {smt_int(c)} {n})")
+    if not parts:
+        return "0"
+    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+
+
+def _smt_ranking(layers, names) -> str:
+    """``V`` as an SMT-LIB Int term over ``names``: a ReLU as an ``ite``.
+
+    ``layers`` is ``[(W1, b1), (W2, b2)]`` with integer entries, the same weights
+    the composed module computed with, so the term and the wire the procedure
+    certified are one function."""
+    (W1, b1), (W2, b2) = layers
+    parts = [] if not int(b2[0]) else [smt_int(b2[0])]
+    for j in range(W1.shape[0]):
+        c = int(W2[0][j])
+        if not c:
+            continue
+        pre = _smt_affine(W1[j], b1[j], names)
+        unit = f"(ite (> {pre} 0) {pre} 0)"
+        parts.append(unit if c == 1 else f"(* {smt_int(c)} {unit})")
+    if not parts:
+        return "0"
+    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+
+
+def _smt_term(pred) -> str:
+    """One z3 predicate over the columns as an SMT-LIB Bool term.
+
+    z3's printer ``let``-binds a repeated subterm, which the body of a Lean
+    definition cannot carry. Houdini's own candidates are small enough that it
+    never does; a conjunct that is written some other way (the property, seeded
+    as a candidate) is printed from that source instead, so this is a refusal
+    rather than a case to handle."""
+    src = pred.sexpr()
+    if "(let " in src:
+        raise Refused(
+            "an inferred invariant prints with a `let` binding, which the "
+            f"certificate's definition cannot carry: {src[:160]}"
+        )
+    return src
+
+
+def _smt_conjunction(terms) -> str:
+    """SMT-LIB Bool terms as one. Empty is ``true``, one is itself."""
+    # A seeded candidate the lattice also proposes survives as both, and the
+    # same conjunct twice is noise in every file it reaches.
+    rendered = list(dict.fromkeys(terms))
+    if not rendered:
+        return "true"
+    if len(rendered) == 1:
+        return rendered[0]
+    return "(and " + " ".join(rendered) + ")"
+
+
+def _prune(conjuncts, timeout_ms: int = 2000) -> list:
+    """``conjuncts`` -- ``(label, z3 term)`` -- with every one the rest imply dropped.
+
+    Houdini keeps every candidate that survives and its lattice is redundant by
+    construction: ``s1 == 10`` arrives beside ``s1 >= 1``, ``s1 <= 10``,
+    ``s1 >= 10`` and more. Dropping a conjunct the rest imply leaves the
+    conjunction the same predicate -- ``rest ∧ f`` is ``rest`` when ``rest → f``
+    -- so the invariant is as strong, still inductive and still implies whatever
+    it implied.
+
+    What it saves is paid twice over. The obligation an inductive witness builds
+    carries one implication per conjunct, and the negation of that is cut into
+    disjuncts: the conjunct count is what makes that explode, and a redundant
+    set can put a claim out of reach that its own content does not. The
+    certificate also states each conjunct in Lean, where six ways of saying
+    ``s1 == 10`` are six things for the hammer to carry.
+
+    A query that times out drops nothing: a conjunct is removed only when the
+    rest are *proved* to imply it."""
+    kept = list(conjuncts)
+    i = 0
+    while i < len(kept):
+        rest = [t for j, (_, t) in enumerate(kept) if j != i]
+        implied = False
+        if rest:
+            solver = z3.Solver()
+            solver.set("timeout", timeout_ms)
+            solver.add(z3.And(*rest), z3.Not(kept[i][1]))
+            implied = solver.check() == z3.unsat
+        if implied:
+            kept.pop(i)
+        else:
+            i += 1
+    return kept
+
+
+def _parse_property(src: str, declared: tuple, columns: tuple) -> object:
+    """``src`` as a z3 predicate over ``z3.Int(name)``, refused if it is not one.
+
+    The property reaches this route as SMT-LIB over ``s0..sN-1``, one per ctrl
+    variable -- the same names the prompt routes declare -- so all of them are
+    declared for the parse and the *columns* are what the result may name. The
+    two differ by a component no term reads latched, which is not part of the
+    state the proof quantifies over, and naming one has to say that rather than
+    read as a typo."""
+    decls = "\n".join(f"(declare-const {n} Int)" for n in declared)
+    try:
+        asserted = z3.parse_smt2_string(f"{decls}\n(assert {src})")
+    except z3.Z3Exception as e:
+        raise Refused(
+            f"--infer nuterm reads the property as an SMT-LIB expression over "
+            f"{', '.join(declared) or 'the state components'}; z3 could not "
+            f"parse {src!r}: {e}"
+        ) from e
+    if len(asserted) != 1:
+        raise Refused(f"the property must be one expression; {src!r} is {len(asserted)}")
+    term = asserted[0]
+    free = {str(v) for v in get_vars(term)} - set(columns)
+    if free:
+        raise Refused(
+            f"the property names {sorted(free)}, which are not columns of this "
+            f"module -- a component no term reads latched is not part of the "
+            f"state the proof quantifies over"
+        )
+    return term
+
+
+def _parse_precondition(src: str, n_inputs: int):
+    """``--pre`` as one z3 term over ``e0..eM-1``, refused if it is not one.
+
+    ``el0..`` are declared alongside so that naming a *latched* input is met
+    here, where the flag's own spelling is still in hand, rather than as an
+    undeclared symbol z3 would report as a parse error about ``el0``."""
+    decls = "\n".join(f"(declare-const e{i} Int)\n(declare-const el{i} Int)"
+                      for i in range(n_inputs))
+    try:
+        asserted = z3.parse_smt2_string(f"{decls}\n(assert {src})")
+    except z3.Z3Exception as e:
+        over = (f"e0..e{n_inputs - 1}" if n_inputs > 1
+                else "e0" if n_inputs == 1 else "nothing: this module has no inputs")
+        raise Refused(
+            f"--infer nuterm reads --pre as an SMT-LIB expression over "
+            f"{over}; z3 could not parse {src!r}: {e}"
+        ) from e
+    if len(asserted) != 1:
+        raise Refused(f"--pre must be one expression; {src!r} is {len(asserted)}")
+    return asserted[0]
+
+
+def _conjuncts(term) -> list:
+    """``term``'s top-level conjuncts, so each is its own Houdini candidate.
+
+    ``infer_invariants`` seeds the precondition's conjuncts one by one, and a
+    conjunction seeded whole survives only if *all* of it is inductive. Split,
+    the half that is keeps working."""
+    return list(term.children()) if z3.is_and(term) else [term]
+
+
+# ---------------------------------------------------------------------------
+# The route
+# ---------------------------------------------------------------------------
+
+class TA2MagicLearn(TA2Magic):
+    """Infer the certificate by learning a ranking function and certifying it.
+
+    ``delta`` is how much the rank must drop on a counting round (one, for an
+    integer rank, is as weak as the obligation gets). ``seed`` makes the run
+    reproducible: the same module and the same seed learn the same rank."""
+
+    def __init__(
+        self,
+        module: Module,
+        *,
+        delta: int = 1,
+        hidden_dim: int = 7,
+        seed: int = 0,
+        log=print,
+    ):
+        self.module = module
+        self.delta = delta
+        self.hidden_dim = hidden_dim
+        self.seed = seed
+        self.log = log
+
+    # --- the system the procedure reads --------------------------------
+
+    def _system(self, eng):
+        """The module as a :class:`System`, its columns named as verith names them.
+
+        ``s0..sN-1`` are the module's ctrl variables in order, which is the
+        naming the property and the emitted certificate are written in. The
+        columns are the subset some term reads latched, so a variable that is
+        only written keeps its name and simply is not one."""
+        names = {v: f"s{i}" for i, v in enumerate(self.module.ctrl)}
+        try:
+            system = eng.read_system(self.module, names)
+            eng.check_supported(system)
+        except eng.Unsupported as e:
+            raise Refused(f"--infer nuterm cannot read this module: {e}") from e
+        return system
+
+    def _assuming(self, system, pre_smt: str):
+        """``system`` with ``--pre`` assumable at entry.
+
+        The procedure's entry assumption is a ``state_map -> [BoolRef]``: a
+        predicate over the *columns*, which is what `_farkas.entry_predicate`
+        conjoins and what `_invariants.infer_invariants` evaluates at the entry
+        state to decide initiation. ``--pre`` is a predicate over the module's
+        *inputs*. The two meet the way they met in the other direction when the
+        bench harness derived the flag (`suites.entry_pre`): a column whose
+        init block value is a bare input holds that input at entry, so reading
+        the column *is* reading the input, and ``e_i`` becomes that column.
+
+        Every call site then gets the right thing from one callable.
+        ``pre(system.entry)`` substitutes each column's entry value, which for
+        these columns is the input symbol itself -- so initiation is checked
+        under exactly the flag and nothing more. ``pre(system.s_map)`` is a
+        genuine state predicate, which is what the conjuncts seeded as Houdini
+        candidates have to be.
+
+        An input that is no column's entry value is refused rather than
+        dropped. The model keeps no value to read it back from, so the
+        constraint would have to be "some input satisfying it existed", and the
+        obligations here are quantifier-free rows of a linear program.
+
+        ``--pre`` fills ``update_pre`` as well, and that half needs nothing:
+        `check_supported` has already refused every module whose next value
+        reads an input, so the step reads none and ``update_pre`` constrains
+        nothing it looks at. Dropping it is exact, not an over-approximation --
+        which matters, because this route certifies rather than searches and an
+        assumption it quietly widened would be a proof of the wrong thing.
+        """
+        inputs = tuple(self.module.extl)
+        term = _parse_precondition(pre_smt, len(inputs))
+        entry_vals, entry_inputs = system.entry, system.entry_inputs
+
+        # `e_i` -> the column that starts at input `i`, by the same test
+        # `entry_predicate` uses to substitute the other way.
+        col_of: dict[int, str] = {}
+        for i, insym in enumerate(entry_inputs):
+            for name in system.names:
+                if z3.eq(z3.simplify(entry_vals[name]), insym):
+                    col_of[i] = name
+                    break
+
+        used = sorted({str(v) for v in get_vars(term)})
+        latched = [v for v in used if v.startswith("el")]
+        if latched:
+            raise Refused(
+                f"--pre constrains the latched input {latched[0]}, which the "
+                f"init block does not read -- at entry there is no previous "
+                f"round for it to have come from"
+            )
+        loose = [v for v in used if int(v[1:]) not in col_of]
+        if loose:
+            raise Refused(
+                f"--pre constrains the input {loose[0]}, which starts no column "
+                f"of this module -- nothing carries its value into the state, "
+                f"so there is no state predicate that says the same thing"
+            )
+
+        conjuncts = _conjuncts(term)
+        sub_of = {i: z3.Int(f"e{i}") for i in col_of}
+
+        def pre(st):
+            sub = [(sym, st[col_of[i]]) for i, sym in sub_of.items()]
+            return [z3.substitute(c, *sub) for c in conjuncts]
+
+        self.log("[nuterm] --pre at entry: "
+                 + ", ".join(f"{v}={col_of[int(v[1:])]}" for v in used))
+        return system.assuming(pre)
+
+    def _declared(self) -> tuple:
+        """``s0..sN-1``: one name per ctrl variable, which is how verith numbers
+        the state and so how a property written against it reads."""
+        return tuple(f"s{i}" for i, _ in enumerate(self.module.ctrl))
+
+    def _bench(self, eng, system):
+        """``system`` as a :class:`Bench`: what the trainer rolls out.
+
+        The module is built once and handed back on every call -- nothing here
+        mutates it, and a fresh copy would be a different set of wires from the
+        one the system was read from."""
+        ctrl = {f"s{i}": v for i, v in enumerate(self.module.ctrl)}
+        extl = {f"e{i}": v for i, v in enumerate(self.module.extl)}
+        return eng.Bench(
+            name="verith", source="", state=tuple(system.names),
+            inputs=tuple(extl), build=lambda: (self.module, ctrl, extl),
+        )
+
+    # --- driver ---------------------------------------------------------
+
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
+        eng = _engine()
+        if claim.prp is None:
+            raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
+        system = self._system(eng)
+        if claim.init_pre is not None:
+            system = self._assuming(system, claim.init_pre)
+        prp = _parse_property(claim.prp, self._declared(), system.names)
+        self.log(f"[nuterm] columns: {', '.join(system.names)}")
+
+        # The procedure refuses what it has no rule for by raising, and that
+        # can happen anywhere inside it -- a rule shape the LP cannot read is
+        # met when the obligation is cut into rows, not at the door. Every one
+        # of them is a reason this route cannot answer, so none of them is a
+        # traceback.
+        try:
+            if claim.is_safety:
+                inv_src = self._safety_invariant(eng, system, prp, claim.prp)
+                rank_src = None
+            else:
+                inv_src, rank_src = self._buchi_certificate(eng, system, prp,
+                                                            claim.prp)
+        except eng.Unsupported as e:
+            raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
+
+        return self._emit(inv_src, rank_src)
+
+    # --- the two kinds --------------------------------------------------
+
+    def _safety_invariant(self, eng, system, prp, prp_src: str) -> str:
+        """An inductive invariant implying ``prp``, or the reason there is none.
+
+        The property is seeded as a candidate alongside the lattice's own, so
+        Houdini keeps it exactly when it is inductive given everything else that
+        survived -- and then the invariant implies it by containing it."""
+        facts = eng.infer_invariants(
+            system, extra=[("P", lambda st: self._at(prp, system, st))])
+        self.log(f"[nuterm] invariant candidates kept: {[lbl for lbl, _ in facts]}")
+        # Pruned *before* the witness is built, not only before it is printed:
+        # the conjunct count is what the obligation's disjuncts are exponential
+        # in, so this is the difference between certifying and not.
+        by_label = dict(facts)                  # Houdini's labels are unique
+        kept = _prune([(lbl, f(system.s_map)) for lbl, f in facts])
+        facts = [(lbl, by_label[lbl]) for lbl, _ in kept]
+        self.log(f"[nuterm] invariant after pruning: {[lbl for lbl, _ in kept]}")
+        claim = eng.Safety(
+            lambda W, S: self._at(prp, system, {n: S[n] for n in S.names}))
+        proof = eng.certify(system, claim,
+                            eng.inductive(eng.as_predicates(facts)))
+        if not proof.verified:
+            raise Refused(
+                f"no inductive invariant implying the property was found "
+                f"({proof.status}). Houdini's candidates are sign and pairwise "
+                f"facts; for an invariant outside that lattice use "
+                f"--fbk-proveit, or --infer ai-cegis.",
+                searched=True,
+            )
+        self.log("[nuterm] safety invariant certified")
+        # The seeded property is printed as it was written, which is the same
+        # predicate and the only conjunct big enough for z3 to reach for a
+        # `let`; the rest are the z3 terms the proof carried.
+        return _smt_conjunction([prp_src if lbl == "P" else _smt_term(t)
+                                 for lbl, t in kept])
+
+    def _buchi_certificate(self, eng, system, prp, prp_src: str) -> tuple:
+        """An invariant and a rank that drops wherever ``prp`` does not hold.
+
+        The claim handed to the procedure is ``Liveness(not P)``: no infinite
+        stretch of rounds where ``P`` is false, which is ``G (F P)``. The rank
+        drops on exactly those rounds, which is verith's ranking obligation.
+
+        A program that *wraps around* has no such rank in this class. The rank
+        is a non-negative sum of ReLUs, so it is convex in the state, and a
+        counter running 1..9 and back to 0 needs one that falls along the ramp
+        and falls again across the reset -- a shape no convex function has, and
+        none a lexicographic rank of convex components has either, since its
+        first component would have to be non-increasing along the whole chain
+        and convex, which forces it constant.
+
+        What such a program does have is a rank on the rounds *before* the one
+        that reaches ``P``, zeroed where ``P`` holds: ``ite(P, 0, V)``. So that
+        is the second thing tried -- see :meth:`_zeroed_rank`."""
+        bench = self._bench(eng, system)
+        result = self._learn(eng, bench, self._outside(system, prp),
+                             "drops on every round the property fails")
+        if result is None:
+            return self._zeroed_rank(eng, system, bench, prp, prp_src)
+        return (self._invariant_of(result),
+                _smt_ranking(result.layers, result.system.names))
+
+    # --- the two rank shapes -------------------------------------------
+
+    def _outside(self, system, prp):
+        """``not P`` at the round's pre-state: verith's own ranking domain."""
+        return lambda W, S: z3.Not(
+            self._at(prp, system, {n: S[n] for n in S.names}))
+
+    def _learn(self, eng, bench, domain, why: str):
+        """A certified rank for ``domain``, or ``None`` with the reason logged."""
+        self.log(f"[nuterm] training a ranking function that {why}")
+        result = eng.learn_ranking(
+            bench, delta=self.delta, hidden_dim=self.hidden_dim, seed=self.seed,
+            claim=eng.Liveness(domain),
+        )
+        self.log(f"[nuterm] {result.n_pairs} sampled rounds, "
+                 f"loss {result.final_loss:.4g} -- "
+                 f"{'certified' if result.verified else result.reason}")
+        return result if result.verified else None
+
+    def _zeroed_rank(self, eng, system, bench, prp, prp_src: str) -> tuple:
+        """``ite(P, 0, delta + V)``, for a program no rank of this class drops on.
+
+        Leaving out the round that *reaches* ``P`` still proves recurrence -- a
+        run that never reaches ``P`` is an infinite stretch of rounds that stay
+        outside it, which is what the claim refutes -- and it is the round a
+        wrap-around cannot rank, since falling along the ramp and again across
+        the reset is not something a convex function does.
+
+        verith asks for more than that: `check_hrank` is over every round where
+        ``P`` fails, the reaching one included. Zeroing the rank where ``P``
+        holds and lifting it by ``delta`` where ``P`` fails bridges the two,
+        and needs nothing proved that is not already:
+
+          * ``P`` fails after the step -- both ends are ``delta + V`` and the
+            ``delta`` cancels, so the drop is the certified one;
+          * ``P`` holds after it -- the rank is ``0`` against ``delta + V(s)``,
+            which is at least ``delta`` because ``V >= 0`` holds structurally.
+            That is :func:`._farkas.check_ranks`'s condition on the output
+            layer, checked before the witness was accepted.
+        """
+        outside = self._outside(system, prp)
+        result = self._learn(
+            eng, bench,
+            lambda W, S: z3.And(outside(W, S), outside(W, S.next)),
+            "drops until the property is reached")
+        if result is None:
+            raise Refused(
+                "no ranking function was certified. The rank is a non-negative "
+                "sum of ReLUs, so it is convex in the state: a program whose "
+                "run wraps around needs one that falls along the ramp and again "
+                "across the reset, which no convex rank does. It is learned "
+                "from rollouts too, so a property that never fails on one "
+                "leaves nothing to train on.",
+                searched=True,
+            )
+        self.log("[nuterm] zeroing the rank where the property holds")
+        rank = _smt_ranking(result.layers, result.system.names)
+        return (self._invariant_of(result),
+                f"(ite {prp_src} 0 (+ {smt_int(self.delta)} {rank}))")
+
+    def _invariant_of(self, result) -> str:
+        """The invariant ``result`` was certified against, as SMT-LIB.
+
+        The rank was certified against every invariant the system assumed; the
+        certificate states the same predicate with the redundant conjuncts gone,
+        which is one `step_inv` obligation each that Lean is spared."""
+        kept = _prune([(i, t) for i, t in enumerate(result.system.invariants)])
+        self.log(f"[nuterm] invariant: {len(kept)} of "
+                 f"{len(result.system.invariants)} conjuncts after pruning")
+        return _smt_conjunction([_smt_term(t) for _, t in kept])
+
+    # --- terms and the answer -------------------------------------------
+
+    @staticmethod
+    def _at(term, system, st):
+        """``term`` -- parsed over ``z3.Int("s_i")`` -- at the state map ``st``."""
+        subs = [(z3.Int(n), st[n]) for n in system.names]
+        return z3.substitute(term, *subs) if subs else term
+
+    def _emit(self, inv_src: str, rank_src: str | None) -> Certificate:
+        """The certificate, logged as the `inv:` / `ranking:` lines the bench
+        harness reads."""
+        self.log(f"[nuterm] inv: {inv_src}")
+        if rank_src is not None:
+            self.log(f"[nuterm] ranking: {rank_src}")
+        return Certificate(inv_src, rank_src)

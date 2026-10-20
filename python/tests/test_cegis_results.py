@@ -13,10 +13,10 @@ import cvc5
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.magic import cegis
+from zrth.lean.infer.ai_cegis import engine as cegis
 from zrth.lean.core.certificate import Certificate, Claim
-from zrth.lean.magic.cegis import TA2MagicCEGIS
-from zrth.lean.magic.cegis_prompt import (
+from zrth.lean.infer.ai_cegis.engine import TA2MagicCEGIS
+from zrth.lean.infer.ai_cegis.prompt import (
     CEGIS_GENERATE_SYSTEM,
     CEGIS_SAFETY_SYSTEM,
 )

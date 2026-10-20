@@ -338,7 +338,7 @@ class Route:
     measured over its two solvers, so `name` -- what a cell's key is suffixed
     with, and so the only thing that says which column a run belongs to -- is
     not `infer`, which is the route the page borrows its description from.
-    What the route *is* stays in `zrth/lean/infer_route/` and is not
+    What the route *is* stays in `zrth/lean/infer/` and is not
     restated here, so the two cannot drift.
     """
 

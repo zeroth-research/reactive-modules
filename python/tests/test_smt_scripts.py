@@ -119,7 +119,7 @@ VAMPIRE = [
                          ids=[c[0] for c in VAMPIRE])
 def test_vampire_conjectures_are_unchanged(name, path, kind, prp, which,
                                            fixed):
-    from zrth.lean.magic.vampire import Question, split, template
+    from zrth.lean.infer.vampire.engine import Question, split, template
 
     ctx, ob = _context(path, kind, prp, "vampire")
     q = Question(ctx, ob, split(ctx, ob.init, "the initial state"),
@@ -146,7 +146,7 @@ MODES = [
 @pytest.mark.parametrize("name,path,prp", MODES, ids=[c[0] for c in MODES])
 def test_the_round_z3_reads_is_unchanged(name, path, prp, monkeypatch):
     z3 = pytest.importorskip("z3")
-    from zrth.lean.magic import modes
+    from zrth.lean.infer.houdini import modes
 
     ctx, ob = _context(path, "buchi", prp, "houdini")
     read = []

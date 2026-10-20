@@ -2,8 +2,8 @@
 
 ``--infer houdini`` proposes and a solver decides.  *What* it proposes --
 the invariant facts read off simulated runs of the module, the ranking
-shapes tried smallest first -- is :mod:`zrth.lean.magic.houdini`, and is the
-same whichever solver answers.  This module is the seam between the two: an
+shapes tried smallest first -- is :mod:`zrth.lean.infer.houdini.engine`,
+and is the same whichever solver answers.  This module is the seam between the two: an
 obligation as a *question* rather than as a file, and the solvers that
 answer one.
 
@@ -57,10 +57,8 @@ from ..core.errors import Refused
 from .obligations import Query
 from .limits import bounded_solver
 from .script import decimals, script
-from .vampire import resolve_vampire, run_vampire
+from .vampire import run_vampire
 
-SOLVERS = ("cvc5", "vampire")
-DEFAULT_SOLVER = "cvc5"
 DEFAULT_TIMEOUT = 120
 DEFAULT_CORES = 4
 
@@ -448,41 +446,3 @@ class VampireSolver(Solver):
                     + [t for _n, t in q.hyps] + [q.goal])
         return decimals(script(asserts, defines=defines, mentions=mentions,
                                spaced=False))
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Choosing one
-# ══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class SolverSpec:
-    """What `--houdini-solver` resolved to, at parse time.
-
-    A route's `resolve` runs before any project is generated, which is where
-    a missing Vampire binary has to be met. cvc5 resolves to nothing to
-    look for: it is the package that encoded the module in the first place.
-    """
-
-    kind: str = DEFAULT_SOLVER
-    exe: "str | None" = None
-    cores: int = DEFAULT_CORES
-
-    def build(self, tm, *, seconds: float, log=print) -> Solver:
-        if self.kind == "vampire":
-            return VampireSolver(self.exe, seconds=seconds,
-                                 cores=self.cores, log=log)
-        return Cvc5Solver(tm, seconds=seconds, log=log)
-
-
-def resolve_solver(kind: str, vampire: "str | None" = None,
-                   cores: "int | None" = None) -> SolverSpec:
-    """`--houdini-solver` and the flags that belong to the one it names."""
-    if kind not in SOLVERS:
-        raise Refused(
-            f"--houdini-solver takes {' or '.join(SOLVERS)}, not {kind!r}"
-        )
-    if kind != "vampire":
-        return SolverSpec(kind)
-    return SolverSpec(kind, resolve_vampire(vampire),
-                      DEFAULT_CORES if cores is None else int(cores))

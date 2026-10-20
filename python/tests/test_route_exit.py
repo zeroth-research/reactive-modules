@@ -30,7 +30,8 @@ import zrth.lean.main as entry
 
 print("cvc5 loaded by import:", "cvc5" in sys.modules, flush=True)
 
-from zrth.lean.magic import ai, cegis
+from zrth.lean.infer.ai import engine as ai
+from zrth.lean.infer.ai_cegis import engine as cegis
 
 def client(base_url, model):
     def chat(system, user):

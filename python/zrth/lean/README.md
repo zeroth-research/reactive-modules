@@ -92,7 +92,7 @@ The certificate in `Data.lean` depends on the run:
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Decision procedure (`infer_route/`), untrusted
+### 5. Decision procedure (`infer/`), untrusted
 
 `--infer NAME` runs one route against the generated project. A route is a
 module that exports a `ROUTE` row. The row says what the route may read and
@@ -114,7 +114,7 @@ holds each answer to its row and believes nothing else about it.
 [Common invocations](#common-invocations) shows the LLM routes. The others
 each have a section, from [`--infer nuterm`](#inferring-without-an-llm---infer-nuterm)
 to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-proveit).
-[Adding an Inference Route](#adding-an-inference-route-infer_route) says how
+[Adding an Inference Route](#adding-an-inference-route-infer) says how
 to write a new one.
 
 ### 6. Lean certificate (`proof/render.py`, `smt/precheck.py`, `proof/tactics.py`, `proof/from_smt.py`)
@@ -224,15 +224,15 @@ topologically-sorted dataflow graph.
 | `codegen/terms.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `codegen/boxes.py` | Translates term lists → `Box` circuit layers |
 | `codegen/encodings/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circuit.py`, `scalar.py`, `relational.py`; `skeleton.py`, the shape every relational encoding has, and `common.py`, what the scalar ones share |
-| `fbk/` | The `--infer fbk-proveit` route's machinery: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`proveit`) |
 | `core/certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
 | `proof/render.py` | Certificate generation: `render_certificate`, `prepare`, `LeanCertificate`, `generate_certificate_lean` |
 | `project/` | The generated project on disk: `scaffold` writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), `lakefile` its dependencies, `main_lean` the `--executable` program, `build` runs `lake build`; `names` are the files and modules it is made of and `templates` the Jinja environment |
 | `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: the encoder (`encode`), the run's one encoding of the module (`encoding.ModuleEncoding`, over `module.ModuleSMT`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
 | `smt/precheck.py` | `--pre-check`: `ModuleQueries` (a claim and certificate read against the module), `pre_check`, `predicate_terms` |
 | `proof/` | The rest of the certificate's Lean: `from_smt`, a cvc5 term printed as Lean; `facts`, what the terms and cvc5 say about the proof the tactics attempt (`predicate_facts`, and `solver_hints` under `--smt-tactics`); `tactics`, the plan read off them |
-| `magic/synth.py` | What a searching route reads a module as: its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use |
-| `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
+| `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) and what a route is given and hands back (`io`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
+| `infer/common/` | What more than one route uses: `llm`, the model both LLM routes ask; `synth`, what a searching route reads a module as (its columns and readings over an `smt.claim.SynthContext`, the constants and branch conditions a template may use); `options`, the options two rows share |
+| `infer/fbk_proveit/` | The `--infer fbk-proveit` route: the NA model `lean2vmt` reads (`na`), cvc5 terms as the `Bool` Lean it reads (`to_bool`), the proof that the model is the module (`bridge`), and the `proveit.py` driver (`engine`) |
 
 ---
 
@@ -722,7 +722,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
-Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+Each route is one row of `infer.ROUTES`, and a flag in the bottom half
 of the table belongs to a route rather than to verith: passed without its
 route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
 spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
@@ -1232,7 +1232,7 @@ Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--safety` is required.
 
-### Encoding 6 — NA, for the FBK toolchain (`fbk/na.py`)
+### Encoding 6 — NA, for the FBK toolchain (`infer/fbk_proveit/na.py`)
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
 specific Lean shape. This encoding is emitted only for that route, and is
@@ -1277,9 +1277,10 @@ describe the module:
 | a property outside that same fragment | ditto — `smt_to_lean_bool` raises rather than guess. `mod` is refused here even though `lean2vmt` translates it and ic3ia proves such a property: MathSAT eliminates the mod from the *witness*, as `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders neither those operators nor a Real inside a `Bool` `INVAR` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
-The transition itself is not written by `fbk/na.py`. Each state slot's
-next value is `smt.encode`'s term for that element — the encoder `--pre-check`
-and `--infer ai-cegis` run on — simplified by cvc5 and printed by
+The transition itself is not written by `infer/fbk_proveit/na.py`. Each
+state slot's next value is `smt.encode`'s term for that element — the
+encoder `--pre-check` and `--infer ai-cegis` run on — simplified by cvc5 and
+printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
 answers about the same module are one encoding rather than two readings, and
 the refusal list above is exactly what those two components cannot express.
@@ -1354,19 +1355,20 @@ so does a row no theory backs.
 
 ---
 
-## Adding an Inference Route (`infer_route/`)
+## Adding an Inference Route (`infer/`)
 
 Every way verith can be handed a certificate is one row of
-`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is one
-module, `infer_route/<name>.py`, exporting `ROUTE` (an `InferRoute`), plus
-its entry in the `ROUTES` tuple of `infer_route/__init__.py`, and nothing
-else: `cli.py` reads the rows, so the `--infer` choices, the help text,
-every cross-flag rule and the dispatch all follow from the row rather than
-from an edit apiece.  The row module imports its engine (usually a class in
-`magic/`) inside `run`, so `verith --help` imports none of them; no row
-imports another, and an option two rows share is declared once in
-`infer_route/shared.py`.  The types a row is written in are in
-`infer_route/api.py`.
+`infer.ROUTES`, and `--infer <name>` selects a row.  A route is one
+package, `infer/<name>/`: its `__init__.py` exports `ROUTE` (an
+`InferRoute`), its `engine.py` is what the row runs, and its entry in the
+`ROUTES` tuple of `infer/__init__.py` is the only line written elsewhere.
+`cli.py` reads the rows, so the `--infer` choices, the help text, every
+cross-flag rule and the dispatch all follow from the row rather than from
+an edit apiece.  The row imports its engine inside `run`, so
+`verith --help` imports none of them; no route imports another, and an
+option two rows share is declared once in `infer/common/options.py`.  The
+types a row is written in are in `infer/route.py` (the row) and
+`infer/io.py` (what a route is given and hands back).
 
 A row says:
 
@@ -1512,8 +1514,9 @@ If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
 `codegen/encodings/skeleton.py`, as `Rel`, `ScalarRel` (both in
-`codegen/encodings/relational.py`) and the NA model (`fbk/na.py`) do.  It is
-parameterised on the type builder, the projection, and the spelling
+`codegen/encodings/relational.py`) and the NA model
+(`infer/fbk_proveit/na.py`) do.  It is parameterised on the type builder,
+the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a
 functional counterpart to prove them against.

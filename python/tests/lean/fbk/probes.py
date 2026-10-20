@@ -187,7 +187,7 @@ PROBES = FROM_CASE_MATRIX + NET_SHAPED + HAND_WRITTEN + HARDER
 # ── D. modules the route rejects before ic3ia ever runs.  `run_fbk.py
 #      --screen` checks that each still fails for the reason recorded here,
 #      so a lifted restriction shows up as a surprise rather than silently.
-#      "verith" = a restriction in `fbk/na.py`; "lean2vmt" /
+#      "verith" = a restriction in `infer/fbk_proveit/na.py`; "lean2vmt" /
 #      "vmt2lean" = an upstream limit that has to be fixed there first.
 # Nine modules left this table when the encoding stopped writing the
 # transition itself. A wire wider than 1x1 now becomes one state slot per

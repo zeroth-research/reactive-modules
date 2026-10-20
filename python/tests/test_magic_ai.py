@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from zrth.lean.core.certificate import Claim, LeanAnswer
-from zrth.lean.magic.ai import TA2MagicAI
+from zrth.lean.infer.ai.engine import TA2MagicAI
 
 COUNTER_SOURCE = """\
 def init():
@@ -63,14 +63,14 @@ THREE_WIRE_INIT = ("@[simp] def init (extl_n: (Mat Int 1 1) × (Mat Int 1 1)) : 
 def test_a_one_component_state_is_named_as_the_matrix_itself():
     """`s.1` on a single `Mat` is a projection out of a function, which Lean
     refuses; the message has to say this state has no `.1`."""
-    from zrth.lean.magic.ai import _state_type_line
+    from zrth.lean.infer.ai.engine import _state_type_line
     line = _state_type_line(ONE_WIRE_INIT)
     assert "`(Mat Int 1 1)`" in line
     assert "`s 0 0`" in line
 
 
 def test_a_tuple_state_is_named_with_its_whole_type():
-    from zrth.lean.magic.ai import _state_type_line
+    from zrth.lean.infer.ai.engine import _state_type_line
     line = _state_type_line(THREE_WIRE_INIT)
     assert "`(Mat Int 1 1) × (Mat Int 1 1) × (Mat Int 1 1)`" in line
     assert "tuple" in line
@@ -82,7 +82,7 @@ def test_a_real_valued_state_is_named_too():
     import torch
 
     from zrth import LRA, Module, Real, Term, Var, X
-    from zrth.lean.magic.ai import _state_type_line
+    from zrth.lean.infer.ai.engine import _state_type_line
     from zrth.lean.codegen.encodings import ModuleToLean4
 
     s = Var(Real([1, 1]))
@@ -99,7 +99,7 @@ def test_a_real_valued_state_is_named_too():
 
 
 def test_no_prompt_says_every_state_is_read_through_dot_one():
-    from zrth.lean.magic.ai import GENERATE_SYSTEM, VERIFY_SYSTEM
+    from zrth.lean.infer.ai.engine import GENERATE_SYSTEM, VERIFY_SYSTEM
     for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
         assert "there is no `.1`" in prompt
         assert "accessed via `.1`, `.2.1`, `.2.2.1`" not in prompt
@@ -114,7 +114,7 @@ def test_both_prompts_state_the_obligations_under_the_precondition():
     against a `Certificate/Data.lean` that carries `init_pre` and
     `update_pre`. So the prompts have to ask for a certificate under the same
     assumption the build will check it under, and both do."""
-    from zrth.lean.magic.ai import GENERATE_SYSTEM, VERIFY_SYSTEM
+    from zrth.lean.infer.ai.engine import GENERATE_SYSTEM, VERIFY_SYSTEM
     for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
         assert "init_pre" in prompt and "update_pre" in prompt
     assert "inputs satisfying init_pre" in GENERATE_SYSTEM
@@ -124,7 +124,7 @@ def test_both_prompts_state_the_obligations_under_the_precondition():
 
 def _recording_ai(monkeypatch):
     """A `TA2MagicAI` that answers a fixed reply and keeps every message."""
-    import zrth.lean.magic.ai as ai
+    import zrth.lean.infer.ai.engine as ai
 
     seen: list[tuple[str, str]] = []
 
@@ -188,7 +188,7 @@ def test_a_projection_off_a_numeral_is_parenthesised():
     against Lean, `(s 0 0).toNat` compiles and `s 0 0.toNat` is the recorded
     type mismatch.
     """
-    from zrth.lean.magic.ai import _parenthesise_elements as fix
+    from zrth.lean.infer.ai.engine import _parenthesise_elements as fix
 
     assert fix("fun s => s 0 0.toNat") == "fun s => (s 0 0).toNat"
     assert fix("fun s => s.2.2.1 0 0.toNat") == "fun s => (s.2.2.1 0 0).toNat"
@@ -205,7 +205,7 @@ def test_a_name_lean_does_not_have_is_named_rather_than_rewritten():
     so it goes back as feedback -- which is the loop this route already has
     for a candidate that is wrong.
     """
-    from zrth.lean.magic.ai import _absent_names
+    from zrth.lean.infer.ai.engine import _absent_names
 
     assert "does not exist" in _absent_names("fun s => Real.toNat (s 0 0)")
     assert _absent_names("fun s => (s 0 0).toNat", "fun s => True") == ""
@@ -216,7 +216,7 @@ def test_a_candidate_lean_cannot_elaborate_is_asked_again(monkeypatch):
     right or wrong about in an expression Lean will not read. The model is
     told which name is missing and answers again, and the second answer is
     the one that is emitted."""
-    import zrth.lean.magic.ai as ai
+    import zrth.lean.infer.ai.engine as ai
 
     seen: list[tuple[str, str]] = []
     replies = iter([
@@ -247,7 +247,7 @@ def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
     """Empty `INVARIANT:` and `RANKING:` lines parse, and an auditor can
     accept them; that is no certificate, and the route says so rather than
     handing an empty Lean answer to the pipeline."""
-    import zrth.lean.magic.ai as ai
+    import zrth.lean.infer.ai.engine as ai
 
     def fake_client(base_url, model):
         def chat(system: str, user: str) -> str:
@@ -267,7 +267,7 @@ def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
     reason="ANTHROPIC_API_KEY not set",
 )
 def test_counter_claude():
-    from zrth.lean.magic.ai import TA2MagicAI
+    from zrth.lean.infer.ai.engine import TA2MagicAI
 
     magic = TA2MagicAI(COUNTER_SOURCE)
     _assert_result(magic.infer(Claim(prp="x == 0")))
@@ -285,7 +285,7 @@ def _ollama_available() -> bool:
 
 @pytest.mark.skipif(not _ollama_available(), reason="Ollama not available")
 def test_counter_ollama_qwen3_coder():
-    from zrth.lean.magic.ai import TA2MagicAI
+    from zrth.lean.infer.ai.engine import TA2MagicAI
 
     magic = TA2MagicAI(
         COUNTER_SOURCE,

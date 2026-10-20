@@ -296,7 +296,8 @@ def _runs() -> list:
 
 def _offline(monkeypatch) -> None:
     """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from zrth.lean.magic import ai, cegis
+    from zrth.lean.infer.ai import engine as ai
+    from zrth.lean.infer.ai_cegis import engine as cegis
 
     def client(base_url, model):
         def chat(system: str, user: str) -> str:

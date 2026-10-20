@@ -1,5 +1,5 @@
 """A command-line option that belongs to one row of a registry -- an
-inference route (`infer_route`) or an input format (`inputs`) -- rather
+inference route (`infer`) or an input format (`inputs`) -- rather
 than to verith. A leaf module, so both registries can import it."""
 
 from __future__ import annotations

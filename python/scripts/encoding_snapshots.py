@@ -53,8 +53,10 @@ def snapshot(path: Path, out: Path) -> None:
         generate_standalone_cert_lean,
     )
     from zrth.lean.codegen.encodings import ModuleToLean4
-    from zrth.lean.fbk.na import atom_to_lean_na, check_na_supported
-    from zrth.lean.fbk.bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.na import (
+        atom_to_lean_na, check_na_supported,
+    )
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     out.mkdir(parents=True, exist_ok=True)
     try:

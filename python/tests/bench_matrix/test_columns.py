@@ -7,7 +7,7 @@ a cell the page does not show at all, and nothing about the output says so --
 floor for exactly as long as it took someone to go looking for them.
 
 Two things had to agree and did not. A cell is looked up by its key suffix,
-but the column list came from `zrth.lean.infer_route.ROUTES` and the presence
+but the column list came from `zrth.lean.infer.ROUTES` and the presence
 test from the `route` field recorded beside each run -- and neither of those
 is the column: one route measured over two solvers is two columns sharing a
 route name. So the checks here are that the column list covers the harness's
@@ -85,7 +85,7 @@ def test_a_command_that_still_selects_its_column_is_left_alone():
 def test_a_column_is_named_once_and_selects_one_route():
     cols = routes(proveit_dir="/x", ic3ia="/y", vampire="/z")
     assert len({c.name for c in cols}) == len(cols)
-    from zrth.lean.infer_route import ROUTES
+    from zrth.lean.infer import ROUTES
 
     known = {r.name for r in ROUTES}
     for c in cols:
