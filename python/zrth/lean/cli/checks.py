@@ -80,29 +80,40 @@ def input_adapter(parser: argparse.ArgumentParser,
     return adapter
 
 
+def _check_row_options(parser: argparse.ArgumentParser, args, stray,
+                       meaningful, row: str, options) -> None:
+    """The rules every row's options follow (`core.options`): an option of
+    a row that was not selected is refused, `stray` naming each with the
+    rows it belongs to and `meaningful` phrasing those rows; and for the
+    selected row, `row`'s `options`, a required one has to be given and
+    the others get their row default."""
+    if stray:
+        flags = [o.flags[-1] for o, _ in stray]
+        rows = sorted({r for _, rs in stray for r in rs})
+        verb = "is" if len(flags) == 1 else "are"
+        parser.error(
+            f"{', '.join(flags)} {verb} only meaningful {meaningful(rows)}")
+    if options is None:
+        return
+    absent = [o.flags[-1] for o in missing(options, args)]
+    if absent:
+        parser.error(f"{row} requires {', '.join(absent)}")
+    put_defaults(options, args)
+
+
 def check_input_options(parser: argparse.ArgumentParser, args,
                         adapter: InputAdapter | None) -> None:
     """A format's option is only meaningful for input in that format, as a
     route's is only with that route; one its row requires has to be given;
     and its row default is put back once the format is known."""
-    stray = [
-        (a, o) for a in ADAPTERS for o in a.options
-        if a is not adapter and given(o, args)
-    ]
-    if stray:
-        flags = [o.flags[-1] for _, o in stray]
-        formats = sorted({a.name for a, _ in stray})
-        verb = "is" if len(flags) == 1 else "are"
-        parser.error(
-            f"{', '.join(flags)} {verb} only meaningful for "
-            f"{' or '.join(formats)} input"
-        )
-    if adapter is None:
-        return
-    absent = [o.flags[-1] for o in missing(adapter.options, args)]
-    if absent:
-        parser.error(f"{adapter.name} input requires {', '.join(absent)}")
-    put_defaults(adapter.options, args)
+    _check_row_options(
+        parser, args,
+        [(o, [a.name]) for a in ADAPTERS for o in a.options
+         if a is not adapter and given(o, args)],
+        lambda rows: f"for {' or '.join(rows)} input",
+        f"{adapter.name} input" if adapter else "",
+        adapter.options if adapter else None,
+    )
 
 
 def check_route_options(
@@ -112,31 +123,19 @@ def check_route_options(
 
     Given without it, the flag would do nothing -- which is the failure mode
     worth reporting: the run would succeed having ignored what was asked.
+    An option several routes declare is stray only when *none* of them was
+    selected: `--vampire` is meaningful to two routes and a no-op under the
+    other five.
     """
-    # An option several routes declare is stray only when *none* of them
-    # was selected: `--vampire` is meaningful to two routes and a no-op
-    # under the other five.
-    stray = [
-        (owners, o)
-        for o, owners in shared_route_options()
-        if route not in owners and given(o, args)
-    ]
-    if stray:
-        flags = [o.flags[-1] for _, o in stray]
-        owners = sorted({f"--infer {r.name}" for rs, _ in stray for r in rs})
-        verb = "is" if len(flags) == 1 else "are"
-        parser.error(
-            f"{', '.join(flags)} {verb} only meaningful together with "
-            f"{', '.join(owners)}"
-        )
-    if route is None:
-        return
-    absent = [o.flags[-1] for o in missing(route.options, args)]
-    if absent:
-        parser.error(
-            f"--infer {route.name} requires {', '.join(absent)}"
-        )
-    put_defaults(route.options, args)
+    _check_row_options(
+        parser, args,
+        [(o, [f"--infer {r.name}" for r in owners])
+         for o, owners in shared_route_options()
+         if route not in owners and given(o, args)],
+        lambda rows: f"together with {', '.join(rows)}",
+        f"--infer {route.name}" if route else "",
+        route.options if route else None,
+    )
 
 
 def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> None:
