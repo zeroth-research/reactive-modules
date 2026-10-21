@@ -9,12 +9,12 @@ states one in place of the other changes no verdict.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
 from zrth.lean.core.certificate import Certificate, Claim
+from zrth.lean.inputs.python import load_module
 
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402
@@ -23,11 +23,7 @@ LIMITS = Path(__file__).parent / "limits" / "mods"
 
 
 def _module(name: str):
-    path = LIMITS / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"_m_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(LIMITS / f"{name}.py")
 
 
 def _clamps():

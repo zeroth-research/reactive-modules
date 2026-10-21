@@ -24,23 +24,20 @@ reader to discover from a timeout.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
 from zrth.lean.core.certificate import Claim
 from zrth.lean.core.errors import Refused
+from zrth.lean.inputs.python import load_module
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def module_at(path: Path):
-    spec = importlib.util.spec_from_file_location(f"_m_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(path)
 
 
 def vampire_or_skip() -> str:

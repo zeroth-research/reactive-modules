@@ -11,7 +11,6 @@ prover. The obligation files `--pre-check` leaves are pinned by
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import time
 from pathlib import Path
@@ -19,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.core.certificate import Claim
+from zrth.lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
@@ -39,10 +39,7 @@ def _check(name: str, text: str) -> None:
 
 
 def _module(path: Path):
-    spec = importlib.util.spec_from_file_location(f"_m_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(path)
 
 
 def _context(path: Path, kind: str, prp: str, route: str):

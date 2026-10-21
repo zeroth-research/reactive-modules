@@ -15,7 +15,6 @@ checked here end to end, because it is the part no single route owns.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
@@ -23,6 +22,7 @@ import pytest
 from zrth.lean.artifacts import ArtifactStore, module_digest
 from zrth.lean.core.certificate import Certificate, Claim
 from zrth.lean.core.errors import Refused
+from zrth.lean.inputs.python import load_module
 from zrth.lean.infer.resume import resumable_inv, ruled_out, taking_inv
 
 MODS = Path(__file__).parent / "limits" / "mods"
@@ -30,10 +30,7 @@ MODS = Path(__file__).parent / "limits" / "mods"
 
 def module_of(name: str):
     """One `tests/limits` fixture module, loaded by path."""
-    spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(MODS / f"{name}.py")
 
 
 def _int_cols(n: int):
@@ -914,11 +911,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
 
 def _fixture(name: str):
     """One `tests/fixtures` module, loaded by path."""
-    path = Path(__file__).resolve().parent / "fixtures" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"_f_{name}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(Path(__file__).resolve().parent / "fixtures" / f"{name}.py")
 
 
 def test_smt_linear_zeroes_the_rank_where_the_property_holds():

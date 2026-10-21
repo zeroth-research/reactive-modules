@@ -5,7 +5,6 @@ whatever it says must not run as Python. The DSL is walked over a whitelist
 instead, and anything outside it falls through to the SMT-LIB parser.
 """
 
-import importlib.util
 import os
 from pathlib import Path
 
@@ -13,6 +12,7 @@ import cvc5
 import pytest
 
 from zrth.lean.smt.module import ModuleSMT
+from zrth.lean.inputs.python import load_module
 from zrth.lean.smt.predicates import (
     PredicateParser,
     _NotPredicate,
@@ -26,10 +26,8 @@ MODS = Path(__file__).parent / "limits" / "mods"
 
 def _env(name: str) -> PredicateParser:
     """A parser context for one `tests/limits` fixture module."""
-    spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return PredicateParser(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
+    module = load_module(MODS / f"{name}.py")
+    return PredicateParser(ModuleSMT(tm=cvc5.TermManager(), module=module))
 
 
 @pytest.mark.parametrize(

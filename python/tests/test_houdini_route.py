@@ -22,7 +22,6 @@ one the proofs used, not every fact Houdini kept.
 
 from __future__ import annotations
 
-import importlib.util
 from fractions import Fraction
 from dataclasses import replace
 from pathlib import Path
@@ -31,6 +30,7 @@ import pytest
 
 from zrth.lean.core.certificate import Claim
 from zrth.lean.core.errors import Refused
+from zrth.lean.inputs.python import load_module
 from zrth.lean.infer.houdini.solvers import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
@@ -39,10 +39,7 @@ HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
 
 
 def module_at(path: Path):
-    spec = importlib.util.spec_from_file_location(f"_m_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(path)
 
 
 def solver_or_skip(kind: str):
