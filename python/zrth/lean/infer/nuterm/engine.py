@@ -77,7 +77,8 @@ def _engine():
     except ImportError as e:      # pragma: no cover - a broken checkout
         raise Refused(
             f"--infer nuterm needs the `nuterm` package, which is not "
-            f"importable: {e}"
+            f"importable: {e}",
+            setup=True,
         ) from e
     return SimpleNamespace(
         Bench=Bench, certify=certify, check_supported=check_supported,

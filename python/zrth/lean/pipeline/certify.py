@@ -138,7 +138,7 @@ def render(smt, claim: "Claim | None", cert: Certificate, *,
     return lean
 
 
-def note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
+def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
     """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
 
     `NO-CERT` is three measurements wearing one name -- a space proved
@@ -152,14 +152,14 @@ def note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
     `vampire` each leave a note of their own with more in it than this, and
     a second one saying less would be worse than none.
 
-    An `ImportError` is not about the module at all -- a package or a key is
-    missing -- so it is left unrecorded rather than filed against a run that
-    never started.
+    A `setup` refusal is not about the module at all -- a package or a key
+    is missing -- so it is left unrecorded rather than filed against a run
+    that never started.
     """
     store = getattr(handle, "artifacts", None)
-    if store is None or store.notes or isinstance(e, ImportError):
+    if store is None or store.notes or e.setup:
         return
-    searched = getattr(e, "searched", False)
+    searched = e.searched
     store.note(
         f"{e}\n",
         status="unknown" if searched else "declined",
@@ -228,9 +228,7 @@ def run_route(
                        if route.reads_source and problem else None),
             )
         )
-    except (Refused, ImportError) as e:
-        # A missing package and a missing key are both about how the route
-        # was asked for, not about the module.
+    except Refused as e:
         note_refusal(handle, route, e)
         raise refused(route, e) from e
 
@@ -282,7 +280,7 @@ def route_precheck(settings: Settings, module, claim: "Claim | None", smt):
         return route.precheck(
             module, settings.route_opts, settings.route_config, claim, smt
         )
-    except (Refused, ImportError) as e:
+    except Refused as e:
         raise refused(route, e) from e
 
 

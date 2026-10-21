@@ -11,7 +11,7 @@ Neither package is imported until a client is made: `cli` imports
 import os
 
 from ...core.certificate import Claim
-from ...core.errors import Refused
+from ...core.errors import Refused, require
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -56,13 +56,7 @@ def describe_preconditions(claim: Claim) -> str:
 def make_client(base_url: str | None, model: str):
     """Return a chat callable: (system, user) -> str."""
     if base_url is not None:
-        try:
-            import openai
-        except ImportError:
-            raise ImportError(
-                "openai package is required for local LLM support. "
-                "Install with: pip install zrth[ai-local]"
-            ) from None
+        openai = require("openai", "--base-url", install="zrth[ai-local]")
         # Hosted OpenAI-compatible providers (e.g. OpenRouter) need a real
         # key; local servers (Ollama, vLLM) accept any placeholder.
         api_key = (
@@ -85,13 +79,7 @@ def make_client(base_url: str | None, model: str):
 
         return chat
     else:
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError(
-                "anthropic package is required for the LLM routes. "
-                "Install with: pip install zrth[ai]"
-            ) from None
+        anthropic = require("anthropic", "An LLM route", install="zrth[ai]")
         # Without a key the request itself fails with a TypeError about
         # header resolution, which says nothing about the flag that needs
         # one. A run that never asks the model never gets here: the routes
@@ -101,7 +89,8 @@ def make_client(base_url: str | None, model: str):
                 "ANTHROPIC_API_KEY is not set, and the default model is "
                 "reached through the Anthropic API. Set it, or point "
                 "--base-url at an OpenAI-compatible server (a local one "
-                "needs no key)."
+                "needs no key).",
+                setup=True,
             )
         client = anthropic.Anthropic()
 

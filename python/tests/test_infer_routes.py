@@ -817,12 +817,15 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 
 
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
-    """An `ImportError` is about how the route was asked for. Filing it as a
-    decline would read as a fact about a run that never started."""
+    """A missing package is about how the route was asked for. Filing it as
+    a decline would read as a fact about a run that never started."""
+    from zrth.lean.core.errors import require
     from zrth.lean.pipeline.certify import note_refusal
 
+    with pytest.raises(Refused) as missing:
+        require("zrth_no_such", "--infer x")
     store = _note_store(tmp_path)
-    note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), missing.value)
     assert store.list() == ()
 
 

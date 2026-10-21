@@ -24,11 +24,17 @@ class Refused(ValueError):
     not apply -- and every one of those is reached before a solver starts.
     A route that gives up *after* searching says so, and `main` records the
     two under different statuses.
+
+    `setup` is whether the refusal is about how the run was asked for -- a
+    package not installed, a key not set -- rather than about the module.
+    Filed in `artifacts/` it would read as a fact about a run that never
+    started, so `main` leaves it out.
     """
 
-    def __init__(self, *args, searched: bool = False):
+    def __init__(self, *args, searched: bool = False, setup: bool = False):
         super().__init__(*args)
         self.searched = searched
+        self.setup = setup
 
 
 class PredicateRefused(Refused):
@@ -56,9 +62,9 @@ class PredicateRefused(Refused):
         return f"{self.flag}: {self.message}"
 
 
-def require(package: str, who: str):
+def require(package: str, who: str, install: str | None = None):
     """`package`, imported -- or a refusal saying `who` needs it and how to
-    install it.
+    install it: `install`, or the package itself.
 
     A missing package is about how the run was asked for, not about the
     module, and the `ImportError` from wherever it happened to be imported
@@ -71,6 +77,7 @@ def require(package: str, who: str):
     except ImportError as e:
         raise Refused(
             f"{who} needs the `{package}` package, which is not importable. "
-            f"Install with: uv pip install {package}"
+            f"Install with: uv pip install {install or package}",
+            setup=True,
         ) from e
 
