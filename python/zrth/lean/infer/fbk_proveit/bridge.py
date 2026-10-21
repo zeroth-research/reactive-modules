@@ -40,7 +40,7 @@ import re
 
 from zrth.lean.lowering.elements import flat_layout
 from zrth.lean.codegen.context import LeanContext
-from zrth.lean.codegen.terms import product_type, product_type_scalar
+from zrth.lean.codegen.terms import extl_native_type, product_type, product_type_scalar
 from zrth.lean.project.names import (
     DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
 )
@@ -140,9 +140,7 @@ def atom_to_lean_fbk_bridge(
     flat = ", ".join(f"x{k}" for k in range(n))
     slots_of_state = " ".join(f"(Definition.var_{k} state)" for k in range(n))
     ctrl_native = product_type(ctx.ctrl_next)
-    extl_native = (
-        f"({product_type(ctx.extl_latched)}) × ({product_type(ctx.extl_next)})"
-    )
+    extl_native = extl_native_type(ctx)
     # The transition reads no input -- `check_na_supported` refuses a module
     # whose does -- so `bridge_k` quantifies over them and `Scalar.update`
     # is applied to the binders rather than to a value that would have to be

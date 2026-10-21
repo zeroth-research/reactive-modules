@@ -73,6 +73,13 @@ def product_type(wires: list[Wire]) -> str:
     return " × ".join(parts)
 
 
+def extl_native_type(ctx) -> str:
+    """What a step of the module reads its inputs as: the latched inputs
+    and the awaited ones, `(latched) × (awaited)`. `RM`'s input type."""
+    return (f"({product_type(ctx.extl_latched)}) × "
+            f"({product_type(ctx.extl_next)})")
+
+
 def build_tuple(exprs: list[str]) -> str:
     """Build a tuple literal: [] -> '()', ['a'] -> 'a', ['a','b'] -> '(a, b)'."""
     if not exprs:

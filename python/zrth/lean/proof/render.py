@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from zrth.lean.codegen.encodings import ModuleToLean4
-from zrth.lean.codegen.terms import product_type
+from zrth.lean.codegen.terms import extl_native_type, product_type
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.core.errors import PredicateRefused, Refused
 from zrth.lean.codegen.context import LeanContext
@@ -258,10 +258,8 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     or `None`, in which case the template uses the placeholder value.
     """
     d = lean_cert.defs
-    extl_native = (f"({product_type(ctx.extl_latched)}) × "
-                   f"({product_type(ctx.extl_next)})")
     return dict(
-        extl_type=extl_native,
+        extl_type=extl_native_type(ctx),
         ctrl_type=product_type(ctx.ctrl_next),
         noncomp="noncomputable " if ctx.uses_real else "",
         is_safety=d.is_safety,
@@ -318,12 +316,8 @@ def generate_certificate_lean(
     lean_cert = lean_cert or LeanCertificate()
     defs = lean_cert.defs
 
-    extl_latched = ctx.extl_latched
-    extl_next = ctx.extl_next
-    ctrl_next = ctx.ctrl_next
-
-    extl_native = f"({product_type(extl_latched)}) × ({product_type(extl_next)})"
-    ctrl_native = product_type(ctrl_next)
+    extl_native = extl_native_type(ctx)
+    ctrl_native = product_type(ctx.ctrl_next)
 
     const_names = ctx.constants.names()
     const_list = ", ".join(const_names) if const_names else ""
