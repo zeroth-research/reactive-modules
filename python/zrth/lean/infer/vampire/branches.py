@@ -12,7 +12,6 @@ from ...core.errors import Refused
 from ...smt.terms import ite_conditions
 from ...smt.claim import SynthContext
 
-import cvc5
 from cvc5 import Kind
 
 
@@ -51,7 +50,6 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
     out which ones those are.
     """
     tm = ctx.tm
-    rewriter = cvc5.Solver(tm)
     terms = list(terms)
     conds = ite_conditions(terms)
     if len(conds) > _MAX_CONDITIONS:
@@ -64,7 +62,7 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
     out = []
     for bits in product((True, False), repeat=len(conds)):
         subs = [tm.mkBoolean(b) for b in bits]
-        folded = tuple(rewriter.simplify(t.substitute(conds, subs))
+        folded = tuple(ctx.enc.simplify(t.substitute(conds, subs))
                        if conds else t for t in terms)
         guard = tuple(c if b else tm.mkTerm(Kind.NOT, c)
                       for c, b in zip(conds, bits))

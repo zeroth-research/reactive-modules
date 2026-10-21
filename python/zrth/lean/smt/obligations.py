@@ -352,11 +352,8 @@ class Obligations:
     """
 
     def __init__(self, ctx: "SynthContext"):
-        import cvc5
-
         tm = ctx.tm
         self.ctx = ctx
-        self._rewriter = cvc5.Solver(tm)
 
         def consts(vs, prefix):
             """One holder per component, over one *constant* per element.
@@ -406,7 +403,7 @@ class Obligations:
         called where a tuple is printed: a term that has none is handed
         over exactly as encoded.
         """
-        return self._rewriter.simplify(t) if "tuple" in str(t) else t
+        return self.ctx.enc.simplify(t) if "tuple" in str(t) else t
 
     def flatten(self, holders, terms=None) -> list:
         """One term per element: `terms` shaped by `holders`, or the holders.
