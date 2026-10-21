@@ -330,7 +330,7 @@ def _walk(
         sel = t[0]
         obj = t[1]
         if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in var_wire:
-            raise ValueError(
+            raise Refused(
                 f"APPLY_SELECTOR against non-bound term not supported: {t}"
             )
         idx = selector_index(sel)
@@ -340,4 +340,4 @@ def _walk(
         base = var_accessor[sname]
         return f"({base} {i} {j})"
 
-    raise ValueError(f"SMT→Lean: unsupported kind {k} in {t}")
+    raise Refused(f"SMT→Lean: unsupported kind {k} in {t}")

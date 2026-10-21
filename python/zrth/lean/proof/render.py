@@ -108,7 +108,7 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
             # a tactic, so it has to read whichever state the obligation
             # bound rather than a fixed name.
             text = smt_to_lean_body(cond, ctrl_next, param_name="($v)")
-        except Exception:
+        except Refused:
             continue
         determined.append((text, value))
 
@@ -126,7 +126,7 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
         try:
             a = smt_to_lean_body(a_term, ctrl_next, param_name="($v)")
             b = smt_to_lean_body(b_term, ctrl_next, param_name="($v)")
-        except Exception:
+        except Refused:
             continue
         for hint in (f"mul_self_nonneg ({a} - {b})",
                      f"mul_self_nonneg ({a} + {b})"):

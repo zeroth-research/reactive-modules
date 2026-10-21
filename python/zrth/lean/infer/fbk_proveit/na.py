@@ -132,6 +132,7 @@ from typing import NamedTuple
 from zrth.lean.lowering.sorts import flat_element_type
 from zrth.lean.lowering.elements import flat_layout
 from zrth.lean.codegen.context import LeanContext
+from zrth.lean.core.errors import Refused
 from zrth.lean.codegen.terms import reachable_terms
 from zrth.lean.codegen.encodings.common import has_block
 from zrth.lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
@@ -445,7 +446,7 @@ def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
     }
     try:
         text = smt_to_lean_bool(pre_term, acc)
-    except ValueError as e:
+    except Refused as e:
         raise NAUnsupported(f"--pre cannot be encoded: {e}") from e
 
     names = _input_names(acc)

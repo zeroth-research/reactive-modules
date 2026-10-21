@@ -48,6 +48,7 @@ from typing import NamedTuple
 
 from ...codegen.context import LeanContext
 from ...core.certificate import Claim
+from ...core.errors import Refused
 from ...project.names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
@@ -399,7 +400,7 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     term = _parse(module, property_smt, "--safety", encoding)
     try:
         return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
-    except ValueError as e:
+    except Refused as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
 

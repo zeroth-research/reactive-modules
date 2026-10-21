@@ -15,6 +15,7 @@ from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
 from zrth.lean.proof.render import LeanPredicates, render_certificate
 from zrth.lean.smt.precheck import predicate_terms
 from zrth.lean.core.certificate import Certificate, Claim
+from zrth.lean.core.errors import PredicateRefused
 
 
 def _int_module() -> Module:
@@ -209,3 +210,11 @@ def test_euclidean_division_and_modulus_go_across_unchanged():
     certificate cvc5 had just accepted into a traceback."""
     lean = _inv(_int_module(), "(and (= (mod s0 2) 0) (= (div s0 2) 3))")
     assert "% (2 : Int)" in lean and "/ (2 : Int)" in lean, lean
+
+
+def test_a_kind_with_no_lean_form_is_refused_by_the_flag_it_came_from():
+    """A refusal, not a bare `ValueError`: `Refused` is what the pipeline
+    turns into an `error:` line and an `unsupported` note in `artifacts/`,
+    and an answer with no Lean form is the commonest way to reach it."""
+    with pytest.raises(PredicateRefused, match="--invariant: .*Kind.ABS"):
+        _inv(_int_module(), "(>= (abs s0) 0)")
