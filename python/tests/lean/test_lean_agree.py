@@ -45,7 +45,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
     for name in names:
         module = CORPUS[name]()
         try:
-            text, want = lean_script(module, runs(module)[:_RUNS],
+            text, want = lean_script(module, runs(module, count=_RUNS),
                                      f"M{len(scripts)}")
         except Skip:
             continue
@@ -54,7 +54,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
     files = []
     for k in range(0, len(scripts), _PER_FILE):
         chunk = scripts[k:k + _PER_FILE]
-        body = "\n".join(t.replace("import Core.Box\n", "") for _, t, _ in chunk)
+        body = "\n".join(t for _, t, _ in chunk)
         path = tmp_path / f"agree{k // _PER_FILE}.lean"
         path.write_text("import Core.Box\n" + body)
         files.append((path, chunk))
