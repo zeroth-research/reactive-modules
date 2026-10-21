@@ -13,7 +13,7 @@ from cvc5 import Kind
 
 from zrth import Wire
 from ..core.errors import Refused
-from ..lowering.sorts import dtype_shape, is_scalar_shape, wire_shape
+from ..lowering.sorts import wire_shape
 from ..lowering.elements import product_accessor
 from ..codegen.literals import lean_bitvec, lean_int, lean_real
 from ..smt.terms import min_max_of, selector_index, state_dependent
@@ -60,9 +60,8 @@ def build_var_map(
         n = len(wires)
         for i, w in enumerate(wires):
             acc = product_accessor(i, n)
-            shape = dtype_shape(w.dtype)
             name = f"{prefix}{i}"
-            if is_scalar_shape(shape):
+            if wire_shape(w).is_scalar:
                 var_accessor[name] = f"({base}{acc} 0 0)"
             else:
                 var_accessor[name] = f"({base}{acc})"

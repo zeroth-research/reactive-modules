@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from ..lowering.sorts import dtype_shape, itype_name, sort_shape
+from ..lowering.sorts import itype_name, sort_shape, wire_shape
 from ..lowering.elements import product_accessor
 
 
@@ -274,11 +274,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
 
     for w in (*ctx.ctrl_next, *ctx.extl_next):
         f.theories.add(_sort_name(w.dtype))
-        shape = dtype_shape(w.dtype)
-        n = 1
-        for d in shape:
-            n *= d
-        f.n_slots += n
+        f.n_slots += wire_shape(w).total
 
     terms = list(ctx.atom.init) + list(ctx.atom.update)
     f.n_terms = len(terms)

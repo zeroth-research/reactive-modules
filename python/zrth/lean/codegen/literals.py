@@ -5,7 +5,7 @@ from __future__ import annotations
 
 
 from zrth import BitVec, Bool, Int, Real, Sort, Term, Wire
-from ..lowering.sorts import is_scalar_shape, is_scalar_tensor, dtype_shape, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type
+from ..lowering.sorts import is_scalar_tensor, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type, wire_shape
 from ..lowering.values import decimal_fraction
 
 
@@ -102,40 +102,30 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
           | 0, 0 => 0 | 0, 1 => 1
           ...
     """
-    shape = dtype_shape(wire.dtype)
+    shape = wire_shape(wire)
 
-    if is_scalar_shape(shape):
+    if shape.is_scalar:
         val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
         return f"@[simp] def {name} : {ty} := fun _ _ => {val}\n"
 
     # Matrix constant
-    if len(shape) >= 1:
-        if len(shape) == 1:
-            m, n = 1, shape[0]
-        else:
-            m, n = shape[0], shape[1]
+    lines = [f"@[simp] def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
+    lines.append("  match i, j with")
 
-        lines = [f"@[simp] def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
-        lines.append("  match i, j with")
+    data = tensor.reshape(shape.m, shape.n)
+    for i in range(shape.m):
+        row_entries = []
+        for j in range(shape.n):
+            val = lean_literal(wire.dtype, data[i, j].item())
+            row_entries.append(f"| {i}, {j} => {val}")
+        lines.append("  " + " ".join(row_entries))
+    # Catch-all: enumerated arms already cover all indices, but Lean can't
+    # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
+    lines.append(f"  | _, _ => {lean_literal(wire.dtype, 0)}")
 
-        data = tensor.reshape(m, n)
-        for i in range(m):
-            row_entries = []
-            for j in range(n):
-                val = lean_literal(wire.dtype, data[i, j].item())
-                row_entries.append(f"| {i}, {j} => {val}")
-            lines.append("  " + " ".join(row_entries))
-        # Catch-all: enumerated arms already cover all indices, but Lean can't
-        # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
-        lines.append(f"  | _, _ => {lean_literal(wire.dtype, 0)}")
-
-        return "\n".join(lines) + "\n"
-
-    raise ValueError(
-        f"Cannot generate Lean constant for dtype={wire.dtype}, shape={shape}"
-    )
+    return "\n".join(lines) + "\n"
 
 
 def tensor_to_lean_inline(tensor, wire: Wire) -> str:
