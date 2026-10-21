@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import torch
 from collections import Counter
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
@@ -66,13 +66,7 @@ def read_smv(text: str) -> "tuple[Module, dict[str, Var], list[Spec]]":
     A spec that is not `INVARSPEC p`, `LTLSPEC G p` or `LTLSPEC G F p` --
     any other temporal operator, or one inside `p` -- is refused, as is
     a `p` that reads an input."""
-    tree = _get_parser().parse(text)
-    decls = _collect_declarations(tree)
-    _split_assigns(decls, strict=True)
-    _promote_constraints(decls, strict=True)
-    theory = _theory(tree)
-    _check_strict(decls, theory)
-    return _build_module(decls, {}, strict=True, theory=theory, specs=True)
+    return _read(text, {}, strict=True, specs=True)
 
 
 def parse_smv(
@@ -98,6 +92,12 @@ def parse_smv(
     Without it, such text is read leniently: constraints dropped, free
     variables started at 0 and held.
     """
+    return _read(text, overrides or {}, strict=strict)[:2]
+
+
+def _read(text: str, overrides: dict, *, strict: bool, specs: bool = False):
+    """The passes both entry points run, in order; `_build_module`'s
+    result."""
     tree = _get_parser().parse(text)
     decls = _collect_declarations(tree)
     _split_assigns(decls, strict=strict)
@@ -105,8 +105,8 @@ def parse_smv(
     theory = _theory(tree) if strict else "bv"
     if strict:
         _check_strict(decls, theory)
-    return _build_module(decls, overrides or {}, strict=strict,
-                         theory=theory)[:2]
+    return _build_module(decls, overrides, strict=strict, theory=theory,
+                         specs=specs)
 
 
 # ---------------------------------------------------------------------------
@@ -1082,8 +1082,7 @@ class _LIALowerer(_Lowerer):
             self._need(a, _BOOL, tok)
             self._need(b, _BOOL, tok)
             if name == "Xnor":
-                x = self._emit(LIA.Xor(), _BOOL, [a, b], None)
-                return self._emit(LIA.Not(), _BOOL, [x], out, tok)
+                return self._xnor(a, b, out, tok)
             return self._emit(getattr(LIA, name)(), _BOOL, [a, b], out, tok)
         self._need(a, _INT, tok)
         self._need(b, _INT, tok)
@@ -1097,6 +1096,11 @@ class _LIALowerer(_Lowerer):
                 "`*` of two non-constants is not linear integer arithmetic",
                 tok)
         raise self.refuse(f"`{tok}` is not linear integer arithmetic", tok)
+
+    def _xnor(self, a: Wire, b: Wire, out: Wire | None, tok) -> Wire:
+        """`a <-> b`, which LIA has no op for: `!(a xor b)`."""
+        x = self._emit(LIA.Xor(), _BOOL, [a, b], None)
+        return self._emit(LIA.Not(), _BOOL, [x], out, tok)
 
     def _lower_mod(self, tree: Tree, target: Wire | None) -> Wire:
         raise self.refuse("`mod` is not linear integer arithmetic", tree)
@@ -1114,8 +1118,7 @@ class _LIALowerer(_Lowerer):
                 if op == "!=":
                     left = self._emit(LIA.Xor(), _BOOL, [left, rhs], out, tok)
                 else:
-                    x = self._emit(LIA.Xor(), _BOOL, [left, rhs], None)
-                    left = self._emit(LIA.Not(), _BOOL, [x], out, tok)
+                    left = self._xnor(left, rhs, out, tok)
             else:
                 self._need(left, _INT, tok)
                 self._need(rhs, _INT, tok)
@@ -1196,11 +1199,12 @@ def _build_module(
         )
 
     ivars = frozenset(n for n, _ in d.ivar_decls)
-    lowerer = _LIALowerer if theory == "lia" else _Lowerer
-    init_low = lowerer(name_map, d.define_map, d.enum_values, var_types,
-                       is_init=True, strict=strict, ivars=ivars)
-    update_low = lowerer(name_map, d.define_map, d.enum_values, var_types,
-                         is_init=False, strict=strict, ivars=ivars)
+    lowerer = partial(
+        _LIALowerer if theory == "lia" else _Lowerer,
+        name_map, d.define_map, d.enum_values, var_types, strict=strict,
+        ivars=ivars)
+    init_low = lowerer(is_init=True)
+    update_low = lowerer(is_init=False)
 
     for name, smv_type in all_var_decls:
         var = name_map[name]
@@ -1233,12 +1237,8 @@ def _build_module(
     module = Module.sequential(obs_pairs, init_terms, update_terms)
     stated = []
     if specs:
-        stated = [
-            _lower_spec(keyword, formula, lowerer(
-                name_map, d.define_map, d.enum_values, var_types,
-                is_init=True, strict=True, ivars=ivars))
-            for keyword, formula in d.specs
-        ]
+        stated = [_lower_spec(keyword, formula, lowerer(is_init=True))
+                  for keyword, formula in d.specs]
     return module, name_map, stated
 
 
@@ -1252,10 +1252,8 @@ def _lower_spec(keyword: str, formula, low: "_Lowerer") -> Spec:
         while isinstance(body, Tree) and body.data == "ltl_op":
             ops.append(str(body.children[0]))
             body = body.children[1]
-    kind = {(): "safety", ("G",): "safety", ("G", "F"): "buchi"}.get(
-        tuple(ops) if keyword == "LTLSPEC" else (), None)
-    if keyword == "LTLSPEC" and not ops:
-        kind = None
+    kind = ("safety" if keyword == "INVARSPEC"
+            else {("G",): "safety", ("G", "F"): "buchi"}.get(tuple(ops)))
     nested = isinstance(body, Tree) and any(
         t.data == "ltl_op" for t in body.iter_subtrees())
     if kind is None or nested:
