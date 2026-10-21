@@ -278,7 +278,7 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     row-major. Raises `Skip` for a module Lean cannot run: a Real is
     noncomputable, and a module with no Lean form has nothing to run.
     """
-    from zrth.lean.lowering.elements import product_accessor
+    from zrth.lean.lowering.elements import flat_layout
     from zrth.lean.codegen.context import LeanContext
     from zrth.lean.codegen.terms import build_tuple, lean_gaps
     from zrth.lean.codegen.encodings import ModuleToLean4
@@ -292,6 +292,7 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
         raise Skip(f"no Lean form: {gaps[0]}")
 
     ctrl, extl = list(module.ctrl), list(module.extl)
+    layout = flat_layout(ctrl)
     lines = [f"namespace {ns}", ModuleToLean4(ctx).to_lean_functional()]
     evals, want = [], {}
     for r, run in enumerate(rounds):
@@ -310,11 +311,9 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
             lines.append(f"def {name} := {call}")
             shown, expected = [], []
             for p, c in enumerate(ctrl):
-                acc = product_accessor(p, len(ctrl))
-                shape = wire_shape(c)
                 shown.append(" ".join(
-                    _lean_shown(c, f"{ns}.{name}{acc} {i} {j}")
-                    for i in range(shape.m) for j in range(shape.n)))
+                    _lean_shown(c, layout.wire_accessor(f"{ns}.{name}", s))
+                    for s in layout.slots_of(c)))
                 expected.append(" ".join(
                     str(v).lower() if isinstance(v, bool) else str(int(v))
                     for v in flat(c, state[p])))
