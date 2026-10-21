@@ -39,6 +39,10 @@ def _signed(t, sort: Sort):
     return torch.where(t >= (1 << (bw - 1)), t - (1 << bw), t)
 
 
+_SIGNED_CMP = {BV.SLt: torch.lt, BV.SLe: torch.le,
+               BV.SGt: torch.gt, BV.SGe: torch.ge}
+
+
 def _nonzero(t):
     """`t` with each 0 replaced by 1: a divisor torch can divide by, for an
     op whose result at 0 is chosen separately."""
@@ -173,9 +177,7 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
                     f"{type(itype).__name__} compares signed values, and "
                     f"without `in_sorts` the operands' width is unknown")
             a, b = _signed(r[0], in_sorts[0]), _signed(r[1], in_sorts[1])
-            cmp = {"BV_SLt": a < b, "BV_SLe": a <= b,
-                   "BV_SGt": a > b, "BV_SGe": a >= b}[type(itype).__name__]
-            return [cmp.to(r[0].dtype)]
+            return [_SIGNED_CMP[type(itype)](a, b).to(r[0].dtype)]
         case BV.Eq():
             return [(r[0] == r[1]).to(r[0].dtype)]
         case BV.Ne():
@@ -236,16 +238,26 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
 # ============================================================================
 
 
+def eval_term(term, state):
+    """Evaluate `term` on the wires in `state`, writing its results back.
+
+    Only a signed comparison is handed its operands' sorts: reading them is
+    a call into the bindings per wire, and paid on every term it is a
+    quarter of a step."""
+    itype = term.itype
+    read = [state[w] for w in term.read]
+    out_sort = term.write[0].dtype if len(term.write) else None
+    in_sorts = ([w.dtype for w in term.read]
+                if type(itype) in _SIGNED_CMP else None)
+    for w, val in zip(term.write, eval_itype(itype, read, out_sort, in_sorts)):
+        state[w] = val
+
+
 def _execute_block(state, atoms, get_block):
     """Evaluate a block from each atom."""
     for atom in atoms:
         for term in get_block(atom):
-            read = [state[w] for w in term.read]
-            out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort,
-                                 [w.dtype for w in term.read])
-            for w, val in zip(term.write, results):
-                state[w] = val
+            eval_term(term, state)
 
 
 def execute_init(state, atoms):
