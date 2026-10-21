@@ -51,7 +51,7 @@ from itertools import product
 import z3
 from cvc5 import Kind
 
-from ...smt.script import decimals, declarations, smt_lit
+from ...smt.script import conjunction_smt, decimals, declarations, smt_lit
 from ...smt.terms import free_constants, literals
 
 # A mode is a valuation of the Bool columns, so the modes are exponential in
@@ -305,7 +305,7 @@ class _Model:
             return out
         for m in self.modes:
             lits = [f"s{b}" if v else f"(not s{b})" for b, v in zip(self.bits, m)]
-            guard = lits[0] if len(lits) == 1 else f"(and {' '.join(lits)})"
+            guard = conjunction_smt(lits)
             if a[m] is None:
                 out.append(f"(not {guard})")
                 continue

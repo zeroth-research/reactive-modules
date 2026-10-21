@@ -315,6 +315,15 @@ _CONSTANT_LIMIT = 10_000
 _CONSTANT_COUNT = 16
 
 
+def _module_roots(ctx: SynthContext) -> list:
+    """The terms a module's own literals are read from: the property, the
+    preconditions, and the initial and next state."""
+    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
+    return roots
+
+
 def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     """The integer literals this module and its property mention.
 
@@ -325,10 +334,7 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     invented numbers is both bigger and worse.
     """
     seen: set[int] = set(_BASE_CONSTANTS)
-    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += ctx.enc.init_state(ctx.extl_next)
-    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
-    for t in literals(roots):
+    for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_INTEGER:
             value = int(t.getIntegerValue())
             if abs(value) <= _CONSTANT_LIMIT:
@@ -361,11 +367,8 @@ def program_rationals(ctx: SynthContext) -> tuple:
     bounds, the value sets and the lattice a state is drawn on all come from
     here instead.
     """
-    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += ctx.enc.init_state(ctx.extl_next)
-    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
     seen: set = set()
-    for t in literals(roots):
+    for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_RATIONAL:
             q = t.getRealValue()
             if abs(q) <= _CONSTANT_LIMIT:

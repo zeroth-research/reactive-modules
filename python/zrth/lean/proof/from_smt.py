@@ -323,7 +323,7 @@ def _walk(
         # Real literal outright; anything else elaborates at Int and is coerced.
         child = t[0]
         if child.getKind() == Kind.CONST_INTEGER:
-            return f"({child.getIntegerValue()} : Real)"
+            return lean_real(child.getIntegerValue())
         return f"((({recur(child)}) : Int) : Real)"
 
     if k == Kind.APPLY_SELECTOR:
