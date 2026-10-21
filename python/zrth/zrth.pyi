@@ -434,6 +434,13 @@ class SPN:
 
         def __init__(self) -> None: ...
 
+    class NatGe(SPN):
+        """Does the first place hold at least as many tokens as the second?
+        `Nat, Nat -> Bool`; with a `Nat` literal on one side it is the guard of a
+        weighted arc."""
+
+        def __init__(self) -> None: ...
+
     class Inc(SPN):
         """Produce a token: `Nat -> Nat`"""
 
