@@ -122,6 +122,7 @@ def _run(inp: InferInput) -> InferResult:
         project_name=inp.project.name,
         prechecked=inp.prechecked,
         encoding=inp.smt(),
+        ctx=inp.project.ctx,
         log=inp.log,
     )
     # The certificate carries ic3ia's invariant: no predicates come back,

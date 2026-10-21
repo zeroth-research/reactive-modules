@@ -378,7 +378,8 @@ def _parse(module, src: str, flag: str, encoding=None):
     return term
 
 
-def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
+def property_to_bool_lean(module, property_smt: str, encoding=None,
+                          ctx: "LeanContext | None" = None) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
@@ -388,7 +389,8 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     Both sides get that map from `na.slot_accessors`, which is what keeps
     the property and the transition talking about the same variables.
 
-    The layout comes from the module's own wires. `encoding` is the run's
+    The layout comes from the module's own wires, read off `ctx` (the run's
+    `LeanContext`, or one built here). `encoding` is the run's
     `ModuleEncoding`, which the property is read on.
     """
     from ...codegen.context import LeanContext
@@ -397,7 +399,8 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
 
     term = _parse(module, property_smt, "--safety", encoding)
     try:
-        return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
+        return smt_to_lean_bool(
+            term, slot_accessors((ctx or LeanContext(module)).ctrl_next))
     except Refused as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
@@ -513,6 +516,7 @@ def run(
     project_name: str,
     prechecked: NAEncoding | None = None,
     encoding=None,
+    ctx: LeanContext | None = None,
     log: Callable = print,
 ) -> dict[str, str]:
     """Run the whole route on `claim`, a `--safety` one, and return the
@@ -531,7 +535,9 @@ def run(
 
     `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
     and the `--safety` property are both read on it.  A direct caller that
-    passes none gets one `run` makes, so the two still share it.
+    passes none gets one `run` makes, so the two still share it.  `ctx` is
+    the run's `LeanContext` (`ProjectHandle.ctx`), built likewise when it
+    is left out.
     """
     python = proveit.python or sys.executable
     simplify = proveit.simplify
@@ -545,13 +551,13 @@ def run(
         from ...smt.encoding import ModuleEncoding
 
         encoding = ModuleEncoding(module)
-    ctx = LeanContext(module)
+    ctx = ctx or LeanContext(module)
     if prechecked is None:
         prechecked = check_module(module, simplify, claim.init_pre, encoding)
     bodies, pre_lean = prechecked
 
     property_lean = property_to_bool_lean(module, str(claim.prp),
-                                          encoding=encoding)
+                                          encoding=encoding, ctx=ctx)
     model = write_na_model(
         path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )

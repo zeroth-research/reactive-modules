@@ -70,7 +70,7 @@ def hammer_only(hammer_file: str) -> None:
     print(f"Wrote {out}")
 
 
-def standalone(cert_file: str, module, lean_cert) -> None:
+def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
     No project, so no route: the predicates are the ones supplied, which is
@@ -79,7 +79,7 @@ def standalone(cert_file: str, module, lean_cert) -> None:
     out = Path(cert_file)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(generate_standalone_cert_lean(module, lean_cert))
+        out.write_text(generate_standalone_cert_lean(ctx, lean_cert))
     except (Refused, OSError) as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
     print(f"Wrote standalone certificate: {out}")
@@ -87,7 +87,7 @@ def standalone(cert_file: str, module, lean_cert) -> None:
     # the ones in a generated project carry the same headers and the same
     # imports. The functional encoding is already inlined in the standalone
     # certificate above, which is the base they import.
-    m2l = ModuleToLean4(module)
+    m2l = ModuleToLean4(ctx)
     layout = Layout(base=out.stem, flat=True, directory=out.parent)
     for enc in ENCODINGS:
         if not enc.cert_file:

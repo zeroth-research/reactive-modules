@@ -381,7 +381,7 @@ def certificate_files(
 
 
 def generate_standalone_cert_lean(
-    module: "Module",
+    src: "LeanContext | Module",
     lean_cert: LeanCertificate | None = None,
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
@@ -391,8 +391,9 @@ def generate_standalone_cert_lean(
     is always imported from the project-level ``ZerothHammer.lean``.
 
     Suitable for placing a single .lean file inside an existing lake project
-    such as ``tests/lean/Certs/``.
+    such as ``tests/lean/Certs/``. `src` is the run's `LeanContext`, or a
+    module to build one for.
     """
-    ctx = LeanContext(module)
+    ctx = src if isinstance(src, LeanContext) else LeanContext(src)
     module_code = ModuleToLean4(ctx).to_lean_functional()
     return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)
