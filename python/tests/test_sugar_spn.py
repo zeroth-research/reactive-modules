@@ -173,17 +173,34 @@ def test_le_swaps_the_operands_rather_than_negating():
     assert list(ge.read) == [b, a]
 
 
-def test_orderings_are_on_clock_values_alone():
+@pytest.mark.parametrize(
+    "body, ops",
+    [
+        (lambda n, m: n >= m, ["NatGe"]),
+        (lambda n, m: n <= m, ["NatGe"]),
+        (lambda n, m: n < m, ["NatGe", "Not"]),
+        (lambda n, m: n >= 2, ["Nat", "NatGe"]),  # the bound is a count literal
+        (lambda n, m: 2 <= n, ["Nat", "NatGe"]),
+    ],
+)
+def test_count_orderings_fold_to_natge(body, ops):
+    with collecting() as terms:
+        n, m = expr(Var(Nat()), theory=SPN), expr(Var(Nat()), theory=SPN)
+        body(n, m)
+    assert _ops(terms) == ops
+
+
+def test_orderings_stay_within_one_sort():
     with collecting():
         n = expr(Var(Nat()), theory=SPN)
         c = expr(Var(Clock()), theory=SPN)
         rate = d(expr(Var(Clock()), theory=SPN))
-        with pytest.raises(TypeError, match="orders clock values"):
-            n >= n  # a place is tested against zero, never ordered
-        with pytest.raises(TypeError, match="orders clock values"):
+        with pytest.raises(TypeError, match="one sort"):
             c >= n
-        with pytest.raises(TypeError, match="orders clock values"):
-            rate >= rate  # a rate is not a time
+        with pytest.raises(TypeError, match="one sort"):
+            n >= c
+        with pytest.raises(TypeError, match="a rate is not a time"):
+            rate >= rate
 
 
 def test_the_earlier_of_two_clocks():

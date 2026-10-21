@@ -456,9 +456,10 @@ class WExpr(AExpr):
 # expr() — single construction / coercion entry point
 class SExpr(Expr):
     """The scalar SPN sorts, Nat and Clock. The theory has only zero tests, the ordering
-    of two clocks, single-token steps and clock rates relative to a time form, so those
-    are the only operators that map: ``x == 0`` / ``x != 0``, ``a >= b`` and its three
-    siblings on clocks, ``n + 1`` / ``n - 1``, and ``k * d(t)`` for a rate."""
+    of two clocks or of two counts, single-token steps and clock rates relative to a time
+    form, so those are the only operators that map: ``x == 0`` / ``x != 0``, ``a >= b``
+    and its three siblings on clocks and on counts, ``n + 1`` / ``n - 1``, and
+    ``k * d(t)`` for a rate."""
 
     def __eq__(self, other):
         if isinstance(other, Expr) or other != 0:
@@ -469,40 +470,43 @@ class SExpr(Expr):
     def __ne__(self, other):
         return ~(self == other)
 
-    # --- ordering: one generator, `ClkGe`, and it is on clocks ---
+    # --- ordering: `ClkGe` on clock values, `NatGe` on token counts ---
 
     @staticmethod
-    def _clock_value(sort: Sort) -> None:
-        if not isinstance(sort, Clock) or _rank(sort):
-            raise TypeError(
-                f"SPN orders clock values alone, got {sort}: a place is tested with "
-                "`n == 0`, and a rate is not a time"
-            )
+    def _ordered(sort: Sort):
+        if isinstance(sort, Nat):
+            return SPN.NatGe()
+        if isinstance(sort, Clock) and not _rank(sort):
+            return SPN.ClkGe()
+        raise TypeError(
+            f"SPN orders clock values and token counts alone, got {sort}: a rate is not a time"
+        )
 
-    def _clk_cmp(self, other, *, swap: bool, negate: bool) -> "Expr":
-        """``a >= b`` is `ClkGe`; the other three are that with the operands swapped,
-        the answer negated, or both. The guard on `self` comes before the coercion so a
-        misuse raises instead of leaving a stray literal in the collector."""
-        self._clock_value(self.dtype)
+    def _cmp(self, other, *, swap: bool, negate: bool) -> "Expr":
+        """``a >= b`` is the sort's ordering; the other three are that with the operands
+        swapped, the answer negated, or both. The guard on `self` comes before the
+        coercion so a misuse raises instead of leaving a stray literal in the collector."""
+        op = self._ordered(self.dtype)
         o = self._coerce(other)
-        self._clock_value(o.dtype)
+        if o.dtype != self.dtype:
+            raise TypeError(f"SPN orders values of one sort, got {self.dtype} and {o.dtype}")
         a, b = (o, self) if swap else (self, o)
-        term = Term(SPN.ClkGe(), [Wire(Bool([1, 1]))], [a._wire, b._wire])
+        term = Term(op, [Wire(Bool([1, 1]))], [a._wire, b._wire])
         _emit(term)
         ge = _wrap(term.write[0], SPN)
         return ~ge if negate else ge
 
     def __ge__(self, o):
-        return self._clk_cmp(o, swap=False, negate=False)
+        return self._cmp(o, swap=False, negate=False)
 
     def __le__(self, o):  # a <= b  is  b >= a
-        return self._clk_cmp(o, swap=True, negate=False)
+        return self._cmp(o, swap=True, negate=False)
 
     def __lt__(self, o):  # a < b  is  not (a >= b)
-        return self._clk_cmp(o, swap=False, negate=True)
+        return self._cmp(o, swap=False, negate=True)
 
     def __gt__(self, o):  # a > b  is  not (b >= a)
-        return self._clk_cmp(o, swap=True, negate=True)
+        return self._cmp(o, swap=True, negate=True)
 
     def _step(self, o, op):
         if isinstance(o, Expr) or o != 1 or not isinstance(self.dtype, Nat):
