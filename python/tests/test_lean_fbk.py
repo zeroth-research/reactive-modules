@@ -8,7 +8,6 @@ one where all state slots have collapsed onto a single variable.
 """
 
 import re
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -18,11 +17,11 @@ import torch
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
 from zrth.lean.lowering.sorts import dtype_shape
 from zrth.lean.codegen.context import LeanContext
+from tests.verith import verith
 from zrth.lean.infer.fbk_proveit.engine import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.infer.fbk_proveit.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
-PKG_ROOT = Path(__file__).parent.parent
 
 
 # ── module builders ─────────────────────────────────────────────────────────
@@ -1046,15 +1045,6 @@ def test_a_patch_that_found_nothing_to_change_is_reported():
     assert run("theorem t : True := by\n  try smt\n  trivial\n") == []
 
 
-def _verith(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["uv", "run", "verith", *args],
-        capture_output=True,
-        text=True,
-        cwd=PKG_ROOT,
-    )
-
-
 @pytest.mark.parametrize(
     "extra,expected",
     [
@@ -1074,7 +1064,7 @@ def _verith(*args) -> subprocess.CompletedProcess:
     ],
 )
 def test_fbk_proveit_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
-    r = _verith(
+    r = verith(
         str(FIXTURE_DIR / "counter.py"),
         "-o", str(tmp_path), "-p", "P",
         "--fbk-proveit", str(tmp_path),
@@ -1101,7 +1091,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
     nothing.  The blank is the error.
     """
     out = tmp_path / "out"
-    r = _verith(
+    r = verith(
         str(FIXTURE_DIR / "counter.py"),
         "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path),
@@ -1113,7 +1103,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
 
 
 def test_ic3ia_alone_is_an_error(tmp_path):
-    r = _verith(
+    r = verith(
         str(FIXTURE_DIR / "counter.py"),
         "--safety", "(= (X @intf.0) 0)", "-o", str(tmp_path), "-p", "P",
         "--ic3ia", "/bin/true",
@@ -1175,7 +1165,7 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     generated — otherwise a typo leaves a project whose lakefile points at
     nothing."""
     out = tmp_path / "out"
-    r = _verith(
+    r = verith(
         str(FIXTURE_DIR / "counter.py"),
         "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path / "nowhere"),

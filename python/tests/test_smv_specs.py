@@ -1,15 +1,14 @@
 """An SMV model's own specifications as the claim."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from zrth.lean import inputs
 from zrth.smv import SMVRefused, parse_smv, read_smv
+from tests.verith import verith
 
 SMV = Path(__file__).parent / "smv_fixtures"
-PKG_ROOT = Path(__file__).parent.parent
 MOD10 = (SMV / "mod10.smv").read_text()
 
 
@@ -57,15 +56,10 @@ def test_a_stated_claim_is_in_internal_names():
     ]
 
 
-def _verith(*args):
-    return subprocess.run(["uv", "run", "verith", *args], capture_output=True,
-                          text=True, cwd=PKG_ROOT)
-
-
 def test_the_chosen_spec_is_the_claim(tmp_path):
-    r = _verith(str(SMV / "mod10_specs.smv"), "--spec", "1",
-                "--infer", "houdini", "--pre-check", "cvc5",
-                "-o", str(tmp_path))
+    r = verith(str(SMV / "mod10_specs.smv"), "--spec", "1",
+               "--infer", "houdini", "--pre-check", "cvc5",
+               "-o", str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert ".. the claim is the input's line 14: INVARSPEC (--safety)" in r.stdout
     assert ".. --safety, in internal names: (and (<= 0 s0) (<= s0 9))" in r.stdout
@@ -78,14 +72,14 @@ def test_the_chosen_spec_is_the_claim(tmp_path):
     (("--spec", "1", "--safety", "(<= (X x) 9)"), "--safety/--buchi already"),
 ])
 def test_an_ambiguous_claim_is_refused(tmp_path, args, why):
-    r = _verith(str(SMV / "mod10_specs.smv"), *args, "-o", str(tmp_path))
+    r = verith(str(SMV / "mod10_specs.smv"), *args, "-o", str(tmp_path))
     assert r.returncode != 0
     assert "Traceback" not in r.stderr, r.stderr
     assert why in r.stderr, r.stderr
 
 
 def test_spec_is_only_meaningful_for_smv_input(tmp_path):
-    r = _verith(str(Path(__file__).parent / "fixtures" / "counter.py"),
-                "--spec", "1", "-o", str(tmp_path))
+    r = verith(str(Path(__file__).parent / "fixtures" / "counter.py"),
+               "--spec", "1", "-o", str(tmp_path))
     assert r.returncode != 0
     assert "--spec is only meaningful for smv input" in r.stderr
