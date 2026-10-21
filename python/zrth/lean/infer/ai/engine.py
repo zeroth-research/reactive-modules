@@ -9,6 +9,7 @@ from ...core.certificate import Claim, LeanAnswer
 from ...core.errors import Refused
 from ..common.llm import (
     DEFAULT_MODEL, describe_preconditions, make_client, reply_fields,
+    source_block,
 )
 
 GENERATE_SYSTEM = """\
@@ -221,7 +222,7 @@ class AiEngine:
     def _generate(self, claim: Claim, feedback: str | None) -> tuple[str, str]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```lean\n{self.source}\n```\n\n"
+            f"{source_block(self.source)}"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n"
@@ -240,7 +241,7 @@ class AiEngine:
     ) -> tuple[bool, str | None]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```lean\n{self.source}\n```\n\n"
+            f"{source_block(self.source)}"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n\n"

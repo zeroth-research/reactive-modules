@@ -41,6 +41,11 @@ def reply_fields(text: str, *fields: str) -> dict[str, str]:
     return out
 
 
+def source_block(source: str) -> str:
+    """The module's Lean encoding, as the opening block of a prompt."""
+    return f"Source code:\n```lean\n{source}\n```\n\n"
+
+
 def describe_preconditions(claim: Claim) -> str:
     """`claim`'s preconditions, as the line of a prompt that states them."""
     parts = []

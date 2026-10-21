@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import cvc5
 
 from ...smt.predicates import PredicateParser, parse_predicate
-from ..common.llm import reply_fields
+from ..common.llm import reply_fields, source_block
 
 
 CEGIS_GENERATE_SYSTEM = """\
@@ -241,7 +241,7 @@ def _request(env: PredicateParser, source: str, prp: str | None,
         else "Property (prp), to hold infinitely often"
     )
     user_msg = (
-        f"Source code:\n```lean\n{source}\n```\n\n"
+        f"{source_block(source)}"
         f"{goal}: {prp}\n\n"
         f"{preconds}\n\n"
         f"{state_description(env)}\n\n"
