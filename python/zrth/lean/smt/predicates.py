@@ -12,6 +12,7 @@ one parser every predicate is read with.
 from __future__ import annotations
 
 import ast
+import functools
 import operator
 import re
 
@@ -361,9 +362,8 @@ def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
     parser cannot read, which it never was. Anything else raised is a bug,
     and is left to say so.
     """
-    ns = _pyeval_namespace(env)
     try:
-        result = _pyeval(src, ns)
+        result = _pyeval(src, env.namespace)
     except (SyntaxError, _NotPredicate):
         result = None
     except (TypeError, ValueError, IndexError, RuntimeError) as e:
@@ -445,6 +445,13 @@ class PredicateParser:
             )
             if sort.isBitVector()
         }
+
+    @functools.cached_property
+    def namespace(self) -> dict:
+        """What a Python-expression predicate can name, built once: every
+        candidate a search reads is parsed through it, and building it is
+        a wrapper and a shape read per variable. Its values hold no state."""
+        return _pyeval_namespace(self)
 
     # --- internals ------------------------------------------------------
 
