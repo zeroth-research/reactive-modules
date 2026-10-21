@@ -10,7 +10,6 @@ from functools import cached_property
 from zrth.lean.codegen.context import LeanContext
 from zrth import Module
 
-from zrth.lean.codegen.encodings.common import scalar_bindings_with_recon, prepend_recon
 from zrth.lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
 from zrth.lean.codegen.encodings.circuit import (
     atom_to_lean_circuit as _atom_to_lean_circuit,
@@ -58,22 +57,15 @@ class ModuleToLean4:
     # Functional encoding
     # ------------------------------------------------------------------
 
-    def atom_to_lean_functional(self) -> str:
-        return atom_to_lean_functional(self.ctx)
-
     def to_lean_functional(self) -> str:
         """Generate the functional init/update definitions (plus constants)."""
         return "{}\n\n{}".format(
-            constants_block(self.ctx), self.atom_to_lean_functional()
+            constants_block(self.ctx), atom_to_lean_functional(self.ctx)
         )
 
     # ------------------------------------------------------------------
     # Circuit encoding
     # ------------------------------------------------------------------
-
-    def atom_to_lean_circuit(self) -> str:
-        """Generate the full Lean4 source for this module as a combinational circuit."""
-        return self._circuit[0]
 
     def to_lean_equiv_theorems(self) -> str:
         """Generate theorems proving circuit ≡ functional."""
@@ -81,8 +73,9 @@ class ModuleToLean4:
         return _to_lean_equiv_theorems(self.ctx, init_names, update_names)
 
     def to_lean_circ(self) -> str:
+        """The module as a combinational circuit, and circuit ≡ functional."""
         return "{}\n\n{}".format(
-            self.atom_to_lean_circuit(),
+            self._circuit[0],
             self.to_lean_equiv_theorems(),
         )
 
@@ -90,17 +83,15 @@ class ModuleToLean4:
     # Scalar encoding
     # ------------------------------------------------------------------
 
-    def atom_to_lean_scalar(self) -> str:
-        """Generate the scalar encoding inside ``namespace Scalar``."""
-        return self._scalar[0]
-
     def to_lean_scalar_equiv(self) -> str:
         """Generate theorems proving init/update = pack ∘ Scalar.init/update ∘ unpack."""
         return _to_lean_scalar_equiv(self.ctx, self._scalar[1])
 
     def to_lean_scalar(self) -> str:
+        """The scalar encoding inside ``namespace Scalar``, and its
+        composition theorems."""
         return "{}\n\n{}".format(
-            self.atom_to_lean_scalar(),
+            self._scalar[0],
             self.to_lean_scalar_equiv(),
         )
 
@@ -108,20 +99,13 @@ class ModuleToLean4:
     # Relational encoding
     # ------------------------------------------------------------------
 
-    def atom_to_lean_rel(self) -> str:
+    def to_lean_rel(self) -> str:
         """Generate the relational encoding inside ``namespace ScalarRel``."""
         return _atom_to_lean_rel(self.ctx)
 
-
-    def atom_to_lean_mat_rel(self) -> str:
+    def to_lean_mat_rel(self) -> str:
         """Generate the matrix-domain relational encoding inside ``namespace Rel``."""
         return _atom_to_lean_mat_rel(self.ctx)
-
-    def to_lean_mat_rel(self) -> str:
-        return self.atom_to_lean_mat_rel()
-
-    def to_lean_rel(self) -> str:
-        return self.atom_to_lean_rel()
 
 
     # ------------------------------------------------------------------

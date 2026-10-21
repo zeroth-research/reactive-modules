@@ -24,7 +24,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort, BitVec, Bool, Int, Real, Term
-from ..lowering.sorts import MatShape, dtype_shape, itype_name, wire_shape  # noqa: F401
+from ..lowering.sorts import MatShape, itype_name, wire_shape
 from ..lowering.values import decimal_fraction
 from ..lowering.ops import smt_emitter
 

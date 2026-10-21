@@ -63,10 +63,8 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
     extl_next = [X(v) for v in module.extl]
     ctrl_next = [X(v) for v in module.ctrl]
-    ctrl_latched = list(module.ctrl)
 
     total_extl_tokens = sum(_token_count(w) for w in extl_next)
-    total_ctrl_tokens = sum(_token_count(w) for w in ctrl_next)
 
     lines: list[str] = []
 

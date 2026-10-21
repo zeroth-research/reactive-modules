@@ -11,7 +11,7 @@ from __future__ import annotations
 import cvc5
 from cvc5 import Kind
 
-from zrth import Wire, Sort
+from zrth import Wire
 from ..core.errors import Refused
 from ..lowering.sorts import dtype_shape, is_scalar_shape, wire_shape
 from ..lowering.elements import product_accessor
