@@ -143,7 +143,7 @@ def _eval(op, r, rng):
             return r[0] == 0
         case SPN.ClkIsZero():
             return r[0] == 0.0
-        case SPN.ClkGe():
+        case SPN.ClkGe() | SPN.NatGe():
             return r[0] >= r[1]
         case SPN.Inc():
             return r[0] + 1
@@ -249,6 +249,8 @@ def _affine(op, r, in_flow, breakpoints):
             return TDEP
         case SPN.IsZero():
             return TDEP if r[0] is TDEP else r[0] == 0
+        case SPN.NatGe():
+            return TDEP if TDEP in r else r[0] >= r[1]
         case SPN.And():
             if r[0] is False or r[1] is False:
                 return False
