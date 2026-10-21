@@ -46,7 +46,6 @@ class ProjectHandle:
 
     dir: Path
     name: str
-    module: "Module"
     ctx: "LeanContext"          # built by `create_project`; not built again
     reads: frozenset[str]       # ENCODINGS suffixes this route declared
     owns: tuple[str, ...]       # project-relative paths this route declared

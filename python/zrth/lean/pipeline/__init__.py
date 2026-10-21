@@ -180,7 +180,6 @@ def main():
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,
-            module=module,
             ctx=ctx,
             reads=frozenset(settings.route.reads),
             owns=settings.route.owns,
@@ -193,7 +192,7 @@ def main():
         # of ours to be complete about and nothing to regenerate from.
         lean_cert = (
             None if settings.route.returns == "files"
-            else regenerate(settings, smt, handle, store, claim, result)
+            else regenerate(settings, smt, handle, claim, result)
         )
         handle.write_files(result.files)
         show_certificate(result.cert, problem.names)

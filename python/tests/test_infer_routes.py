@@ -443,7 +443,6 @@ def _handle(tmp_path, reads=(), owns=(), resumes=(), store=None):
     return ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=None,
         ctx=None,
         reads=frozenset(reads),
         owns=tuple(owns),
@@ -850,7 +849,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
         route=SimpleNamespace(name="test-route", errors_self_named=False),
     )
     with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
-        certify.regenerate(settings, None, _NoteHandle(store), store,
+        certify.regenerate(settings, None, _NoteHandle(store),
                            Claim(prp="(= s0 0)", kind="safety"),
                            InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
     notes = [a for a in store.list() if a.role == "note"]

@@ -156,7 +156,7 @@ def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
     is missing -- so it is left unrecorded rather than filed against a run
     that never started.
     """
-    store = getattr(handle, "artifacts", None)
+    store = handle.artifacts
     if store is None or store.notes or e.setup:
         return
     searched = e.searched
@@ -305,7 +305,7 @@ def lean_context(settings: Settings, module) -> LeanContext:
     return ctx
 
 
-def regenerate(settings: Settings, smt, handle: ProjectHandle, store,
+def regenerate(settings: Settings, smt, handle: ProjectHandle,
                claim: Claim, result: InferResult) -> LeanCertificate:
     """The project's certificate, rewritten from the route's answer.
 
@@ -316,6 +316,7 @@ def regenerate(settings: Settings, smt, handle: ProjectHandle, store,
     writes more of the project and this pipeline go through one writer.
     """
     cert, lean = result.cert, result.lean
+    store = handle.artifacts
     if settings.pre_check == "cvc5":
         pre_check(smt, claim, lean or cert, settings.budget,
                   artifacts=store)

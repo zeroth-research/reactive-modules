@@ -592,7 +592,6 @@ def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
@@ -621,7 +620,6 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
@@ -751,7 +749,6 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
@@ -783,7 +780,7 @@ def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
     store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
     store.put("inv", "(>= s0 0)", status="proved", language="smt", what="x")
     handle = ProjectHandle(
-        dir=tmp_path, name="Rea", module=module_of("m_countdown"), ctx=None,
+        dir=tmp_path, name="Rea", ctx=None,
         reads=frozenset(), owns=(), resumes=frozenset({"inv"}), artifacts=store,
     )
     inp = InferInput(
