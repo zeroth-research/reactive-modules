@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.errors import Refused
 from ..infer import route_by_name
 from ..smt.limits import SmtBudget
 from .checks import (
@@ -128,7 +129,7 @@ def parse_args(argv: "list[str] | None" = None, *,
     if route is not None and route.resolve is not None:
         try:
             settings.route_config = route.resolve(settings.route_opts)
-        except Exception as e:                      # the route's own error type
+        except Refused as e:
             parser.error(str(e))
 
     return settings

@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from ...core.errors import Refused
 from ...core.options import Opt
 from ...project.names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
 from ..io import InferInput, InferResult
@@ -55,20 +54,14 @@ def _check_project_name(settings, opts) -> "str | None":
 
 
 def _precheck(module, opts, config, claim, smt):
-    from .engine import ProveItError, check_module
+    from .engine import check_module
 
-    try:
-        return check_module(
-            module,
-            opts["fbk_simplify"] == "cvc5",
-            claim.init_pre if claim else None,
-            smt(),
-        )
-    except ProveItError as e:
-        # One exception type crosses the seam, so `main` catches what every
-        # route raises. The message keeps naming `--fbk-proveit` itself,
-        # which is what `errors_self_named` is about.
-        raise Refused(str(e)) from e
+    return check_module(
+        module,
+        opts["fbk_simplify"] == "cvc5",
+        claim.init_pre if claim else None,
+        smt(),
+    )
 
 
 def _lakefile(config, project_name: str) -> "LakefileParts":
@@ -114,7 +107,7 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import ProveIt, ProveItError
+    from .engine import ProveIt
     from .engine import run as run_proveit
 
     proveit = ProveIt(
@@ -123,17 +116,14 @@ def _run(inp: InferInput) -> InferResult:
         simplify=inp.opts["fbk_simplify"] == "cvc5",
         equivalence=inp.opts["fbk_equiv"] == "lean",
     )
-    try:
-        files = run_proveit(
-            proveit, inp.module, inp.claim,
-            path=inp.project.path,
-            project_name=inp.project.name,
-            prechecked=inp.prechecked,
-            encoding=inp.smt(),
-            log=inp.log,
-        )
-    except ProveItError as e:
-        raise Refused(str(e), searched=e.searched) from e
+    files = run_proveit(
+        proveit, inp.module, inp.claim,
+        path=inp.project.path,
+        project_name=inp.project.name,
+        prechecked=inp.prechecked,
+        encoding=inp.smt(),
+        log=inp.log,
+    )
     # The certificate carries ic3ia's invariant: no predicates come back,
     # which is what this route's `returns="files"` declares.
     return InferResult(files=files)
