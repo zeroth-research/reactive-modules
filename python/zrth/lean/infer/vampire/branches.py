@@ -12,12 +12,8 @@ from ...core.errors import Refused
 from ...smt.terms import ite_conditions
 from ...smt.claim import SynthContext
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+import cvc5
+from cvc5 import Kind
 
 
 # A branch is one assignment of the transition's `ite` conditions, so the

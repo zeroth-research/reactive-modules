@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from ..core.errors import Refused, require
+from ..core.errors import Refused
 from .obligations import Query
 from .limits import bounded_solver
 from .script import decimals, script
@@ -258,7 +258,9 @@ class Cvc5Solver(Solver):
         super().__init__(seconds=seconds, log=log)
         # Lazily, so that the route table above can name this class without
         # a bare `verith` run paying for the import.
-        self.kind = require("cvc5", "--houdini-solver cvc5").Kind
+        from cvc5 import Kind
+
+        self.kind = Kind
         self.tm = tm
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:

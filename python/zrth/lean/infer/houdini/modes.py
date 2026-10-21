@@ -48,15 +48,8 @@ import time
 from fractions import Fraction
 from itertools import product
 
-try:
-    import z3                                        # type: ignore
-except ImportError:                                  # pragma: no cover
-    z3 = None
-
-try:
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    Kind = None
+import z3
+from cvc5 import Kind
 
 from ...smt.script import decimals, declarations, smt_lit
 from ...smt.terms import free_constants, literals
@@ -93,8 +86,6 @@ def mode_bounds(ctx, ob, *, seconds: float = 8.0, log=print) -> list[str]:
     descent reached, and whole numbers, which are what a reader of the
     certificate expects and often all a proof needs.
     """
-    if z3 is None:                                   # pragma: no cover
-        return []
     t0 = time.monotonic()
     try:
         model = _Model.of(ctx, ob, t0 + seconds)

@@ -20,12 +20,7 @@ from ..common.synth import (
 from .branches import Branch
 from .template import Template, window_for
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 
 def script_for(conjecture) -> str:

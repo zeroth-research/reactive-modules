@@ -72,12 +72,7 @@ from ...smt.limits import bounded_solver, call_ms
 from ...smt.obligations import initial, transition
 from ..common.synth import Search, body_of, readings, moduli, program_constants, record
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 # Grammars, by what their atoms can say.  `congruence` is the default because
 # it is the only one that says anything the rest of the package cannot: the

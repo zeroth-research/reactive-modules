@@ -134,12 +134,7 @@ from .search import Search, named
 from .simulate import Draws, simulate
 from .solvers import DEFAULT_SOLVER, SolverSpec
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 
 class HoudiniEngine(Engine):

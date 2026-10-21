@@ -11,10 +11,7 @@ from itertools import combinations
 from ...smt.claim import SynthContext
 from ..common.synth import columns, program_constants
 
-try:
-    from cvc5 import Kind                            # type: ignore
-except ImportError:                                  # pragma: no cover
-    Kind = None
+from cvc5 import Kind
 
 
 # Differences are quadratic in the width; past this the second template is

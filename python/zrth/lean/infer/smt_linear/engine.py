@@ -112,12 +112,7 @@ from ..common.synth import (
     split_conditions,
 )
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 # What this route reads: every kind with an integer reading. The context
 # refuses any other component before a solver starts, and `readings` turns

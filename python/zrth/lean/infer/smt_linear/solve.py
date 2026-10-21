@@ -19,10 +19,7 @@ from ...smt.claim import SynthContext
 from ...smt.limits import bounded_solver, call_ms
 from ..common.synth import program_constants
 
-try:
-    from cvc5 import Kind                            # type: ignore
-except ImportError:                                  # pragma: no cover
-    Kind = None
+from cvc5 import Kind
 
 
 # How many counterexamples the fallback loop may collect before it gives up.

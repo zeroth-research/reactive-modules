@@ -55,12 +55,7 @@ from ...artifacts.record import found, note
 from ...smt.script import decimals, smt_lit
 from ...smt.terms import free_constants, literals, nodes
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 if TYPE_CHECKING:
     from ...smt.obligations import Obligations

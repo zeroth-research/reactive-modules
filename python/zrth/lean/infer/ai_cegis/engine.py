@@ -12,15 +12,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-try:
-    import cvc5  # type: ignore
-except ImportError:
-    cvc5 = None
-
 from zrth import Module
 
 from ...core.certificate import Certificate, Claim
-from ...core.errors import Refused, require
+from ...core.errors import Refused
 from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from ...smt.obligations import (
@@ -81,7 +76,6 @@ class AiCegisEngine(Engine):
         log=print,
     ):
         self.source = source
-        require("cvc5", "--infer ai-cegis")
         self.module = module
         # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
         self.budget = budget

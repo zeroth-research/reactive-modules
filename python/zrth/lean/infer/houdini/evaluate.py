@@ -14,12 +14,8 @@ from fractions import Fraction
 
 from ...smt.terms import free_constants
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+import cvc5
+from cvc5 import Kind
 
 
 def _term(tm, sort, value):
@@ -132,7 +128,7 @@ def _selected(t) -> int:
     raise Unevaluable(f"no element for {t}")      # pragma: no cover
 
 
-_OPS = {} if Kind is None else {
+_OPS = {
     Kind.ITE: _ite,
     Kind.AND: _and,
     Kind.OR: _or,
