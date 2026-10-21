@@ -2,10 +2,12 @@
 
 A transition and a place are modules; you compose them like any other modules. An arc is
 the variables between a transition and a place: the event the transition toggles when it
-fires, and for an arc from a place to a transition the Bool the place keeps equal to "there
-are tokens here for it". A production arc goes from a transition into a place (the place's
-input, the transition's output); a consumption arc goes from a place to the transition that
-takes the token (the place's output, the transition's input):
+fires, and for an arc from a place to a transition the Bool the place keeps equal to "this
+arc lets it fire". A production arc goes from a transition into a place (the place's input,
+the transition's output) and adds `multiplicity` tokens per firing. The other kinds go from
+a place to a transition (the place's output, the transition's input): a consumption arc
+needs `multiplicity` tokens and takes them, an enabling arc needs them and leaves them, an
+inhibitor arc needs fewer than `multiplicity` and leaves them.
 
     from zrth import Module as compose
     from zrth.petri import Arc, Place, Transition
@@ -24,13 +26,12 @@ the time reference `TIME` (`t=` for another) while it is non-negative; whenever 
 the clock is re-armed, and the transition fires if every input arc is enabled (an expiry
 otherwise is a lost attempt; for exponential rates this is the same process as a clock that
 waits). The clock is private, reachable as `transition.clock` to plot a trace. A place owns
-its token count: one token in per firing input, one out per firing output, never below
-zero, and it keeps each output arc's `enabled` equal to the count being non-zero, in the
-same round the count changes. Two transitions firing in one round on a place with one token
-consume in the order of `outputs`, the second firing dropped there.
+its token count: the tokens of each firing input come in, those of each firing consumption
+go out while there are enough, and it keeps each output arc's `enabled` current in the
+same round the count changes. Two transitions firing in one round and competing for the
+tokens are served in the order of `outputs`, a firing the count cannot serve dropped there.
 
-Enabling and inhibitor arcs, and a multiplicity other than one, wait for a comparison on
-token counts in the theory; a rate given by a variable waits for the theory too.
+A rate given by a variable waits for the theory.
 """
 
 from .zrth import SPN, Var
@@ -50,10 +51,8 @@ class Arc:
     def __init__(self, kind, multiplicity=1):
         if kind not in KINDS:
             raise TypeError(f"an arc's kind is one of {KINDS}, got {kind!r}")
-        if kind in ("enabling", "inhibitor"):
-            raise NotImplementedError(f"{kind} arcs wait for the comparison on token counts")
-        if multiplicity != 1:
-            raise NotImplementedError("a multiplicity waits for the comparison on token counts")
+        if isinstance(multiplicity, bool) or not isinstance(multiplicity, int) or multiplicity < 1:
+            raise TypeError(f"an arc's multiplicity is a positive integer, got {multiplicity!r}")
         self.kind, self.multiplicity = kind, multiplicity
         self.fired = Var(Event())
         self.enabled = None if kind == "production" else Var(Bool([1, 1]))
@@ -62,8 +61,12 @@ class Arc:
     def to_place(self) -> bool:
         return self.kind == "production"
 
+    @property
+    def consumes(self) -> bool:
+        return self.kind == "consumption"
+
     def __repr__(self):
-        return f"Arc({self.kind!r}, #{self.fired.id})"
+        return f"Arc({self.kind!r}, {self.multiplicity}, #{self.fired.id})"
 
 
 def _arcs(arcs, to_place, what):
@@ -146,24 +149,30 @@ class Place(Module):
             raise TypeError("a place needs at least one input or output")
         count = Var(Nat())
         k = len(outputs)
+        moving = [a for a in inputs + outputs if a.to_place or a.consumes]
 
-        # the variables bind positionally: n, *enabled, *events (inputs' then outputs')
+        def lets_fire(n, arc):
+            return ~(n >= arc.multiplicity) if arc.kind == "inhibitor" else n >= arc.multiplicity
+
+        # the variables bind positionally: n, *enabled, *events (the moving arcs')
         def init(self, *events):
-            return initial, *[initial != 0] * k
+            return initial, *[(initial < a.multiplicity) == (a.kind == "inhibitor") for a in outputs]
 
         def next(self, n, *rest):
             events = rest[k:]
-            for ev in events[: len(inputs)]:
-                n = ite(fired(ev), n + 1, n)
-            for ev in events[len(inputs) :]:
-                n = ite(fired(ev) & (n != 0), n - 1, n)
-            return n, *[n != 0] * k
+            for arc, ev in zip(moving, events):
+                f = fired(ev)
+                moved = n
+                for _ in range(arc.multiplicity):
+                    moved = moved + 1 if arc.to_place else moved - 1
+                n = ite(f if arc.to_place else f & (n >= arc.multiplicity), moved, n)
+            return n, *[lets_fire(n, a) for a in outputs]
 
         self = _build(
             cls,
             {"init": init, "next": next},
             ctrl=(count, *[a.enabled for a in outputs]),
-            extl=tuple(a.fired for a in inputs + outputs),
+            extl=tuple(a.fired for a in moving),
         )
         self.initial, self.name, self.count = initial, name, count
         self.inputs, self.outputs = inputs, outputs

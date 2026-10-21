@@ -47,14 +47,49 @@ def test_birth_death_is_the_example_net():
 def test_arcs_carry_the_firing_and_the_enabling():
     prod, cons = Arc("production"), Arc("consumption")
     assert prod.to_place and prod.enabled is None and prod.fired.dtype == Event()
-    assert not cons.to_place and cons.enabled is not None and cons.multiplicity == 1
+    assert not cons.to_place and cons.consumes and cons.enabled is not None
+    assert cons.multiplicity == 1 and Arc("enabling", 3).multiplicity == 3
+    assert not Arc("enabling").consumes and not Arc("inhibitor").to_place
     with pytest.raises(TypeError, match="kind"):
         Arc("teleport")
-    for kind in ("enabling", "inhibitor"):
-        with pytest.raises(NotImplementedError, match="token counts"):
-            Arc(kind)
-    with pytest.raises(NotImplementedError, match="multiplicity"):
-        Arc("consumption", multiplicity=2)
+    with pytest.raises(TypeError, match="multiplicity"):
+        Arc("consumption", multiplicity=0)
+
+
+def test_multiplicity_moves_that_many_tokens_atomically():
+    # pairs come in, triples go out while there are at least three
+    two, three = Arc("production", 2), Arc("consumption", 3)
+    maker, taker = Transition(rate=1.0, outputs=[two]), Transition(rate=1.0, inputs=[three])
+    p = Place(initial=1, inputs=[two], outputs=[three])
+    trace = simulate(compose(maker, taker, p), horizon=100.0, seed=6)
+    n = trace.series(p.count)
+    assert all(v >= 0 for v in n) and n[0] == 1 and not trace.states[0][three.enabled]
+    for i in range(1, len(trace)):
+        expected = n[i - 1] + 2 * _fired(trace, i, two)
+        if _fired(trace, i, three):
+            assert trace.before[i][three.enabled] and n[i - 1] >= 3
+            expected -= 3
+        assert n[i] == expected and trace.states[i][three.enabled] == (n[i] >= 3)
+
+
+def test_an_enabling_arc_needs_the_tokens_and_leaves_them():
+    key, done = Arc("enabling"), Arc("production")
+    work = Transition(rate=2.0, inputs=[key], outputs=[done])
+    keys, finished = Place(initial=1, outputs=[key]), Place(inputs=[done])
+    trace = simulate(compose(work, keys, finished), horizon=20.0, seed=1)
+    assert all(v == 1 for v in trace.series(keys.count))
+    assert trace.series(finished.count)[-1] > 10
+    assert set(keys.extl) == set()  # nothing moves its tokens: it reads no firing
+
+
+def test_an_inhibitor_arc_enables_while_there_are_fewer_tokens():
+    stop, fill = Arc("inhibitor", 2), Arc("production")
+    filler = Transition(rate=5.0, inputs=[stop], outputs=[fill])
+    tank = Place(initial=0, inputs=[fill], outputs=[stop])
+    trace = simulate(compose(filler, tank), horizon=20.0, seed=1)
+    n = trace.series(tank.count)
+    assert n[-1] == 2 and max(n) == 2 and n.count(2) > 5  # fills to two and stops there
+    assert all(s[stop.enabled] == (s[tank.count] < 2) for s in trace.states)
 
 
 def test_a_transition_and_a_place_are_modules():
