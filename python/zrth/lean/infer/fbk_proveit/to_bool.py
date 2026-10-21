@@ -87,7 +87,7 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
 
     if k == Kind.APPLY_SELECTOR:
         obj = t[1]
-        idx = selector_index(t[0])
+        idx = selector_index(t)
         # A tuple built on the spot -- `smt.encode` packs every matrix-valued
         # wire, so a constant matrix arrives as `select k (tuple …)`. Project
         # it away here: a constructor has no form `lean2vmt` reads, and the

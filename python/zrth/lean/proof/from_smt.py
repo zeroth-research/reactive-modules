@@ -326,13 +326,12 @@ def _walk(
         return f"((({recur(child)}) : Int) : Real)"
 
     if k == Kind.APPLY_SELECTOR:
-        sel = t[0]
         obj = t[1]
         if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in var_wire:
             raise Refused(
                 f"APPLY_SELECTOR against non-bound term not supported: {t}"
             )
-        idx = selector_index(sel)
+        idx = selector_index(t)
         sname = obj.getSymbol()
         wire = var_wire[sname]
         i, j = divmod(idx, wire_shape(wire).n)

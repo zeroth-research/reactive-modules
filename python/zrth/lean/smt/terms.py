@@ -135,14 +135,15 @@ def min_max_of(t) -> str | None:
     return _min_max_table()[(kind, in_order)]
 
 
-def selector_index(sel) -> int:
-    """Extract the flat projection index from a tuple-selector term.
+def selector_index(t) -> int:
+    """Which element `t`, an `APPLY_SELECTOR` on a tuple, reads: its flat
+    index.
 
-    cvc5 auto-generates selector symbols like `__cvc5_tuple_N_stor_K` where
-    K is the field index. We parse K from the symbol.
+    By identity against the datatype's own selectors rather than by reading
+    the index out of the printed name: the name is cvc5's to spell.
     """
-    sym = sel.getSymbol()
-    # e.g. '__cvc5_tuple_2_stor_0' → 0
-    if "_stor_" in sym:
-        return int(sym.rsplit("_stor_", 1)[1])
-    raise ValueError(f"Cannot extract selector index from `{sym}`")
+    dt = t[1].getSort().getDatatype()[0]
+    for j in range(dt.getNumSelectors()):
+        if t[0] == dt[j].getTerm():
+            return j
+    raise ValueError(f"no element of {t[1].getSort()} is read by {t}")

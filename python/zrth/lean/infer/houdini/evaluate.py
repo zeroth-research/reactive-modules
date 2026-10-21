@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from fractions import Fraction
 
-from ...smt.terms import free_constants
+from ...smt.terms import free_constants, selector_index
 
 import cvc5
 from cvc5 import Kind
@@ -113,19 +113,6 @@ def _selector(j: int):
     def pick(vals):
         return _UNDEF if vals[0] is _UNDEF else vals[0][j]
     return pick
-
-
-def _selected(t) -> int:
-    """Which element `t`, an `APPLY_SELECTOR`, reads.
-
-    By identity against the datatype's own selectors rather than by reading
-    the index out of the printed name: the name is cvc5's to spell.
-    """
-    dt = t[1].getSort().getDatatype()[0]
-    for j in range(dt.getNumSelectors()):
-        if t[0] == dt[j].getTerm():
-            return j
-    raise Unevaluable(f"no element for {t}")      # pragma: no cover
 
 
 _OPS = {
@@ -230,7 +217,7 @@ class Evaluator:
                     stack.append((t, True))
                     stack.extend((c, False) for c in reversed(kids))
                     continue
-                fn = (_selector(_selected(t)) if k == Kind.APPLY_SELECTOR
+                fn = (_selector(selector_index(t)) if k == Kind.APPLY_SELECTOR
                       else _tuple)
                 op = (fn, tuple(slot[c.getId()] for c in kids))
             elif k not in _OPS:
