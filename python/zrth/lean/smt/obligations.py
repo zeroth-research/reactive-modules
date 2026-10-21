@@ -455,25 +455,13 @@ class Obligations:
         return out
 
     def _select(self, t, k):
-        """Element `k` of `t`, pushed down to where the tuple is built.
+        """Element `k` of `t`, pushed down to where the tuple is built
+        (`select_element`): a round that branches, as `m_mixed` does when
+        it resets its vector instead of decrementing it, is an `ite`
+        between tuples, which `simplify` does not fold."""
+        from .encode import select_element
 
-        `simplify` folds a select of a constructor, but not one of an `ite`
-        *between* constructors -- and that is exactly the shape of a round
-        that branches, as `m_mixed` does when it resets its vector instead
-        of decrementing it. Pushing the select into the branches is what
-        leaves a scalar per element rather than a tuple under a selector.
-        """
-        from cvc5 import Kind
-
-        tm = self.tm
-        if t.getKind() == Kind.ITE:
-            return tm.mkTerm(Kind.ITE, t[0],
-                             self._select(t[1], k), self._select(t[2], k))
-        if t.getKind() == Kind.APPLY_CONSTRUCTOR:
-            return list(t)[1 + k]
-        ctor = t.getSort().getDatatype()[0]
-        return self._readable(
-            tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), t))
+        return select_element(self.tm, t, k, leaf=self._readable)
 
     def _defines(self, holders, values) -> list:
         """The round as `define-fun`s: one per constant, so one per element.

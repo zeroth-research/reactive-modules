@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING
 
 from ...smt.claim import SynthContext, reading_kind
 from ...artifacts.record import found, note
+from ...smt.encode import tuple_select
 from ...smt.script import decimals, smt_lit
 from ...smt.terms import free_constants, literals, nodes
 
@@ -125,9 +126,7 @@ def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
     var = ctx.state[i]
     if slot is None:
         return f"s{i}", var
-    ctor = ctx.env.state_sorts[i].getDatatype()[0]
-    return (f"((_ tuple.select {slot}) s{i})",
-            ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
+    return f"((_ tuple.select {slot}) s{i})", tuple_select(ctx.tm, var, slot)
 
 
 @dataclass(frozen=True)

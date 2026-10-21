@@ -11,33 +11,14 @@ from ..lowering.sorts import wire_shape
 
 
 def scalar_element(tm, term, shape, i: int, j: int):
-    """Element `[i][j]` of a matrix-valued term, as a *scalar* term.
-
-    `mat_select` alone leaves `select k (…)` sitting on whatever built the
-    matrix, and the two things that build one here are a tuple constructor
-    and an `ite` over tuples. Pushing the selection through both is what
-    turns a wire's transition into one scalar expression per slot; the
-    rewrite is the tuple axiom in each case, and cvc5's own simplifier does
-    the rest.
-    """
-    from cvc5 import Kind
-
-    from .encode import mat_select
+    """Element `[i][j]` of a matrix-valued term, as a *scalar* term:
+    `select_element`, which is what turns a wire's transition into one
+    scalar expression per slot, and cvc5's own simplifier does the rest."""
+    from .encode import select_element
 
     if shape.is_scalar:
         return term
-    idx = i * shape.n + j
-    kind = term.getKind()
-    if kind == Kind.APPLY_CONSTRUCTOR:
-        return term[idx + 1]          # child 0 is the constructor
-    if kind == Kind.ITE:
-        return tm.mkTerm(
-            Kind.ITE,
-            term[0],
-            scalar_element(tm, term[1], shape, i, j),
-            scalar_element(tm, term[2], shape, i, j),
-        )
-    return mat_select(tm, term, shape, i, j)
+    return select_element(tm, term, i * shape.n + j)
 
 
 def slot_terms(enc, ctrl_next, simplify: bool = True) -> "tuple[list, list]":
