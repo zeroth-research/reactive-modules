@@ -347,10 +347,18 @@ class TacticPlan:
     @property
     def close_binds_state(self) -> bool:
         """Whether `cert_close` takes the obligation's state binder, as
-        `cert_facts` does: when a closer names the state, which only a
-        product hint does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`).
-        Every other plan's `cert_close` stays the macro it always was."""
-        return bool(getattr(self.hints, "nlinarith_hints", None))
+        `cert_facts` does: when a closer names the state, as a product hint
+        does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`). Read off the
+        closers themselves, so a closer that comes to name the state takes
+        the binder with it rather than reading a hygienic `s✝`. Every other
+        plan's `cert_close` stays the macro it always was."""
+        return "$v" in self.close_tactic
+
+    @property
+    def close_call(self) -> str:
+        """`cert_close` as an obligation calls it: with its state `s` when
+        the macro binds one."""
+        return "cert_close s" if self.close_binds_state else "cert_close"
 
     @property
     def state_case_tactic(self) -> str:

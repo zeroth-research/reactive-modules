@@ -80,7 +80,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
+   all_goals (cert_prep <;> {{ plan.close_call }})
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
@@ -90,7 +90,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_floors s
    try simp_mat
    try cert_states s
-   all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
+   all_goals (cert_prep <;> {{ plan.close_call }})
 
 section TS
 
@@ -125,7 +125,7 @@ theorem inv_imp_P : ∀ s, inv s → P s := by
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
+    all_goals (cert_prep <;> {{ plan.close_call }})
 
 theorem hP : lts.StateSet_isInvariant P := by
     intro s hs
@@ -149,7 +149,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> cert_close{% if plan.close_binds_state %} s{% endif %})
+    all_goals (cert_prep <;> {{ plan.close_call }})
 
 {{ noncomp }}def buchi := rule_buchi
   lts
