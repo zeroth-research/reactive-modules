@@ -18,7 +18,7 @@ def test_a_python_file_loads_through_its_adapter():
 
 
 def test_a_missing_file_is_named():
-    with pytest.raises(FileNotFoundError, match="nope.py"):
+    with pytest.raises(inputs.InputError, match="nope.py"):
         inputs.load(FIXTURES / "nope.py")
 
 

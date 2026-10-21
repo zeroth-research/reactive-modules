@@ -139,10 +139,12 @@ def test_a_fault_in_the_module_file_keeps_its_traceback():
     one `error:` line would read like "must define `module`"."""
     with tempfile.TemporaryDirectory() as tmpdir:
         broken = Path(tmpdir) / "broken.py"
-        broken.write_text("def module():\n    return None.state\n")
-        r = verith(str(broken), "-o", tmpdir, "-p", "Broken")
-        assert r.returncode != 0
-        assert "Traceback" in r.stderr and "AttributeError" in r.stderr, r.stderr
+        for body, raised in (("return None.state", "AttributeError"),
+                             ("open('/nonexistent/weights')", "FileNotFoundError")):
+            broken.write_text(f"def module():\n    {body}\n")
+            r = verith(str(broken), "-o", tmpdir, "-p", "Broken")
+            assert r.returncode != 0
+            assert "Traceback" in r.stderr and raised in r.stderr, r.stderr
 
 
 # `update` reads an `Uninterpreted` wire, which no Lean column can write.

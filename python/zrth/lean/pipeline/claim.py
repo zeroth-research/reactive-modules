@@ -16,17 +16,18 @@ from .. import inputs
 def load(settings: Settings) -> "inputs.Problem":
     """The module the run is about, and the input it was read from.
 
-    The loader refuses a path that is not there, a file that is not a
-    module and a `-d` the file does not define. All three are the user's
-    input, so they are reported rather than raised. What the module file's
-    own code raises is not a refusal, and keeps its traceback: an
-    `AttributeError` from a typo in `module()` reads, as one `error:` line,
-    exactly like "must define `module`".
+    The loader refuses a path that is not there or cannot be read, a file
+    that is not a module and a `-d` the file does not define, all as
+    `InputError`. All of them are the user's input, so they are reported
+    rather than raised. What the module file's own code raises is not a
+    refusal, and keeps its traceback: an `AttributeError` from a typo in
+    `module()` reads, as one `error:` line, exactly like "must define
+    `module`", and an `OSError` from a file it opens like a missing input.
     """
     try:
         return inputs.load(settings.module_file, settings.input_opts,
                            format=settings.input_format)
-    except (OSError, inputs.ClaimError, inputs.InputError) as e:
+    except (inputs.ClaimError, inputs.InputError) as e:
         raise SystemExit(f"error: {e}") from e
 
 

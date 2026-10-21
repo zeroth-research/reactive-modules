@@ -68,7 +68,10 @@ def load(path: str | Path, opts: Mapping[str, Any] | None = None,
     opts = {**{o.dest: o.default for o in adapter.options}, **(opts or {})}
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Diagram file not found: {path.resolve()}")
-    text = path.read_text()
+        raise InputError(f"Diagram file not found: {path.resolve()}")
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise InputError(f"cannot read {path.resolve()}: {e}") from e
     source = SourceText(adapter.name, path, text, adapter.suffixes[0])
     return adapter.load(source, opts)
