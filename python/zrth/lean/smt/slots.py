@@ -37,11 +37,12 @@ def slot_terms(enc, ctrl_next, simplify: bool = True) -> "tuple[list, list]":
     with "Tactic `generalize` failed"). `simplify=False` (`--fbk-simplify
     none`) leaves every slot the shape the module's own terms give it.
     """
-    tm, msmt = enc.tm, enc.msmt
-    state = msmt.fresh_ctrl("s")
-    nxt = msmt.update_state(state, msmt.fresh_extl_l("el"),
-                            msmt.fresh_extl_n("en"))
-    ini = msmt.init_state(msmt.fresh_extl_n("en"))
+    tm = enc.tm
+    # The encoding's transition, translated once for the run, over constants
+    # named `s*`, `el*` and `en*` as the accessor maps expect.
+    state, el, en = enc.fresh()
+    nxt = enc.next_state(state, el, en)
+    ini = enc.init_state(en)
 
     def rewritten(term):
         if not simplify or term.getSort().isBoolean():
