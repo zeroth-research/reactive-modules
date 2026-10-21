@@ -26,14 +26,17 @@ def _load(source: SourceText, opts: Mapping[str, Any]) -> Problem:
     # variables, and a name a claim could not use is left positional.
     named = {n: v for n, v in variables.items()
              if v in variables_of and usable(n)}
-    claims = tuple(StatedClaim(s.kind, s.where, _internal(module, s))
-                   for s in specs)
+    claims = tuple(StatedClaim(s.kind, s.where, text)
+                   for s, text in zip(specs, _internal(module, specs)))
     return Problem(module, source, Names.of(module, named), claims)
 
 
-def _internal(module, spec) -> str:
-    """A spec's formula as SMT-LIB in internal names: its terms read the
-    variables' next values, which a claim calls `s{i}`."""
+def _internal(module, specs) -> list[str]:
+    """Each spec's formula as SMT-LIB in internal names: its terms read the
+    variables' next values, which a claim calls `s{i}`. One term manager
+    serves every spec, and lives until exit."""
+    if not specs:
+        return []
     import cvc5
 
     from zrth import X
@@ -45,11 +48,14 @@ def _internal(module, spec) -> str:
     keep_alive(tm)
     bindings = {X(v).id: tm.mkConst(wire_sort(tm, X(v)), f"s{i}")
                 for i, v in enumerate(module.ctrl)}
-    term = translate_terms(tm, list(spec.terms), bindings)[spec.wire.id]
-    if term.getSort().isBitVector():
-        term = tm.mkTerm(cvc5.Kind.EQUAL, term, tm.mkBitVector(1, 1))
-    keep_alive(term)
-    return str(term)
+    texts = []
+    for spec in specs:
+        term = translate_terms(tm, list(spec.terms), bindings)[spec.wire.id]
+        if term.getSort().isBitVector():
+            term = tm.mkTerm(cvc5.Kind.EQUAL, term, tm.mkBitVector(1, 1))
+        keep_alive(term)
+        texts.append(str(term))
+    return texts
 
 
 ADAPTER = InputAdapter(
