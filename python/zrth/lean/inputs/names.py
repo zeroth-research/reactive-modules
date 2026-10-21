@@ -81,11 +81,13 @@ class Names:
         mapping keeps only its positional name."""
         ctrl: list[str | None] = [None] * len(module.ctrl)
         extl: list[str | None] = [None] * len(module.extl)
+        # Each `module.ctrl` builds its list anew, so they are indexed once.
+        index = [(slots, {v: i for i, v in enumerate(vars_)})
+                 for slots, vars_ in ((ctrl, module.ctrl), (extl, module.extl))]
         for name, var in names.items():
-            for slots, vars_ in ((ctrl, list(module.ctrl)),
-                                 (extl, list(module.extl))):
-                if var in vars_:
-                    slots[vars_.index(var)] = name
+            for slots, at in index:
+                if var in at:
+                    slots[at[var]] = name
                     break
             else:
                 raise ClaimError(

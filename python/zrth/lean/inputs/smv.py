@@ -21,11 +21,11 @@ def _load(source: SourceText, opts: Mapping[str, Any]) -> Problem:
         raise InputError(f"{source.path}: {e}") from e
     except LarkError as e:
         raise InputError(f"{source.path} is not SMV verith reads: {e}") from e
-    ctrl, extl = list(module.ctrl), list(module.extl)
+    variables_of = {*module.ctrl, *module.extl}
     # A variable the module never reads (an unused IVAR) is not one of its
     # variables, and a name a claim could not use is left positional.
     named = {n: v for n, v in variables.items()
-             if (v in ctrl or v in extl) and usable(n)}
+             if v in variables_of and usable(n)}
     claims = tuple(StatedClaim(s.kind, s.where, _internal(module, s))
                    for s in specs)
     return Problem(module, source, Names.of(module, named), claims)
