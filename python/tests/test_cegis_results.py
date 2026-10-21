@@ -79,7 +79,7 @@ def _run(monkeypatch, kind):
     solver = _Solver(kind)
     monkeypatch.setattr(cegis, "make_client", lambda base_url, model: None)
     magic = AiCegisEngine("", _counter(), log=lambda *_: None)
-    monkeypatch.setattr(cegis.cvc5, "Solver", lambda _tm: solver)
+    monkeypatch.setattr(cvc5, "Solver", lambda _tm: solver)
     var = env.tm.mkConst(env.tm.getIntegerSort(), "s0")
     query = env.tm.mkTerm(cvc5.Kind.EQUAL, var, env.tm.mkInteger(0))
     result = magic._run_query("inv-step", query, env.tm, [("s", [var])])
