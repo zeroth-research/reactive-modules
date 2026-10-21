@@ -114,7 +114,7 @@ from __future__ import annotations
 from ...artifacts.record import found, note
 from ...core.certificate import Certificate, Claim
 from ...core.errors import Refused
-from ...smt.claim import SynthContext
+from ...smt.claim import SynthContext, sorts_where
 from ...smt.obligations import Candidate, Obligations
 from ...smt.script import conjunction_smt
 from ...smt.solvers import DEFAULT_TIMEOUT
@@ -258,22 +258,12 @@ class HoudiniEngine(Engine):
     # --- reading the module and the property ------------------------------
 
     def _check_sorts(self, ctx: SynthContext) -> None:
-        def scalar(s) -> bool:
-            """A sort this route has candidate shapes for.
-
-            A matrix-shaped component passes when its *elements* do: it is a
-            column per element here, and a column of a sort with no shapes
-            is no better inside a tuple than outside one.
-            """
-            if s.isTuple():
-                return all(scalar(e) for e in s.getTupleSorts())
-            return s.isInteger() or s.isBoolean() or s.isReal()
-
-        bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
-               if not scalar(s)]
-        bad += [f"{c} is {c.getSort()}"
-                for c in list(ctx.extl_next) + list(ctx.extl_latched)
-                if not scalar(c.getSort())]
+        # The sorts this route has candidate shapes for. A matrix-shaped
+        # component passes when its *elements* do: it is a column per
+        # element here, and a column of a sort with no shapes is no better
+        # inside a tuple than outside one.
+        bad = sorts_where(ctx, lambda s: not (
+            s.isInteger() or s.isBoolean() or s.isReal()))
         if bad:
             why = (
                 "Vampire's SMT-LIB front end has no bitvector theory"

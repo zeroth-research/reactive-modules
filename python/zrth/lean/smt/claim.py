@@ -38,6 +38,22 @@ def reading_kind(sort) -> "str | None":
     return None
 
 
+def sorts_where(ctx: "SynthContext", bad) -> list[str]:
+    """Each state component and input of `ctx` whose sort is `bad`, or has
+    an element that is, as `s1 is (_ BitVec 8)`: what a route that reads
+    fewer sorts than `build` lets through names in its refusal."""
+    def hit(sort) -> bool:
+        if sort.isTuple():
+            return any(hit(e) for e in sort.getTupleSorts())
+        return bad(sort)
+
+    return ([f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
+             if hit(s)]
+            + [f"{c} is {c.getSort()}"
+               for c in (*ctx.extl_next, *ctx.extl_latched)
+               if hit(c.getSort())])
+
+
 @dataclass
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.

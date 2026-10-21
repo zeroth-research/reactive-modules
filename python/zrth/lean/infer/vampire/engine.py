@@ -167,7 +167,7 @@ from ..engine import Engine
 from ...smt.obligations import Candidate, Obligations
 from ...artifacts.record import found, note
 from ...smt.script import affine_smt, conjunction_smt, smt_int
-from ...smt.claim import SynthContext
+from ...smt.claim import SynthContext, sorts_where
 from ..common.synth import columns, floor_real_src
 from .answers import Answers, Derived
 from .branches import split
@@ -195,9 +195,9 @@ class VampireEngine(Engine):
               given: Certificate = Certificate()) -> Certificate:
         """The certificate of `claim`, as SMT-LIB. `given` is not read: the
         row seeds from nothing but `--pre`, which is in the claim."""
-        # `SynthContext.build` refuses a component this route cannot weigh
-        # as an integer -- Real, bitvector, matrix-shaped -- before anything
-        # here is printed, which is the same gate `--infer smt-linear` uses.
+        # `SynthContext.build` takes every reading kind here; what this route
+        # cannot state (a bitvector) or bound (no column at all) is
+        # `_check_sorts`'s to refuse, before anything is printed.
         ctx = SynthContext.build(self.encoding or self.module, claim,
                                  route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
@@ -407,17 +407,7 @@ class VampireEngine(Engine):
         no column a row can bound -- which would search for the invariant
         `true` and is refused up front instead.
         """
-        def bitvectors(sort) -> bool:
-            """Whether `sort`, or an element of it, is one."""
-            if sort.isTuple():
-                return any(e.isBitVector() for e in sort.getTupleSorts())
-            return sort.isBitVector()
-
-        bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
-               if bitvectors(s)]
-        bad += [f"{c} is {c.getSort()}"
-                for c in list(ctx.extl_next) + list(ctx.extl_latched)
-                if bitvectors(c.getSort())]
+        bad = sorts_where(ctx, lambda s: s.isBitVector())
         if bad:
             raise Refused(
                 f"--infer vampire states its obligations as SMT-LIB for "
