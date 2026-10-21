@@ -717,10 +717,15 @@ def test_cvc5_is_the_default_and_resolves_without_a_binary():
 def test_a_vampire_flag_without_the_vampire_solver_is_refused():
     """A flag that quietly did nothing would be worse than one that is an
     error, which is what the route's `extra_check` is for."""
+    from types import SimpleNamespace
+
     from zrth.lean.infer import route_by_name
 
-    check = route_by_name("houdini").extra_check
+    def check(opts):
+        return route_by_name("houdini").extra_check(
+            SimpleNamespace(route_opts=opts))
+
     opts = {"houdini_solver": "cvc5", "vampire": "/x", "vampire_cores": None}
-    assert "starts no binary" in check(None, opts)
-    assert check(None, {**opts, "vampire": None}) is None
-    assert check(None, {**opts, "houdini_solver": "vampire"}) is None
+    assert "starts no binary" in check(opts)
+    assert check({**opts, "vampire": None}) is None
+    assert check({**opts, "houdini_solver": "vampire"}) is None

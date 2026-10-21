@@ -72,7 +72,7 @@ class InferRoute:
     # `resolve(opts) -> config` at parse time: a route whose lakefile names
     # a path has to reject a bad one before any of the project exists.
     resolve: Callable | None = None
-    # `extra_check(settings, opts) -> str | None` at parse time: the rules
+    # `extra_check(settings) -> str | None` at parse time: the rules
     # that are not a cell of this table.  `fbk-proveit` has one -- the
     # project name becomes a Lean module name.
     extra_check: Callable | None = None

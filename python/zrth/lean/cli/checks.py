@@ -197,7 +197,7 @@ def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> No
         )
 
     if route.extra_check is not None:
-        problem = route.extra_check(settings, settings.route_opts)
+        problem = route.extra_check(settings)
         if problem:
             parser.error(problem)
 

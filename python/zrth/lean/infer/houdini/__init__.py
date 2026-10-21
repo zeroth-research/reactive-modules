@@ -28,7 +28,7 @@ def _resolve(opts: dict):
                           opts["vampire_cores"])
 
 
-def _check_options(settings, opts) -> "str | None":
+def _check_options(settings) -> "str | None":
     """The flags that belong to a solver this run did not choose.
 
     Not a cell of the table: `--vampire` is an option of this route
@@ -37,6 +37,7 @@ def _check_options(settings, opts) -> "str | None":
     `Opt` exists at all -- a flag that quietly does nothing is worse than
     one that is an error.
     """
+    opts = settings.route_opts
     if opts["houdini_solver"] == "vampire":
         return None
     spare = [f for f, v in (("--vampire", opts["vampire"]),

@@ -146,8 +146,7 @@ def main():
     # is kept.
     store = (
         None if settings.cert_file
-        else workspace(settings, module,
-                       settings.output_dir / settings.project_name, claim)
+        else workspace(settings, module, claim)
     )
     record_predicates(store, claim, given)
 

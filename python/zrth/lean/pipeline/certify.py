@@ -8,7 +8,6 @@ is about (`refused`).
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from ..artifacts.record import note
@@ -74,7 +73,7 @@ def record_predicates(store, claim: "Claim | None", cert: Certificate, *,
         store.encoded(role, role, src.strip(), language="smt-src", what=what)
 
 
-def workspace(settings: Settings, module, project_dir: Path,
+def workspace(settings: Settings, module,
               claim: "Claim | None") -> ArtifactStore:
     """The project's `artifacts/`, as this run sees it.
 
@@ -86,7 +85,7 @@ def workspace(settings: Settings, module, project_dir: Path,
     about this run, and `usable()` says so rather than silently omitting it.
     """
     store = ArtifactStore(
-        dir=project_dir / ARTIFACTS_DIR,
+        dir=settings.output_dir / settings.project_name / ARTIFACTS_DIR,
         module_digest=module_digest(module),
         kind=settings.kind,
         prp=(claim.prp if claim else None) or "",
