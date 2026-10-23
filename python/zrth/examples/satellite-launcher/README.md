@@ -31,17 +31,17 @@ module Satellite[id]
          state' := debris;
 
     flow
-        [] state = space ->
-            // We need a way to define intermediate variables and functions in ODEs.
-            // Distance to planet center
-            let r = hypot(x, y)
-            // Gravitational acceleration vector (points toward origin)
-            let ax = (-mu * x) / (r * r * r)
-            let ay = (-mu * y) / (r * r * r)
-            d(x) := velocity * cos(direction);
-            d(y) := velocity * cos(direction);
-            d(direction) := (-ax * sin(direction) + ay * cos(direction)) / velocity;
-            d(velocity) := ax * cos(direction) + ay * sin(direction);
+      [] state = space ->
+          // We need a way to define intermediate variables and functions in ODEs.
+          // Distance to planet center
+          let r = hypot(x, y)
+          // Gravitational acceleration vector (points toward origin)
+          let ax = (-mu * x) / (r * r * r)
+          let ay = (-mu * y) / (r * r * r)
+          d(x) := velocity * cos(direction);
+          d(y) := velocity * sin(direction);
+          d(direction) := (-ax * sin(direction) + ay * cos(direction)) / velocity;
+          d(velocity) := ax * cos(direction) + ay * sin(direction);
 
 
 module LaunchSatellite[id]
