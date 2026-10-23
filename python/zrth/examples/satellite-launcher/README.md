@@ -21,7 +21,8 @@ module Satellite[id]
 
   atom state, x, y, direction, velocity
       awaits launch_event, collision_event
-      reads launch_event, collision_event
+      reads state, x, y, direction, velocity,
+            launch_event, collision_event
       
     init
       let distance = planet_radius + altitude
