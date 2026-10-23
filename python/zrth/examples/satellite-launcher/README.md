@@ -82,6 +82,7 @@ module Collision[id1, id2]
 
     delay
       // the upper bound is a variable?
+      // -> outside Alur/Henzinger "propositional timed" fragment
       [] true -> clk' <= deadline
 ```
 
