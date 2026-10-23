@@ -1,0 +1,599 @@
+version: 1
+meta:
+  generator: Petrinaut
+title: Probabilistic Satellite Launcher
+description: 'Orbital mechanics simulation: satellites launch stochastically into orbit around a central body, a gravitational ODE integrates their position and velocity, and collisions between satellites or crashes into the planet turn them into debris.'
+parameters:
+  - id: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+    name: Planet Radius
+    variableName: planet_radius
+    type: real
+    defaultValue: '50.0'
+  - id: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
+    name: Satellite Radius
+    variableName: satellite_radius
+    type: real
+    defaultValue: '4.0'
+  - id: 8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e
+    name: Collision Threshold
+    variableName: collision_threshold
+    type: real
+    defaultValue: '10.0'
+  - id: 9c0d1e2f-3a4b-5c6d-7e8f-9a0b1c2d3e4f
+    name: Crash Threshold
+    variableName: crash_threshold
+    type: real
+    defaultValue: '5.0'
+  - id: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+    name: Gravitational Constant
+    variableName: gravitational_constant
+    type: real
+    defaultValue: '400000.0'
+  - id: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    name: Altitude
+    variableName: altitude
+    type: real
+    defaultValue: '40.0'
+  - id: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+    name: Launch Rate
+    variableName: launch_rate
+    type: real
+    defaultValue: '0.5'
+  - id: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+    name: Initial Velocity
+    variableName: initial_velocity
+    type: real
+    defaultValue: '67.0'
+types:
+  - id: f8e9d7c6-b5a4-3210-fedc-ba9876543210
+    name: Satellite
+    description: An orbiting object described by its position relative to the planet centre (x, y), heading, and speed.
+    elements:
+      - elementId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+        name: x
+        type: real
+      - elementId: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f
+        name: 'y'
+        type: real
+      - elementId: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+        name: direction
+        type: real
+      - elementId: 5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b
+        name: velocity
+        type: real
+differentialEquations:
+  - id: 1a2b3c4d-5e6f-7890-abcd-1234567890ab
+    colorId: f8e9d7c6-b5a4-3210-fedc-ba9876543210
+    name: Satellite Orbit Dynamics
+    code: |-
+      // Example of ODE for Satellite in orbit (simplified)
+      const mu = parameters.gravitational_constant; // Gravitational parameter
+
+      // Process each token (satellite)
+      return tokens.map(({ x, y, direction, velocity }) => {
+        const r = Math.hypot(x, y); // Distance to planet center
+
+        // Gravitational acceleration vector (points toward origin)
+        const ax = (-mu * x) / (r * r * r);
+        const ay = (-mu * y) / (r * r * r);
+
+        // Return derivatives for this token
+        return {
+          x: velocity * Math.cos(direction),
+          y: velocity * Math.sin(direction),
+          direction:
+            (-ax * Math.sin(direction) + ay * Math.cos(direction)) / velocity,
+          velocity:
+            ax * Math.cos(direction) + ay * Math.sin(direction),
+        }
+      })
+subnets: []
+places:
+  - id: 3cbc7944-34cb-4eeb-b779-4e392a171fe1
+    name: Space
+    colorId: f8e9d7c6-b5a4-3210-fedc-ba9876543210
+    dynamicsEnabled: true
+    differentialEquationId: 1a2b3c4d-5e6f-7890-abcd-1234567890ab
+    description: Satellites in orbit. The orbit dynamics integrate each one's position and velocity under the planet's gravity, and a custom visualizer draws them around the planet.
+    visualizerCode: |-
+      export default Visualization(({ tokens, parameters }) => {
+        const { satellite_radius, planet_radius } = parameters;
+
+        const width = 800;
+        const height = 600;
+
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        return (
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            style={{ borderRadius: "4px", width: "100%" }}
+          >
+            {/* Background */}
+            <rect width={width} height={height} fill="#000014" />
+
+            {/* Planet at center */}
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={planet_radius}
+              fill="#2196f3"
+              stroke="#1976d2"
+              strokeWidth="2"
+            />
+
+            {/* Satellites */}
+            {tokens.map(({ x, y, direction, velocity }, index) => {
+              // Convert satellite coordinates to screen coordinates
+              // Assuming satellite coordinates are relative to planet center
+              const screenX = centerX + x;
+              const screenY = centerY + y;
+
+              return (
+                <g key={index}>
+                  {/* Satellite */}
+                  <circle
+                    cx={screenX}
+                    cy={screenY}
+                    r={satellite_radius}
+                    fill="#ff5722"
+                    stroke="#d84315"
+                    strokeWidth="1"
+                  />
+
+                  {/* Velocity vector indicator */}
+                  {velocity > 0 && (
+                    <line
+                      x1={screenX}
+                      y1={screenY}
+                      x2={screenX + Math.cos(direction) * Math.log(velocity) * 10}
+                      y2={screenY + Math.sin(direction) * Math.log(velocity) * 10}
+                      stroke="#ffc107"
+                      strokeWidth="2"
+                      markerEnd="url(#arrowhead)"
+                    />
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Arrow marker for velocity vectors */}
+            <defs>
+              <marker
+                id="arrowhead"
+                markerWidth="8"
+                markerHeight="8"
+                refX="7"
+                refY="4"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <polygon
+                  points="0 0, 8 4, 0 8"
+                  fill="#ffc107"
+                  stroke="#f57f17"
+                  strokeWidth="0.5"
+                />
+              </marker>
+            </defs>
+          </svg>
+        );
+      });
+    showAsInitialState: true
+  - id: ea42ba61-03ea-4940-b2e2-b594d5331a71
+    name: Debris
+    colorId: f8e9d7c6-b5a4-3210-fedc-ba9876543210
+    dynamicsEnabled: false
+    differentialEquationId: null
+    description: Defunct objects left by collisions and crashes, frozen at the point of impact with zero velocity.
+componentInstances: []
+transitions:
+  - id: d25015d8-7aac-45ff-82b0-afd943f1b7ec
+    name: Collision
+    inputArcs:
+      - placeId: 3cbc7944-34cb-4eeb-b779-4e392a171fe1
+        weight: 2
+        type: standard
+    outputArcs:
+      - placeId: ea42ba61-03ea-4940-b2e2-b594d5331a71
+        weight: 2
+    lambdaType: predicate
+    lambdaCode: |-
+      // Check if two satellites collide (are within collision threshold)
+      const { collision_threshold, satellite_radius } = parameters;
+
+      // Get the two satellites
+      const [a, b] = input.Space;
+
+      // Calculate distance between satellites
+      const distance = Math.hypot(b.x - a.x, b.y - a.y);
+
+      // Collision occurs when the satellite surfaces are within the threshold
+      return distance < satellite_radius * 2 + collision_threshold;
+    transitionKernelCode: |-
+      // When satellites collide, they become debris (lose velocity)
+      // Both satellites become stationary debris at their collision point
+      return {
+        Debris: [
+          // Position preserved, direction and velocity zeroed
+          {
+            x: input.Space[0].x,
+            y: input.Space[0].y,
+            velocity: 0,
+            direction: 0
+          },
+          {
+            x: input.Space[1].x,
+            y: input.Space[1].y,
+            velocity: 0,
+            direction: 0
+          },
+        ]
+      };
+    description: Two satellites whose surfaces come within the collision threshold collide and become two pieces of stationary debris at the impact point.
+  - id: 716fe1e5-9b35-413f-83fe-99b28ba73945
+    name: Crash
+    inputArcs:
+      - placeId: 3cbc7944-34cb-4eeb-b779-4e392a171fe1
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: ea42ba61-03ea-4940-b2e2-b594d5331a71
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: |-
+      // Check if satellite crashes into planet (within crash threshold of origin)
+      const { planet_radius, crash_threshold, satellite_radius } = parameters;
+
+      // Get satellite position
+      const { x, y } = input.Space[0];
+
+      // Calculate distance from planet center (origin)
+      const distance = Math.hypot(x, y);
+
+      // Crash occurs if satellite is too close to planet
+      return distance < planet_radius + crash_threshold + satellite_radius;
+    transitionKernelCode: |-
+      // When satellite crashes into planet, it becomes debris at crash site
+      return {
+        Debris: [
+          {
+            // Position preserved, direction and velocity zeroed
+            x: input.Space[0].x,
+            y: input.Space[0].y,
+            direction: 0,
+            velocity: 0
+          },
+        ]
+      };
+    description: A satellite that falls within the crash threshold of the planet surface crashes and becomes debris at the crash site.
+  - id: 102695d2-8e55-5e71-96fc-9b30953dac2e
+    name: LaunchSatellite
+    inputArcs: []
+    outputArcs:
+      - placeId: 3cbc7944-34cb-4eeb-b779-4e392a171fe1
+        weight: 1
+    lambdaType: stochastic
+    lambdaCode: return parameters.launch_rate;
+    transitionKernelCode: |-
+      const { planet_radius, altitude, initial_velocity } = parameters;
+
+      const distance = planet_radius + altitude;
+      const angle = Distribution.Uniform(0, Math.PI * 2);
+
+      return {
+        Space: [
+          {
+            x: angle.map(a => Math.cos(a) * distance),
+            y: angle.map(a => Math.sin(a) * distance),
+            direction: Distribution.Uniform(0, Math.PI * 2),
+            velocity: Distribution.Gaussian(initial_velocity, initial_velocity * 0.1)
+          }
+        ],
+      };
+    description: Launches a new satellite at the configured rate, placing it at a uniformly sampled angle on the launch altitude with a Gaussian initial velocity.
+metrics:
+  - id: 786fbe5a-b38c-5e4e-8284-437d39bb05ba
+    name: Satellites in orbit
+    description: Number of satellites currently in orbit (the Space place).
+    code: return state.places.Space.count;
+  - id: 2f517ccd-3fbc-5891-8180-ab8c79173485
+    name: Debris objects
+    description: Number of defunct objects produced by collisions and crashes.
+    code: return state.places.Debris.count;
+  - id: 0e1048ad-bc84-5630-93aa-a06dd4846044
+    name: Average orbital radius
+    description: Mean distance of orbiting satellites from the planet centre (the origin).
+    code: |-
+      const sats = state.places.Space.tokens;
+      if (sats.length === 0) return 0;
+      return sats.reduce((sum, s) => sum + Math.hypot(s.x, s.y), 0) / sats.length;
+  - id: 915c6d54-c299-571f-896a-24ba26256d3e
+    name: Average orbital speed
+    description: Mean speed of the satellites currently in orbit.
+    code: |-
+      const sats = state.places.Space.tokens;
+      if (sats.length === 0) return 0;
+      return sats.reduce((sum, s) => sum + s.velocity, 0) / sats.length;
+scenarios:
+  - id: 808a1c20-c46f-559e-9da3-190af249bc2e
+    name: Moon Orbit
+    description: Low gravity, small body. Satellites drift in gentle arcs around a lunar-mass body.
+    scenarioParameters:
+      - type: real
+        identifier: launch_rate
+        default: 0.3
+      - type: real
+        identifier: satellite_initial_altitude
+        default: 20
+      - type: real
+        identifier: satellite_initial_velocity
+        default: 11
+    parameterOverrides:
+      0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a: '5000'
+      6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c: '14'
+      2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c: scenario.launch_rate
+      1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b: scenario.satellite_initial_altitude
+      3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d: scenario.satellite_initial_velocity
+    initialState:
+      type: adhoc
+      content:
+        variables:
+          - name: launch_rate
+            type: real
+            expression: '0.3'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_altitude
+            type: real
+            expression: '20'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_velocity
+            type: real
+            expression: '11'
+            exposed: true
+            optimize: null
+        netParameters:
+          - parameterId: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+            expression: '5000'
+            optimize: null
+          - parameterId: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+            expression: '14'
+            optimize: null
+          - parameterId: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+            expression: scenario.launch_rate
+            optimize: null
+          - parameterId: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            expression: scenario.satellite_initial_altitude
+            optimize: null
+          - parameterId: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+            expression: scenario.satellite_initial_velocity
+            optimize: null
+        places: {}
+  - id: a6d84df6-d112-534c-94bb-6ec6f3041804
+    name: Earth Orbit
+    description: Standard Earth gravity. High orbital velocities with frequent launches into low orbit.
+    scenarioParameters:
+      - type: real
+        identifier: launch_rate
+        default: 0.5
+      - type: real
+        identifier: satellite_initial_altitude
+        default: 40
+      - type: real
+        identifier: satellite_initial_velocity
+        default: 67
+    parameterOverrides:
+      0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a: '400000'
+      6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c: '50'
+      2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c: scenario.launch_rate
+      1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b: scenario.satellite_initial_altitude
+      3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d: scenario.satellite_initial_velocity
+    initialState:
+      type: adhoc
+      content:
+        variables:
+          - name: launch_rate
+            type: real
+            expression: '0.5'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_altitude
+            type: real
+            expression: '40'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_velocity
+            type: real
+            expression: '67'
+            exposed: true
+            optimize: null
+        netParameters:
+          - parameterId: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+            expression: '400000'
+            optimize: null
+          - parameterId: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+            expression: '50'
+            optimize: null
+          - parameterId: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+            expression: scenario.launch_rate
+            optimize: null
+          - parameterId: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            expression: scenario.satellite_initial_altitude
+            optimize: null
+          - parameterId: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+            expression: scenario.satellite_initial_velocity
+            optimize: null
+        places: {}
+  - id: 37a8aebb-17e4-55fd-a139-4ccc619e14e2
+    name: Mars Orbit
+    description: Intermediate gravity between Moon and Earth. Moderate orbital speeds with a thin atmosphere margin.
+    scenarioParameters:
+      - type: real
+        identifier: launch_rate
+        default: 0.4
+      - type: real
+        identifier: satellite_initial_altitude
+        default: 25
+      - type: real
+        identifier: satellite_initial_velocity
+        default: 29
+    parameterOverrides:
+      0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a: '43000'
+      6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c: '27'
+      2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c: scenario.launch_rate
+      1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b: scenario.satellite_initial_altitude
+      3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d: scenario.satellite_initial_velocity
+    initialState:
+      type: adhoc
+      content:
+        variables:
+          - name: launch_rate
+            type: real
+            expression: '0.4'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_altitude
+            type: real
+            expression: '25'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_velocity
+            type: real
+            expression: '29'
+            exposed: true
+            optimize: null
+        netParameters:
+          - parameterId: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+            expression: '43000'
+            optimize: null
+          - parameterId: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+            expression: '27'
+            optimize: null
+          - parameterId: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+            expression: scenario.launch_rate
+            optimize: null
+          - parameterId: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            expression: scenario.satellite_initial_altitude
+            optimize: null
+          - parameterId: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+            expression: scenario.satellite_initial_velocity
+            optimize: null
+        places: {}
+  - id: 3b1f3509-b651-5c3e-b997-544725d6bccf
+    name: Solar Orbit
+    description: Massive central body with extreme gravity. Satellites need very high velocities to maintain distant orbits.
+    scenarioParameters:
+      - type: real
+        identifier: launch_rate
+        default: 0.6
+      - type: real
+        identifier: satellite_initial_altitude
+        default: 50
+      - type: real
+        identifier: satellite_initial_velocity
+        default: 196
+    parameterOverrides:
+      0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a: '5000000'
+      6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c: '80'
+      2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c: scenario.launch_rate
+      1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b: scenario.satellite_initial_altitude
+      3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d: scenario.satellite_initial_velocity
+    initialState:
+      type: adhoc
+      content:
+        variables:
+          - name: launch_rate
+            type: real
+            expression: '0.6'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_altitude
+            type: real
+            expression: '50'
+            exposed: true
+            optimize: null
+          - name: satellite_initial_velocity
+            type: real
+            expression: '196'
+            exposed: true
+            optimize: null
+        netParameters:
+          - parameterId: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+            expression: '5000000'
+            optimize: null
+          - parameterId: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+            expression: '80'
+            optimize: null
+          - parameterId: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+            expression: scenario.launch_rate
+            optimize: null
+          - parameterId: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+            expression: scenario.satellite_initial_altitude
+            optimize: null
+          - parameterId: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+            expression: scenario.satellite_initial_velocity
+            optimize: null
+        places: {}
+  - id: 488690cd-9ba9-5455-b2c5-f1dd4837caea
+    name: Pre-deployed Constellation
+    description: Starts with a configurable number of satellites already in orbit, evenly spaced in a ring around the planet. A dynamic row in the ad-hoc scenario form generates the initial state from the scenario parameters.
+    scenarioParameters:
+      - type: integer
+        identifier: number_of_satellites
+        default: 8
+      - type: real
+        identifier: initial_altitude
+        default: 40
+    parameterOverrides: {}
+    initialState:
+      type: adhoc
+      content:
+        variables:
+          - name: number_of_satellites
+            type: integer
+            expression: '8'
+            exposed: true
+            optimize: null
+          - name: initial_altitude
+            type: real
+            expression: '40'
+            exposed: true
+            optimize: null
+        netParameters: []
+        places:
+          3cbc7944-34cb-4eeb-b779-4e392a171fe1:
+            kind: coloured
+            variables:
+              - name: distanceToCenter
+                type: real
+                expression: parameters.planet_radius + scenario.initial_altitude
+                optimize: null
+              - name: orbitalSpeed
+                type: real
+                expression: |-
+                  Math.sqrt(
+                    parameters.gravitational_constant / distanceToCenter,
+                  )
+                optimize: null
+              - name: angle
+                type: real
+                expression: Math.PI * 2 * (i / scenario.number_of_satellites)
+                optimize: null
+            rows:
+              - kind: template
+                count:
+                  expression: scenario.number_of_satellites
+                  optimize: null
+                cells:
+                  - expression: Math.cos(angle) * distanceToCenter
+                    optimize: null
+                  - expression: Math.sin(angle) * distanceToCenter
+                    optimize: null
+                  - expression: angle + Math.PI / 2
+                    optimize: null
+                  - expression: orbitalSpeed
+                    optimize: null
+            sharedColumns: {}
