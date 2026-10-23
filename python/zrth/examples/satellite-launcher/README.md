@@ -39,6 +39,8 @@ module Satellite[id]
 
       [] state = space && collision_event? ->
          state' := debris;
+         direction' := 0;
+         velocity' := 0;
 
     flow
       [] state = space ->
