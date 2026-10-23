@@ -3,7 +3,7 @@
 This is a naive attempt to translate SDCPN of the [probabilistic satellite
 launcher][psl] into a system of reactive modules.
 
-```
+```rust
 module Satellite[id]
   external mu, planet_radius, altitude, initial_velocity: R,
            launch_event, collision_event: Event
@@ -13,6 +13,7 @@ module Satellite[id]
   atom state, x, y, direction, velocity
       awaits launch_event reads launch_event
       reads mu, planet_radius, altitude, initial_velocity
+      
     init
       let distance = planet_radius + altitude
       let angle = Distribution.Uniform(0, Math.PI * 2)
