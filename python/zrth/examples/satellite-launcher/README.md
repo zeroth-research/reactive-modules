@@ -3,6 +3,29 @@
 This is a naive attempt to translate SDCPN of the [probabilistic satellite
 launcher][psl] into a system of reactive modules.
 
+Our findings so far, assuming that we use the encoding below (where we model
+each colored token as a reactive module):
+
+ 1. We have to introduce reactive modules for the transitions. We have to
+ connect token modules to the transition modules via external variables. A
+ workaround to this could be: introduce lists/arrays of ids as external
+ variables (or events) + quantification or broadcast in reactive modules. This
+ would be something similar to [Cubicle][].
+ 
+ 1. If we chose to parameterize the number of colored tokens and transitions, we
+ cannot express infinitely many firings of a transition (not when a PN
+ transition interacts/produces an infinite number of tokens).
+ 
+ 1. We could avoid introducing reactive modules for transitions by encoding the
+ update/flow logic of each transition directly in the reactive module of each
+ token.  In this case, every token module has to be connected with every other
+ token module. This would imply explicit unfolding of an existential quantifier
+ (checking another satellite). Again, we could introduce arrays and existential
+ transitions.
+ 
+ 1. An alternative to the above point is to introduce a communication
+ circut/switch.
+ 
 ```rust
 // Global constants (YAML defaults; substituted before module execution)
 const planet_radius: R = 50.0;
@@ -97,3 +120,4 @@ module Collision[id1, id2]
 ```
 
 [psl]: https://demo.petrinaut.org/local/151b7bdb-f199-4980-a1df-d33377809421
+[Cubicle]: https://usr.lmf.cnrs.fr/cubicle/
