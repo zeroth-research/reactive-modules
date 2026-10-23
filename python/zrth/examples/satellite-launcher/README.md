@@ -8,10 +8,11 @@ module Satellite[id]
   external mu, planet_radius, altitude, initial_velocity: R,
            launch_event, collision_event: Event
   interface x, y, direction, velocity: R
-  private state: { prelaunch, space, debris }, x, y, direction, velocity: R
+  private state: { prelaunch, space, debris }
 
   atom state, x, y, direction, velocity
-      awaits launch_event reads launch_event
+      awaits launch_event, collision_event
+      reads launch_event, collision_event
       reads mu, planet_radius, altitude, initial_velocity
       
     init
