@@ -4,16 +4,24 @@ This is a naive attempt to translate SDCPN of the [probabilistic satellite
 launcher][psl] into a system of reactive modules.
 
 ```rust
+// Global constants (YAML defaults; substituted before module execution)
+const planet_radius: R = 50.0;
+const satellite_radius: R = 4.0;
+const collision_threshold: R = 10.0;
+const crash_threshold: R = 5.0;
+const mu: R = 400000.0; // gravitational_constant in the YAML
+const altitude: R = 40.0;
+const launch_rate: R = 0.5;
+const initial_velocity: R = 67.0;
+
 module Satellite[id]
-  external mu, planet_radius, altitude, initial_velocity: R,
-           launch_event, collision_event: Event
+  external launch_event, collision_event: Event
   interface x, y, direction, velocity: R
   private state: { prelaunch, space, debris }
 
   atom state, x, y, direction, velocity
       awaits launch_event, collision_event
       reads launch_event, collision_event
-      reads mu, planet_radius, altitude, initial_velocity
       
     init
       let distance = planet_radius + altitude
@@ -46,8 +54,7 @@ module Satellite[id]
 
 
 module LaunchSatellite[id]
-  // these are parameters
-  interface launch_rate: Real, launch_event: Event
+  interface launch_event: Event
   
   private deadline: Real, clk: Clock
   atom x[id], y[id], direction[id], velocity[id], deadline
@@ -65,8 +72,7 @@ module LaunchSatellite[id]
 
 // TODO: this is still WIP
 module Collision[id1, id2]
-  // these are parameters
-  interface launch_rate: Real, launch_event: Event
+  interface launch_event: Event
 
   external x[id1], y[id1], x[id2], y[id2]: Real
   
