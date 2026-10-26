@@ -1,7 +1,5 @@
 use crate::sort::{MultiSort, TangentMultiSort};
-use std::collections::HashMap;
 use std::fmt;
-use std::ops::Mul;
 //use std::ops::Mul;
 
 /// The name of a variable (a type variable or a symbolic dimension).
@@ -36,16 +34,16 @@ pub enum SignatureElem<MS: MultiSort> {
     TypeVar(Name),
 }
 
-impl<MS: MultiSort> SignatureElem<MS> {
-    /// Is this element concrete (i.e., it does not contain any variables)
-    pub fn is_concrete(&self) -> bool {
-        match self {
-            Self::S(_) | Self::Tan(_) => true,
-            Self::Mat(_, Dim::Const(_), Dim::Const(_)) => true,
-            _ => false,
-        }
-    }
-}
+// impl<MS: MultiSort> SignatureElem<MS> {
+//     /// Is this element concrete (i.e., it does not contain any variables)
+//     pub fn is_concrete(&self) -> bool {
+//         match self {
+//             Self::S(_) | Self::Tan(_) => true,
+//             Self::Mat(_, Dim::Const(_), Dim::Const(_)) => true,
+//             _ => false,
+//         }
+//     }
+// }
 
 #[allow(non_snake_case)]
 pub fn TypeVar<MS: MultiSort>(name: impl Into<Name>) -> SignatureElem<MS> {
@@ -132,13 +130,9 @@ pub trait Signature<MS: MultiSort> {
 
     fn dom_arity(&self) -> usize;
     fn cod_arity(&self) -> usize;
-
-    fn is_concrete(&self) -> bool {
-        self.dom().all(|e| e.is_concrete()) && self.cod().all(|e| e.is_concrete())
-    }
 }
 
-/// Helper for substitutions in the signature
+/// Helper for substitutions in the signature (for type-checking)
 enum SubstType<MS: MultiSort> {
     None,
     // elem with elem
@@ -175,8 +169,7 @@ where
     greatest
 }
 
-/// Check if signature `sig2` is compatible with `sig1`.
-/// The variables of `sig1` and `sig2` are different, even if they have the same names.
+/// Check if signatures `sig1` and `sig2` are compatible.
 pub fn typecheck<S, MS>(sig1: S, sig2: S) -> Result<(), String>
 where
     S: Signature<MS>,
@@ -198,10 +191,11 @@ where
         ));
     }
 
-    // XXX: This is not the most efficient implementation, it is temporary
+    // XXX: This is not the most efficient implementation, we might replace it in the future.
     // The substitutions below act on both signatures at once, so they must not
     // share variables: rename the variables of `sig2` apart from those of `sig1`
-    // by shifting them after the greatest name in `sig1`.
+    // by shifting them after the "greatest" name in `sig1`.
+
     // First pass: gather the greatest name of a variable in `sig1`.
     let offset = greatest_var_name(&sig1).map_or(0, |x| x.0 as usize + 1);
     let shift = |x: Name| {
@@ -245,11 +239,11 @@ where
                         break;
                     }
                 }
-                (SignatureElem::TypeVar(n), _) => {
+                (SignatureElem::TypeVar(_), _) => {
                     subst = SubstType::Elem(*e1, *e2);
                     break;
                 }
-                (_, SignatureElem::TypeVar(n)) => {
+                (_, SignatureElem::TypeVar(_)) => {
                     subst = SubstType::Elem(*e2, *e1);
                     break;
                 }

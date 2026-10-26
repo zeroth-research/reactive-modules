@@ -26,8 +26,8 @@ pub trait TangentMultiSort: MultiSort {
 }
 
 //struct Mat<S: MultiSort, const n: usize, const m: usize> {
-struct Mat<S: MultiSort> {
-    elem_sort: S,
-    m: usize,
-    n: usize,
-}
+// struct Mat<S: MultiSort> {
+//     elem_sort: S,
+//     m: usize,
+//     n: usize,
+// }

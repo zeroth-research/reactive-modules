@@ -86,15 +86,15 @@ impl TangentMultiSort for TestSort {
 #[test]
 fn test_1() {
     let t = TypeVar('a');
-    let A = TestSort::A().into();
-    let B = TestSort::B(8).into();
+    let a = TestSort::A().into();
+    let b = TestSort::B(8).into();
     let _tan = Tan(TestSort::B(4).T());
     let m1 = Mat(TestSort::B(3), 'a', 'b');
     let m2 = Mat(TestSort::B(3), 'b', 'c');
     let m3 = Mat(TestSort::B(3), 'a', 'c');
 
     let sig: TestSignature = TestSignature {
-        dom: vec![A, B, m1, m2, t],
+        dom: vec![a, b, m1, m2, t],
         cod: vec![m3],
     };
     assert_eq!(
