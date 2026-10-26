@@ -2,11 +2,133 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod sort;
 pub mod tensor;
 
+use crate::sort::{MultiSort, TangentMultiSort};
 use std::fmt;
 use std::fmt::Debug;
+//use std::ops::Mul;
 pub use tensor::PyTensor;
+
+type Name = u8;
+
+#[derive(Copy, Clone)]
+pub enum MatName {
+    // symbolic name, e.g., `N` in `Mat(Int, N, 5)`
+    Sym(Name),
+    // concrete constant, e.g., `8` in `Mat(Int, N, 5)`
+    Const(usize),
+}
+
+#[derive(Copy, Clone)]
+pub enum SignatureElem<MS: MultiSort> {
+    // sort
+    S(MS),
+    // tangent space of a sort
+    Tan(MS),
+    // type variable
+    TypeVar(Name),
+    // dimension variable (natural number)
+    // NatVar(Name),
+    // matrix of element type `MS` and dimensions of type variables
+    Mat(MS, MatName, MatName),
+}
+
+#[allow(non_snake_case)]
+impl<MS: MultiSort> SignatureElem<MS> {
+    pub fn mk_S(srt: MS) -> SignatureElem<MS> {
+        Self::S(srt)
+    }
+
+    pub fn mk_TypeVar(name: Name) -> SignatureElem<MS> {
+        Self::TypeVar(name)
+    }
+
+    //pub fn mk_NatVar(name: Name) -> SignatureElem<MS> {
+    //    todo!()
+    //}
+
+    pub fn mk_Mat(srt: MS, m: MatName, n: MatName) -> SignatureElem<MS> {
+        Self::Mat(srt, m, n)
+    }
+}
+
+#[allow(non_snake_case)]
+impl<MS: TangentMultiSort> SignatureElem<MS> {
+    pub fn mk_Tan(srt: MS) -> SignatureElem<MS> {
+        Self::Tan(srt)
+    }
+}
+
+pub trait Signature<MS: MultiSort> {
+    fn dom(&self) -> impl Iterator<Item = SignatureElem<MS>>;
+    fn cod(&self) -> impl Iterator<Item = SignatureElem<MS>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Copy, Clone)]
+    enum TestSort {
+        A(),
+        B(usize),
+        TB(usize, usize),
+        TanZero(),
+    }
+
+    struct TestSignature {
+        dom: Vec<SignatureElem<TestSort>>,
+        cod: Vec<SignatureElem<TestSort>>,
+    }
+
+    impl Signature<TestSort> for TestSignature {
+        fn dom(&self) -> impl Iterator<Item = SignatureElem<TestSort>> {
+            self.dom.iter().cloned()
+        }
+
+        fn cod(&self) -> impl Iterator<Item = SignatureElem<TestSort>> {
+            self.cod.iter().cloned()
+        }
+    }
+
+    impl MultiSort for TestSort {
+        const NAME: &'static str = "TestSort";
+    }
+
+    impl TangentMultiSort for TestSort {
+        //const NAME = "TestSort";
+        fn T(&self) -> TestSort {
+            match self {
+                TestSort::A() => TestSort::TanZero(),
+                TestSort::B(n) => TestSort::TB(*n, 1),
+                TestSort::TB(n, d) => TestSort::TB(*n, d + 1),
+                TestSort::TanZero() => TestSort::TanZero(),
+            }
+        }
+    }
+
+    #[test]
+    fn test_1() {
+        let t = SignatureElem::<TestSort>::mk_TypeVar(0);
+        let A = SignatureElem::<TestSort>::mk_S(TestSort::A());
+        let B = SignatureElem::<TestSort>::mk_S(TestSort::B(8));
+        let T = SignatureElem::<TestSort>::mk_Tan(TestSort::B(4).T());
+        let M1 =
+            SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), MatName::Sym(0), MatName::Sym(1));
+        let M2 =
+            SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), MatName::Sym(1), MatName::Sym(2));
+        let M3 =
+            SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), MatName::Sym(0), MatName::Sym(2));
+
+        let sig: TestSignature = TestSignature {
+            dom: vec![A, B, M1, M2, t],
+            cod: vec![M3],
+        };
+    }
+}
+
 pub trait Theory {
     type Sort;
 
