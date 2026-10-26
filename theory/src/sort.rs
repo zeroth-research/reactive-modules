@@ -1,5 +1,3 @@
-use std::ops::Mul;
-
 /// A collection of sorts.
 ///
 /// Use the name `MultiSort` rather than `Sort`
