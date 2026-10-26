@@ -1,5 +1,5 @@
 use crate::sort::{MultiSort, TangentMultiSort};
-use std::fmt;
+use std::{fmt, ops::Mul};
 //use std::ops::Mul;
 
 /// The name of a variable (a type variable or a symbolic dimension).
@@ -16,6 +16,17 @@ pub enum Dim {
     Const(usize),
 }
 
+// A sort or a symbolic name of the elements of a matrix
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MatSort<MS: MultiSort> {
+    // symbolic name, e.g., `'t` in `Mat('t, N, 5)`; it is a type variable,
+    // i.e., `'t` in `'t -> Mat('t, N, 5)` is the same variable
+    // (that can be instantiated only by a sort, not by a matrix or a tangent, for now)
+    Sym(Name),
+    // concrete sort, e.g., `Int` in `Mat(Int, N, 5)`
+    S(MS),
+}
+
 /// An element of a signature: In A x B -> C`, elements are A, B, C.
 /// It is either a sort, its tangent, a matrix sort (that we handle specially
 /// because we need to reason about the dimensions) or a type variable.
@@ -28,8 +39,8 @@ pub enum SignatureElem<MS: MultiSort> {
     Tan(MS),
     // dimension variable (natural number)
     // NatVar(Name),
-    // matrix of element type `MS` and dimensions of type variables
-    Mat(MS, Dim, Dim),
+    // matrix of elements of a (possibly symbolic) sort and of (possibly symbolic) dimensions
+    Mat(MatSort<MS>, Dim, Dim),
     // type variable
     TypeVar(Name),
 }
@@ -56,13 +67,29 @@ pub fn Tan<MS: TangentMultiSort>(srt: MS) -> SignatureElem<MS> {
 }
 
 #[allow(non_snake_case)]
-pub fn Mat<MS: MultiSort>(srt: MS, m: impl Into<Dim>, n: impl Into<Dim>) -> SignatureElem<MS> {
-    SignatureElem::<MS>::Mat(srt, m.into(), n.into())
+pub fn Mat<MS: MultiSort>(
+    srt: impl Into<MatSort<MS>>,
+    m: impl Into<Dim>,
+    n: impl Into<Dim>,
+) -> SignatureElem<MS> {
+    SignatureElem::<MS>::Mat(srt.into(), m.into(), n.into())
 }
 
 impl<MS: MultiSort> From<MS> for SignatureElem<MS> {
     fn from(s: MS) -> Self {
         SignatureElem::S(s)
+    }
+}
+
+impl<MS: MultiSort> From<MS> for MatSort<MS> {
+    fn from(s: MS) -> Self {
+        MatSort::S(s)
+    }
+}
+
+impl<MS: MultiSort> From<char> for MatSort<MS> {
+    fn from(c: char) -> Self {
+        MatSort::Sym(c.into())
     }
 }
 
@@ -113,6 +140,15 @@ impl fmt::Display for Dim {
     }
 }
 
+impl<MS: MultiSort + fmt::Display> fmt::Display for MatSort<MS> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MatSort::Sym(name) => write!(f, "'{name}"),
+            MatSort::S(srt) => write!(f, "{srt}"),
+        }
+    }
+}
+
 impl<MS: MultiSort + fmt::Display> fmt::Display for SignatureElem<MS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -134,8 +170,8 @@ pub trait Signature<MS: MultiSort> {
 
 /// Helper for substitutions in the signature (for type-checking)
 enum SubstType<MS: MultiSort> {
-    // elem with elem
-    Elem(SignatureElem<MS>, SignatureElem<MS>),
+    // type variable (also as the sort of matrix elements) with elem
+    Var(Name, SignatureElem<MS>),
     // variable name with name
     //VarName(Name, Name),
     // dimension name with name
@@ -155,7 +191,10 @@ where
     for e in sig.dom().chain(sig.cod()) {
         match e {
             SignatureElem::TypeVar(x) => greatest = greatest.max(Some(x)),
-            SignatureElem::Mat(_, m, n) => {
+            SignatureElem::Mat(s, m, n) => {
+                if let MatSort::Sym(x) = s {
+                    greatest = greatest.max(Some(x));
+                }
                 for d in [m, n] {
                     if let Dim::Sym(x) = d {
                         greatest = greatest.max(Some(x));
@@ -186,7 +225,10 @@ where
         .map(|mut e| {
             match &mut e {
                 SignatureElem::TypeVar(x) => *x = shift(*x)?,
-                SignatureElem::Mat(_, m, n) => {
+                SignatureElem::Mat(s, m, n) => {
+                    if let MatSort::Sym(x) = s {
+                        *x = shift(*x)?;
+                    }
                     for d in [m, n] {
                         if let Dim::Sym(x) = d {
                             *x = shift(*x)?;
@@ -206,18 +248,43 @@ fn find_subst<MS: MultiSort>(
     sig1: &[SignatureElem<MS>],
     sig2: &[SignatureElem<MS>],
 ) -> Option<SubstType<MS>> {
+    // is the variable `x` the sort of the elements of some matrix?
+    let is_mat_sort = |x: Name| {
+        sig1.iter()
+            .chain(sig2)
+            .any(|e| matches!(e, SignatureElem::Mat(MatSort::Sym(y), _, _) if *y == x))
+    };
+
     for (e1, e2) in sig1.iter().zip(sig2) {
         match (e1, e2) {
             // for two type variables, pick the left one (it doesn't matter which one, but we
             // need to pick) -- and only if they are not the same (to ensure progress)
             (SignatureElem::TypeVar(n), SignatureElem::TypeVar(m)) => {
                 if n != m {
-                    return Some(SubstType::Elem(*e2, *e1));
+                    return Some(SubstType::Var(*m, *e1));
                 }
             }
-            (SignatureElem::TypeVar(_), _) => return Some(SubstType::Elem(*e1, *e2)),
-            (_, SignatureElem::TypeVar(_)) => return Some(SubstType::Elem(*e2, *e1)),
-            (SignatureElem::Mat(_, n1, m1), SignatureElem::Mat(_, n2, m2)) => {
+            (SignatureElem::TypeVar(x), e) | (e, SignatureElem::TypeVar(x)) => {
+                // The sort of matrix elements cannot be a matrix or a tangent (for now), so we
+                // do not substitute them for such a variable. The elements stay different and
+                // the unification fails. This also excludes `'t` vs. `Mat('t, ..)`.
+                let is_sort = !matches!(e, SignatureElem::Mat(..) | SignatureElem::Tan(_));
+                if is_sort || !is_mat_sort(*x) {
+                    return Some(SubstType::Var(*x, *e));
+                }
+            }
+            (SignatureElem::Mat(s1, n1, m1), SignatureElem::Mat(s2, n2, m2)) => {
+                match (s1, s2) {
+                    (MatSort::Sym(x), MatSort::Sym(y)) => {
+                        if x != y {
+                            return Some(SubstType::Var(*y, SignatureElem::TypeVar(*x)));
+                        }
+                    }
+                    (MatSort::Sym(x), MatSort::S(s)) | (MatSort::S(s), MatSort::Sym(x)) => {
+                        return Some(SubstType::Var(*x, SignatureElem::S(*s)));
+                    }
+                    _ => (),
+                }
                 for (d1, d2) in [(n1, n2), (m1, m2)] {
                     match (d1, d2) {
                         (Dim::Sym(x), Dim::Sym(y)) => {
@@ -250,14 +317,22 @@ fn apply_subst<MS: MultiSort + PartialEq>(subst: &SubstType<MS>, elems: &mut [Si
             }
         }
     };
+    // replace the type variable `orig` with `new` in `e`, including the sort of matrix elements
+    let subst_var = |e: &mut SignatureElem<MS>, orig: Name, new: SignatureElem<MS>| match e {
+        SignatureElem::TypeVar(x) if *x == orig => *e = new,
+        SignatureElem::Mat(s, _, _) if *s == MatSort::Sym(orig) => {
+            *s = match new {
+                SignatureElem::S(srt) => MatSort::S(srt),
+                SignatureElem::TypeVar(x) => MatSort::Sym(x),
+                _ => unreachable!("matrix elements must be sorts (ensured by `find_subst`)"),
+            }
+        }
+        _ => (),
+    };
 
     for e in elems {
         match *subst {
-            SubstType::Elem(orig, new) => {
-                if *e == orig {
-                    *e = new;
-                }
-            }
+            SubstType::Var(orig, new) => subst_var(e, orig, new),
             SubstType::DimName(orig, new) => subst_dim(e, orig, Dim::Sym(new)),
             SubstType::DimConst(orig, new) => subst_dim(e, orig, Dim::Const(new)),
         }
