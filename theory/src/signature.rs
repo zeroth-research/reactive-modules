@@ -1,9 +1,13 @@
 use crate::sort::{MultiSort, TangentMultiSort};
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::Mul;
 //use std::ops::Mul;
 
-type Name = u8;
+/// The name of a variable (a type variable or a symbolic dimension).
+/// Names are printed as `a`, `b`, ..., `z`, `a1`, `b1`, ..., `z1`, `a2`, ...
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Name(pub u8);
 
 // A constant or symbolic name of a dimension in matrix
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -32,24 +36,7 @@ pub enum SignatureElem<MS: MultiSort> {
     TypeVar(Name),
 }
 
-#[allow(non_snake_case)]
 impl<MS: MultiSort> SignatureElem<MS> {
-    pub fn mk_S(srt: MS) -> SignatureElem<MS> {
-        Self::S(srt)
-    }
-
-    pub fn mk_TypeVar(name: Name) -> SignatureElem<MS> {
-        Self::TypeVar(name)
-    }
-
-    //pub fn mk_NatVar(name: Name) -> SignatureElem<MS> {
-    //    todo!()
-    //}
-
-    pub fn mk_Mat(srt: MS, m: Dim, n: Dim) -> SignatureElem<MS> {
-        Self::Mat(srt, m, n)
-    }
-
     /// Is this element concrete (i.e., it does not contain any variables)
     pub fn is_concrete(&self) -> bool {
         match self {
@@ -61,25 +48,68 @@ impl<MS: MultiSort> SignatureElem<MS> {
 }
 
 #[allow(non_snake_case)]
-impl<MS: TangentMultiSort> SignatureElem<MS> {
-    pub fn mk_Tan(srt: MS) -> SignatureElem<MS> {
-        Self::Tan(srt)
+pub fn TypeVar<MS: MultiSort>(name: impl Into<Name>) -> SignatureElem<MS> {
+    SignatureElem::<MS>::TypeVar(name.into())
+}
+
+#[allow(non_snake_case)]
+pub fn Tan<MS: TangentMultiSort>(srt: MS) -> SignatureElem<MS> {
+    SignatureElem::<MS>::Tan(srt)
+}
+
+#[allow(non_snake_case)]
+pub fn Mat<MS: MultiSort>(srt: MS, m: impl Into<Dim>, n: impl Into<Dim>) -> SignatureElem<MS> {
+    SignatureElem::<MS>::Mat(srt, m.into(), n.into())
+}
+
+impl<MS: MultiSort> From<MS> for SignatureElem<MS> {
+    fn from(s: MS) -> Self {
+        SignatureElem::S(s)
     }
 }
 
-// Variables are printed as `a`, `b`, ..., `z`, `a1`, `b1`, ..., `z1`, `a2`, ...
-fn fmt_var_name(f: &mut fmt::Formatter<'_>, name: Name) -> fmt::Result {
-    let letter = char::from(b'a' + name % 26);
-    match name / 26 {
-        0 => write!(f, "{letter}"),
-        round => write!(f, "{letter}{round}"),
+impl From<usize> for Dim {
+    fn from(n: usize) -> Self {
+        Dim::Const(n)
+    }
+}
+
+impl From<char> for Dim {
+    fn from(c: char) -> Self {
+        Dim::Sym(c.into())
+    }
+}
+
+impl From<u8> for Name {
+    fn from(n: u8) -> Self {
+        Name(n)
+    }
+}
+
+impl From<char> for Name {
+    fn from(c: char) -> Self {
+        assert!(
+            c.is_ascii_lowercase(),
+            "variable name must be a..z, got {c:?}"
+        );
+        Name(c as u8 - b'a')
+    }
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let letter = char::from(b'a' + self.0 % 26);
+        match self.0 / 26 {
+            0 => write!(f, "{letter}"),
+            round => write!(f, "{letter}{round}"),
+        }
     }
 }
 
 impl fmt::Display for Dim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Dim::Sym(name) => fmt_var_name(f, *name),
+            Dim::Sym(name) => write!(f, "{name}"),
             Dim::Const(n) => write!(f, "{n}"),
         }
     }
@@ -91,10 +121,7 @@ impl<MS: MultiSort + fmt::Display> fmt::Display for SignatureElem<MS> {
             SignatureElem::S(srt) => write!(f, "{srt}"),
             SignatureElem::Tan(srt) => write!(f, "Tan({srt})"),
             SignatureElem::Mat(srt, m, n) => write!(f, "Mat({srt}, {m}, {n})"),
-            SignatureElem::TypeVar(name) => {
-                f.write_str("'")?;
-                fmt_var_name(f, *name)
-            }
+            SignatureElem::TypeVar(name) => write!(f, "'{name}"),
         }
     }
 }
@@ -176,9 +203,10 @@ where
     // share variables: rename the variables of `sig2` apart from those of `sig1`
     // by shifting them after the greatest name in `sig1`.
     // First pass: gather the greatest name of a variable in `sig1`.
-    let offset = greatest_var_name(&sig1).map_or(0, |x| x as usize + 1);
+    let offset = greatest_var_name(&sig1).map_or(0, |x| x.0 as usize + 1);
     let shift = |x: Name| {
-        Name::try_from(x as usize + offset)
+        u8::try_from(x.0 as usize + offset)
+            .map(Name)
             .map_err(|_| "Too many variables in the signatures".to_string())
     };
 

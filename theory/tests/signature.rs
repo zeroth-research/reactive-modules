@@ -1,8 +1,8 @@
 use std::fmt;
-use theory::signature::{Dim, Signature, SignatureElem, typecheck};
+use theory::signature::{Dim, Mat, Name, Signature, SignatureElem, Tan, TypeVar, typecheck};
 use theory::sort::{MultiSort, TangentMultiSort};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 enum TestSort {
     A(),
     B(usize),
@@ -85,17 +85,17 @@ impl TangentMultiSort for TestSort {
 
 #[test]
 fn test_1() {
-    let t = SignatureElem::<TestSort>::mk_TypeVar(0);
-    let A = SignatureElem::<TestSort>::mk_S(TestSort::A());
-    let B = SignatureElem::<TestSort>::mk_S(TestSort::B(8));
-    let T = SignatureElem::<TestSort>::mk_Tan(TestSort::B(4).T());
-    let M1 = SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), Dim::Sym(0), Dim::Sym(1));
-    let M2 = SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), Dim::Sym(1), Dim::Sym(2));
-    let M3 = SignatureElem::<TestSort>::mk_Mat(TestSort::B(3), Dim::Sym(0), Dim::Sym(2));
+    let t = TypeVar('a');
+    let A = TestSort::A().into();
+    let B = TestSort::B(8).into();
+    let _tan = Tan(TestSort::B(4).T());
+    let m1 = Mat(TestSort::B(3), 'a', 'b');
+    let m2 = Mat(TestSort::B(3), 'b', 'c');
+    let m3 = Mat(TestSort::B(3), 'a', 'c');
 
     let sig: TestSignature = TestSignature {
-        dom: vec![A, B, M1, M2, t],
-        cod: vec![M3],
+        dom: vec![A, B, m1, m2, t],
+        cod: vec![m3],
     };
     assert_eq!(
         sig.to_string(),
@@ -105,29 +105,54 @@ fn test_1() {
 
 #[test]
 fn display_signature_elems() {
-    type E = SignatureElem<TestSort>;
-    assert_eq!(E::mk_S(TestSort::B(8)).to_string(), "B(8)");
-    assert_eq!(E::mk_Tan(TestSort::B(4)).to_string(), "Tan(B(4))");
-    assert_eq!(E::mk_TypeVar(1).to_string(), "'b");
+    assert_eq!(Elem::from(TestSort::B(8)).to_string(), "B(8)");
+    assert_eq!(Tan(TestSort::B(4)).to_string(), "Tan(B(4))");
+    assert_eq!(TypeVar::<TestSort>(1).to_string(), "'b");
     assert_eq!(
-        E::mk_Mat(TestSort::A(), Dim::Sym(13), Dim::Const(5)).to_string(),
+        Mat(TestSort::A(), Dim::Sym(Name(13)), Dim::Const(5)).to_string(),
         "Mat(A, n, 5)"
     );
 }
 
 #[test]
+fn name_from() {
+    assert_eq!(Name::from(7), Name(7));
+    assert_eq!(Name::from('a'), Name(0));
+    assert_eq!(Name::from('z'), Name(25));
+    assert_eq!(TypeVar::<TestSort>('b'), SignatureElem::TypeVar(Name(1)));
+    assert_eq!(TypeVar::<TestSort>(1), SignatureElem::TypeVar(Name(1)));
+}
+
+#[test]
+fn dim_from() {
+    assert_eq!(Dim::from(5), Dim::Const(5));
+    assert_eq!(Dim::from('a'), Dim::Sym(Name(0)));
+    assert_eq!(
+        Mat(TestSort::A(), 'n', 5),
+        SignatureElem::Mat(TestSort::A(), Dim::Sym(Name(13)), Dim::Const(5))
+    );
+}
+
+#[test]
+#[should_panic(expected = "variable name must be a..z")]
+fn name_from_invalid_char() {
+    let _ = Name::from('A');
+}
+
+#[test]
 fn display_var_names_past_z() {
-    assert_eq!(Dim::Sym(25).to_string(), "z");
-    assert_eq!(Dim::Sym(26).to_string(), "a1");
-    assert_eq!(Dim::Sym(27).to_string(), "b1");
-    assert_eq!(Dim::Sym(255).to_string(), "v9");
-    assert_eq!(SignatureElem::<TestSort>::mk_TypeVar(52).to_string(), "'a2");
+    assert_eq!(Name(25).to_string(), "z");
+    assert_eq!(Name(26).to_string(), "a1");
+    assert_eq!(Name(27).to_string(), "b1");
+    assert_eq!(Name(255).to_string(), "v9");
+    assert_eq!(Dim::Sym(Name(26)).to_string(), "a1");
+    assert_eq!(TypeVar::<TestSort>(52).to_string(), "'a2");
 }
 
 #[test]
 fn display_tuples() {
-    let a = SignatureElem::mk_S(TestSort::A());
-    let b = SignatureElem::mk_S(TestSort::B(8));
+    let a: Elem = TestSort::A().into();
+    let b: Elem = TestSort::B(8).into();
     let sig = |dom: Vec<_>, cod: Vec<_>| TestSignature { dom, cod }.to_string();
     assert_eq!(sig(vec![a], vec![b]), "A -> B(8)");
     assert_eq!(sig(vec![a, a], vec![a]), "(A, A) -> A");
@@ -139,8 +164,6 @@ fn display_tuples() {
 
 // Shorthands for the typechecking tests
 
-use Dim::{Const, Sym};
-
 type Elem = SignatureElem<TestSort>;
 
 fn sig(dom: &[Elem], cod: &[Elem]) -> TestSignature {
@@ -151,19 +174,11 @@ fn sig(dom: &[Elem], cod: &[Elem]) -> TestSignature {
 }
 
 fn a() -> Elem {
-    Elem::mk_S(TestSort::A())
+    TestSort::A().into()
 }
 
 fn b(n: usize) -> Elem {
-    Elem::mk_S(TestSort::B(n))
-}
-
-fn var(name: u8) -> Elem {
-    Elem::mk_TypeVar(name)
-}
-
-fn mat(srt: TestSort, m: Dim, n: Dim) -> Elem {
-    Elem::mk_Mat(srt, m, n)
+    TestSort::B(n).into()
 }
 
 fn err(msg: &str) -> Result<(), String> {
@@ -220,7 +235,7 @@ fn typecheck_arity() {
 
 #[test]
 fn typecheck_tangent() {
-    let tan = Elem::mk_Tan(TestSort::B(4));
+    let tan = Tan(TestSort::B(4));
     assert_eq!(
         typecheck(sig(&[tan], &[b(4)]), sig(&[tan], &[b(4)])),
         Ok(())
@@ -230,7 +245,7 @@ fn typecheck_tangent() {
         err("Failed unifying `Tan(B(4)) -> B(4)` with `B(4) -> B(4)` on `Tan(B(4))` and `B(4)`")
     );
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[tan], &[tan])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[tan], &[tan])),
         Ok(())
     );
 }
@@ -239,26 +254,29 @@ fn typecheck_tangent() {
 fn typecheck_type_var() {
     // `'a -> 'a` is instantiated by any sort
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[a()], &[a()])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[a()], &[a()])),
         Ok(())
     );
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[b(8)], &[b(8)])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[b(8)], &[b(8)])),
         Ok(())
     );
     // ... but consistently
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[a()], &[b(8)])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[a()], &[b(8)])),
         err("Failed unifying `'a -> 'a` with `A -> B(8)` on `A` and `B(8)`")
     );
     assert_eq!(
-        typecheck(sig(&[var(0), var(0)], &[var(0)]), sig(&[a(), b(8)], &[a()])),
+        typecheck(
+            sig(&[TypeVar('a'), TypeVar('a')], &[TypeVar('a')]),
+            sig(&[a(), b(8)], &[a()])
+        ),
         err("Failed unifying `('a, 'a) -> 'a` with `(A, B(8)) -> A` on `A` and `B(8)`")
     );
     // different type variables can be instantiated by different sorts
     assert_eq!(
         typecheck(
-            sig(&[var(0), var(1)], &[var(1)]),
+            sig(&[TypeVar('a'), TypeVar('b')], &[TypeVar('b')]),
             sig(&[a(), b(8)], &[b(8)])
         ),
         Ok(())
@@ -268,11 +286,17 @@ fn typecheck_type_var() {
 #[test]
 fn typecheck_type_var_on_the_right() {
     assert_eq!(
-        typecheck(sig(&[a(), b(8)], &[a()]), sig(&[var(0), var(1)], &[var(0)])),
+        typecheck(
+            sig(&[a(), b(8)], &[a()]),
+            sig(&[TypeVar('a'), TypeVar('b')], &[TypeVar('a')])
+        ),
         Ok(())
     );
     assert_eq!(
-        typecheck(sig(&[a(), b(8)], &[a()]), sig(&[var(0), var(1)], &[var(1)])),
+        typecheck(
+            sig(&[a(), b(8)], &[a()]),
+            sig(&[TypeVar('a'), TypeVar('b')], &[TypeVar('b')])
+        ),
         err("Failed unifying `(A, B(8)) -> A` with `('a, 'b) -> 'b` on `A` and `B(8)`")
     );
 }
@@ -282,16 +306,16 @@ fn typecheck_type_var_with_type_var() {
     // `'c` unifies with both `'a` and `'b`
     assert_eq!(
         typecheck(
-            sig(&[var(0), var(1)], &[var(0)]),
-            sig(&[var(2), var(2)], &[var(2)])
+            sig(&[TypeVar('a'), TypeVar('b')], &[TypeVar('a')]),
+            sig(&[TypeVar('c'), TypeVar('c')], &[TypeVar('c')])
         ),
         Ok(())
     );
     // `'a` and `'b` unified through `'c` must be instantiated by the same sort
     assert_eq!(
         typecheck(
-            sig(&[var(0), var(1), var(0)], &[var(1)]),
-            sig(&[var(2), var(2), a()], &[b(8)])
+            sig(&[TypeVar('a'), TypeVar('b'), TypeVar('a')], &[TypeVar('b')]),
+            sig(&[TypeVar('c'), TypeVar('c'), a()], &[b(8)])
         ),
         err("Failed unifying `('a, 'b, 'a) -> 'b` with `('c, 'c, A) -> B(8)` on `A` and `B(8)`")
     );
@@ -299,14 +323,14 @@ fn typecheck_type_var_with_type_var() {
 
 #[test]
 fn typecheck_type_var_with_matrix() {
-    let m23 = mat(TestSort::A(), Const(2), Const(3));
-    let m32 = mat(TestSort::A(), Const(3), Const(2));
+    let m23 = Mat(TestSort::A(), 2, 3);
+    let m32 = Mat(TestSort::A(), 3, 2);
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[m23], &[m23])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[m23], &[m23])),
         Ok(())
     );
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[m23], &[m32])),
+        typecheck(sig(&[TypeVar('a')], &[TypeVar('a')]), sig(&[m23], &[m32])),
         err(
             "Failed unifying `'a -> 'a` with `Mat(A, 2, 3) -> Mat(A, 3, 2)` on `Mat(A, 2, 3)` and `Mat(A, 3, 2)`"
         )
@@ -317,37 +341,38 @@ fn typecheck_type_var_with_matrix() {
 fn typecheck_signatures_do_not_share_vars() {
     // `'a` is `A` in the first signature and `B(8)` in the second one
     assert_eq!(
-        typecheck(sig(&[var(0), b(8)], &[var(0)]), sig(&[a(), var(0)], &[a()])),
+        typecheck(
+            sig(&[TypeVar('a'), b(8)], &[TypeVar('a')]),
+            sig(&[a(), TypeVar('a')], &[a()])
+        ),
         Ok(())
     );
     assert_eq!(
-        typecheck(sig(&[var(0)], &[var(0)]), sig(&[var(0)], &[var(0)])),
+        typecheck(
+            sig(&[TypeVar('a')], &[TypeVar('a')]),
+            sig(&[TypeVar('a')], &[TypeVar('a')])
+        ),
         Ok(())
     );
     // ... but each `'a` is still used consistently within its signature
     assert_eq!(
         typecheck(
-            sig(&[var(0), b(8)], &[var(0)]),
-            sig(&[var(0), var(0)], &[a()])
+            sig(&[TypeVar('a'), b(8)], &[TypeVar('a')]),
+            sig(&[TypeVar('a'), TypeVar('a')], &[a()])
         ),
         err("Failed unifying `('a, B(8)) -> 'a` with `('a, 'a) -> A` on `B(8)` and `A`")
     );
     // the same for dimensions: `a` is 3 in the first signature and 2 in the second one
-    let m = |rows, cols| mat(TestSort::A(), rows, cols);
-    assert_eq!(
-        typecheck(
-            sig(&[m(Sym(0), Const(2))], &[m(Sym(0), Const(2))]),
-            sig(&[m(Const(3), Sym(0))], &[m(Const(3), Sym(0))])
-        ),
-        Ok(())
-    );
+    let a2 = Mat(TestSort::A(), 'a', 2);
+    let a3 = Mat(TestSort::A(), 3, 'a');
+    assert_eq!(typecheck(sig(&[a2], &[a2]), sig(&[a3], &[a3])), Ok(()));
 }
 
 #[test]
 fn typecheck_too_many_vars() {
     // no name is left for renaming `'a` of the second signature apart from `'v9` (255)
     assert_eq!(
-        typecheck(sig(&[var(255)], &[]), sig(&[var(0)], &[])),
+        typecheck(sig(&[TypeVar(255)], &[]), sig(&[TypeVar('a')], &[])),
         err("Too many variables in the signatures")
     );
 }
@@ -358,8 +383,11 @@ fn typecheck_type_and_dimension_vars_are_separate() {
     // but are different variables
     assert_eq!(
         typecheck(
-            sig(&[var(0), mat(TestSort::A(), Sym(0), Sym(1))], &[var(0)]),
-            sig(&[b(8), mat(TestSort::A(), Const(2), Const(3))], &[b(8)])
+            sig(
+                &[TypeVar('a'), Mat(TestSort::A(), 'a', 'b')],
+                &[TypeVar('a')]
+            ),
+            sig(&[b(8), Mat(TestSort::A(), 2, 3)], &[b(8)])
         ),
         Ok(())
     );
@@ -367,7 +395,7 @@ fn typecheck_type_and_dimension_vars_are_separate() {
 
 #[test]
 fn typecheck_matrix_const_dims() {
-    let m = |rows, cols| mat(TestSort::A(), Const(rows), Const(cols));
+    let m = |rows: usize, cols: usize| Mat(TestSort::A(), rows, cols);
     assert_eq!(
         typecheck(sig(&[m(2, 3)], &[a()]), sig(&[m(2, 3)], &[a()])),
         Ok(())
@@ -390,8 +418,8 @@ fn typecheck_matrix_const_dims() {
 fn typecheck_matrix_elem_sort() {
     assert_eq!(
         typecheck(
-            sig(&[mat(TestSort::A(), Sym(0), Sym(1))], &[a()]),
-            sig(&[mat(TestSort::B(3), Const(2), Const(3))], &[a()])
+            sig(&[Mat(TestSort::A(), 'a', 'b')], &[a()]),
+            sig(&[Mat(TestSort::B(3), 2, 3)], &[a()])
         ),
         err(
             "Failed unifying `Mat(A, a, b) -> A` with `Mat(B(3), 2, 3) -> A` on `Mat(A, 2, 3)` and `Mat(B(3), 2, 3)`"
@@ -399,7 +427,7 @@ fn typecheck_matrix_elem_sort() {
     );
     assert_eq!(
         typecheck(
-            sig(&[mat(TestSort::A(), Const(1), Const(1))], &[a()]),
+            sig(&[Mat(TestSort::A(), 1, 1)], &[a()]),
             sig(&[a()], &[a()])
         ),
         err("Failed unifying `Mat(A, 1, 1) -> A` with `A -> A` on `Mat(A, 1, 1)` and `A`")
@@ -410,10 +438,10 @@ fn typecheck_matrix_elem_sort() {
 fn typecheck_matmul() {
     // (Mat(a, b), Mat(b, c)) -> Mat(a, c)
     let matmul = || {
-        let m = |rows, cols| mat(TestSort::B(3), Sym(rows), Sym(cols));
-        sig(&[m(0, 1), m(1, 2)], &[m(0, 2)])
+        let m = |rows: char, cols: char| Mat(TestSort::B(3), rows, cols);
+        sig(&[m('a', 'b'), m('b', 'c')], &[m('a', 'c')])
     };
-    let m = |rows, cols| mat(TestSort::B(3), Const(rows), Const(cols));
+    let m = |rows: usize, cols: usize| Mat(TestSort::B(3), rows, cols);
     assert_eq!(
         typecheck(matmul(), sig(&[m(2, 3), m(3, 4)], &[m(2, 4)])),
         Ok(())
@@ -440,13 +468,16 @@ fn typecheck_matmul() {
 fn typecheck_matrix_symbolic_dims() {
     // Mat(a, b) -> Mat(b, a)
     let transpose = || {
-        let m = |rows, cols| mat(TestSort::A(), Sym(rows), Sym(cols));
-        sig(&[m(0, 1)], &[m(1, 0)])
+        let m = |rows: char, cols: char| Mat(TestSort::A(), rows, cols);
+        sig(&[m('a', 'b')], &[m('b', 'a')])
     };
     // Mat(c, d) -> Mat(d, c)
-    let m = |rows, cols| mat(TestSort::A(), Sym(rows), Sym(cols));
-    assert_eq!(typecheck(transpose(), sig(&[m(2, 3)], &[m(3, 2)])), Ok(()));
-    let m = |rows, cols| mat(TestSort::A(), Const(rows), Const(cols));
+    let m = |rows: char, cols: char| Mat(TestSort::A(), rows, cols);
+    assert_eq!(
+        typecheck(transpose(), sig(&[m('c', 'd')], &[m('d', 'c')])),
+        Ok(())
+    );
+    let m = |rows: usize, cols: usize| Mat(TestSort::A(), rows, cols);
     assert_eq!(typecheck(transpose(), sig(&[m(2, 3)], &[m(3, 2)])), Ok(()));
     assert_eq!(
         typecheck(transpose(), sig(&[m(2, 3)], &[m(2, 3)])),
@@ -458,14 +489,14 @@ fn typecheck_matrix_symbolic_dims() {
     // a square matrix
     assert_eq!(
         typecheck(
-            sig(&[mat(TestSort::A(), Sym(0), Sym(0))], &[a()]),
+            sig(&[Mat(TestSort::A(), 'a', 'a')], &[a()]),
             sig(&[m(3, 3)], &[a()])
         ),
         Ok(())
     );
     assert_eq!(
         typecheck(
-            sig(&[mat(TestSort::A(), Sym(0), Sym(0))], &[a()]),
+            sig(&[Mat(TestSort::A(), 'a', 'a')], &[a()]),
             sig(&[m(2, 3)], &[a()])
         ),
         err(
