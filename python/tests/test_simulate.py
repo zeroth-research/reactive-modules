@@ -5,9 +5,9 @@ import math
 
 import pytest
 
-from zrth import SPN, Clock, Event, Nat, Var
+from zrth import SPN, Bool, Clock, Event, Nat, Var
 from zrth import Module as compose
-from zrth.simulate import FlowNotSolvable, GuardSkipped, NoFlow, first, last, simulate, uniform
+from zrth.simulate import FlowNotSolvable, GuardSkipped, NoFlow, Simulation, first, last, simulate, uniform
 from zrth.sugar import Module, d, ite, fired, exp
 
 
@@ -104,7 +104,7 @@ def test_the_only_external_is_the_time_reference():
             return ite(other != 0, -1 * d(t), 0 * d(t))
 
     c, t, other = Var(Clock()), Var(Clock()), Var(Nat())
-    with pytest.raises(TypeError, match="time reference"):
+    with pytest.raises(TypeError, match="driven inputs"):
         simulate(M(theory=SPN, ctrl=(c,), extl=(t, other)), t=t, horizon=1.0)
 
 
@@ -287,3 +287,82 @@ def test_stuttering_rounds_do_not_change_what_fires():
     assert len(trace) > 400  # a round every 0.05 plus the expiries
     assert all(n[i] == n[i - 1] + 1 for i in births if i not in _toggles(trace.series(bd.dth)))
     assert all(n[i] == n[i - 1] for i in range(1, len(n)) if i not in births and i not in _toggles(trace.series(bd.dth)))
+
+
+# --- stepping and driven inputs ---------------------------------------------------
+
+
+def test_stepping_by_hand_is_the_same_run():
+    from zrth.examples import birth_death as bd
+
+    sim = Simulation(bd.system, t=bd.t, seed=3)
+    steps = []
+    while sim.now < 20.0:
+        steps.append(sim.step(until=20.0))
+    whole = simulate(bd.system, t=bd.t, horizon=20.0, seed=3)
+    assert sim.trace.times == whole.times and sim.trace.series(bd.n) == whole.series(bd.n)
+    assert [time for time, _, _ in steps] == whole.times[1:]
+    time, seen, after = steps[0]
+    assert seen == whole.before[1] and after == whole.states[1]
+
+
+def test_a_driven_input_gates_a_transition():
+    class Gated(Module):
+        def init(self, t, pick):
+            return 1.0, False
+
+        def next(self, clk, ev, t, pick):
+            fires = (clk == 0) & pick
+            return ite(clk == 0, 1.0, clk), ite(fires, ~ev, ev)
+
+        def flow(self, clk, ev, t, pick):
+            return ite(clk >= 0, -1 * d(t), None), 0
+
+    t, clk, ev, pick = Var(Clock()), Var(Clock()), Var(Event()), Var(Bool([1, 1]))
+    sim = Simulation(Gated(theory=SPN, ctrl=(clk, ev), extl=(t, pick)), t=t)
+    assert sim.inputs == [pick]
+    fired_at = []
+    for k in range(6):
+        time, seen, after = sim.step({pick: k % 2 == 0})
+        if after[ev] != seen[ev]:
+            fired_at.append(time)
+        assert seen[pick] == (k % 2 == 0)  # the input is in the trace
+    assert fired_at == [1.0, 3.0, 5.0]
+    with pytest.raises(TypeError, match="no value for the driven inputs"):
+        sim.step()
+    with pytest.raises(TypeError, match="driven inputs"):
+        simulate(Gated(theory=SPN, ctrl=(clk, ev), extl=(t, pick)), t=t, horizon=1.0)
+    with pytest.raises(TypeError, match="not a driven input"):
+        sim.step({pick: True, t: 0.0})
+
+
+def test_driven_inputs_are_bools_events_or_counts():
+    class Reads(Module):  # an external nothing reads is not part of the module
+        def init(self, t, other):
+            return 1.0
+
+        def next(self, c, t, other):
+            return ite(other >= 1, c, c)
+
+        def flow(self, c, t, other):
+            return -1 * d(t)
+
+    c, t, clock, count = Var(Clock()), Var(Clock()), Var(Clock()), Var(Nat())
+    with pytest.raises(TypeError, match="driven input"):
+        Simulation(Reads(theory=SPN, ctrl=(c,), extl=(t, clock)), t=t)
+    assert Simulation(Reads(theory=SPN, ctrl=(c,), extl=(t, count)), t=t).inputs == [count]
+
+
+def test_a_quiescent_step_needs_an_until():
+    class Frozen(Module):
+        def init(self, t):
+            return 0.5
+
+        def flow(self, c, t):
+            return 0 * d(t)
+
+    c, t = Var(Clock()), Var(Clock())
+    sim = Simulation(Frozen(theory=SPN, ctrl=(c,), extl=(t,)), t=t)
+    with pytest.raises(ValueError, match="quiescent"):
+        sim.step()
+    assert sim.step(until=3.0)[0] == 3.0 and sim.quiescent

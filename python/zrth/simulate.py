@@ -29,7 +29,7 @@ import random
 from dataclasses import dataclass, field
 
 from .zrth import SPN, Combinatorial, Differential, Sequential, X, d
-from .sort import Clock, Nat
+from .sort import Bool, Clock, Event, Nat
 
 
 class FlowNotSolvable(Exception):
@@ -308,11 +308,8 @@ def _advanced(state, clocks, rates, t, delta, pins):
     return s
 
 
-def _snapshot(state, ctrl, t):
-    snap = {v: state[v] for v in ctrl}
-    if t is not None:
-        snap[t] = state[t]
-    return snap
+def _snapshot(state, variables):
+    return {v: state[v] for v in variables}
 
 
 # ---------------------------------------------------------------------------
@@ -439,72 +436,136 @@ def uniform(gap):
     return lambda hi, rng: hi if gap >= hi else rng.uniform(gap, hi)
 
 
-def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
-    """Run `module` from its initial state up to time `horizon`.
+_DRIVEN = (Bool([1, 1]), Event(), Nat())
 
-    `t` is the module's time reference, its only allowed external: it reads the current
-    time and its rate is 1; left out, it is the module's one external. `seed` feeds the exponential clocks and the `uniform`
-    scheduler. `scheduler` is `last()` (the default), `first(gap)`, `uniform(gap)`, or a
-    function `(hi, rng) -> delta` choosing how long the step flows, `0 < delta <= hi`,
-    where `hi` is how long the invariants allow (already clipped to the horizon).
 
-    The run ends at the horizon. It is quiescent when no clock runs and nothing stops
-    time: it then flows straight to the horizon. It raises `NoFlow` when it cannot go on,
-    with the trace so far attached: the flow has no value in the current state, or time
-    cannot pass and the round changes nothing.
+class Simulation:
+    """A run of `module`, one step at a time.
+
+    `t` is the module's time reference, an external that reads the current time and runs
+    at rate 1; left out, it is the module's one external. Any other external must be a
+    Bool, an Event or a Nat: a *driven input*, whose value every `step` receives and holds
+    from then through the round the step ends with. `seed` feeds the exponential clocks and
+    the `uniform` scheduler. `scheduler` is `last()` (the default), `first(gap)`,
+    `uniform(gap)`, or a function `(hi, rng) -> delta` choosing how long the step flows,
+    `0 < delta <= hi`, where `hi` is how long the invariants allow (already clipped).
+
+        sim = Simulation(net, seed=1)
+        while sim.now < 100.0:
+            time, seen, after = sim.step({pick: True}, until=100.0)
+        sim.trace
+
+    A step raises `NoFlow` when the run cannot go on, with the trace so far attached: the
+    flow has no value in the current state, or time cannot pass and the round changes
+    nothing. When no clock runs and nothing stops time the run is quiescent: a step flows
+    straight to `until`, and `until` is then required.
     """
-    if t is None and len(module.extl) == 1:
-        [t] = module.extl
-    if set(module.extl) != ({t} if t is not None else set()):
-        raise TypeError("simulate(): the module's only external may be the time reference `t`")
-    if t is not None and t.dtype != Clock():
-        raise TypeError(f"simulate(): the time reference must be a Clock, got {t.dtype}")
-    pick = last() if scheduler is None else scheduler
-    rng = random.Random(seed)
-    ctrl = list(module.ctrl)
-    clocks = [v for v in ctrl if isinstance(v.dtype, Clock)]
 
-    state = {}
-    if t is not None:
-        state[t] = state[X(t)] = 0.0
-        state[d(t)] = 1.0
-    for atom in module.atoms:
-        _walk(atom.init, state, lambda op, r: _eval(op, r, rng))
-    _latch(state, ctrl)
-    now = 0.0
-    trace = Trace([now], [_snapshot(state, ctrl, t)])
+    def __init__(self, module, *, t=None, seed=0, scheduler=None, inputs=None):
+        extl = list(module.extl)
+        if t is None and len(extl) == 1 and extl[0].dtype == Clock():
+            [t] = extl
+        if t is not None and t.dtype != Clock():
+            raise TypeError(f"the time reference must be a Clock, got {t.dtype}")
+        if t is not None and t not in extl:
+            raise TypeError("the time reference is not an external of the module")
+        self.inputs = [v for v in extl if v != t]
+        for v in self.inputs:
+            if v.dtype not in _DRIVEN:
+                raise TypeError(
+                    f"an external other than the time reference is a driven input, a Bool, an "
+                    f"Event or a Nat, got {v.dtype} ({v})"
+                )
+        self.module, self.t = module, t
+        self.pick = last() if scheduler is None else scheduler
+        self.rng = random.Random(seed)
+        self.ctrl = list(module.ctrl)
+        self.clocks = [v for v in self.ctrl if isinstance(v.dtype, Clock)]
+        self.quiescent = False
 
-    while now < horizon:
+        state = {}
+        if t is not None:
+            state[t] = state[X(t)] = 0.0
+            state[d(t)] = 1.0
+        self._drive(state, inputs or {}, "init")
+        for atom in module.atoms:
+            try:
+                _walk(atom.init, state, lambda op, r: _eval(op, r, self.rng))
+            except KeyError as e:
+                raise TypeError(
+                    f"init reads the driven input {e.args[0]}: pass its value as `inputs`"
+                ) from None
+        _latch(state, self.ctrl)
+        self.state, self.now = state, 0.0
+        self.trace = Trace([0.0], [self._snapshot()])
+
+    @property
+    def _recorded(self):
+        return self.ctrl + ([self.t] if self.t is not None else []) + self.inputs
+
+    def _snapshot(self):
+        return {v: self.state[v] for v in self._recorded if v in self.state}
+
+    def _drive(self, state, inputs, when):
+        missing = [v for v in self.inputs if v not in inputs]
+        if missing and when != "init":
+            raise TypeError(f"{when}: no value for the driven inputs {missing}")
+        for v, val in inputs.items():
+            if v not in self.inputs:
+                raise TypeError(f"{v} is not a driven input of the module")
+            state[v] = state[X(v)] = val
+
+    def step(self, inputs=None, *, until=math.inf):
+        """Flow, then one round; returns `(time, seen, after)`, the instant of the round
+        and the states it saw and produced, which the trace also records."""
+        if self.inputs:
+            self._drive(self.state, inputs or {}, f"step at {self.now}")
         try:
-            hi, rates, pins = _oracle(module, state, clocks, t)
+            hi, rates, pins = _oracle(self.module, self.state, self.clocks, self.t)
         except NoFlow as e:
-            e.trace = trace
+            e.trace = self.trace
             raise
-        left = horizon - now
+        left = until - self.now
         if hi == math.inf and all(k == 0.0 for k in rates.values()):
-            trace.quiescent = True
+            if left == math.inf:
+                raise ValueError("quiescent: nothing will ever happen; pass `until`")
+            self.quiescent = self.trace.quiescent = True
             delta = left
         elif hi == 0.0:
             delta = 0.0
         else:
-            delta = pick(min(hi, left), rng)
+            delta = self.pick(min(hi, left), self.rng)
             if not 0.0 < delta <= min(hi, left):
                 raise ValueError(f"the scheduler chose {delta}, outside (0, {min(hi, left)}]")
-        state = _advanced(state, clocks, rates, t, delta, pins)
-        now += delta
-        seen = _snapshot(state, ctrl, t)
-        if trace.quiescent:
-            trace.times.append(now)
-            trace.states.append(seen)
-            trace.before.append(seen)
-            break
-        _round(module, state, lambda op, r: _eval(op, r, rng))
-        changed = _latch(state, ctrl)
-        if hi == 0.0 and not changed:
-            e = NoFlow(f"stuck at {now}: time cannot pass and the round changes nothing")
-            e.trace = trace
-            raise e
-        trace.times.append(now)
-        trace.states.append(_snapshot(state, ctrl, t))
-        trace.before.append(seen)
-    return trace
+        self.state = _advanced(self.state, self.clocks, rates, self.t, delta, pins)
+        self.now += delta
+        seen = self._snapshot()
+        if self.quiescent:
+            after = seen
+        else:
+            _round(self.module, self.state, lambda op, r: _eval(op, r, self.rng))
+            changed = _latch(self.state, self.ctrl)
+            if hi == 0.0 and not changed:
+                e = NoFlow(f"stuck at {self.now}: time cannot pass and the round changes nothing")
+                e.trace = self.trace
+                raise e
+            after = self._snapshot()
+        self.trace.times.append(self.now)
+        self.trace.states.append(after)
+        self.trace.before.append(seen)
+        return self.now, seen, after
+
+    def run(self, horizon, inputs=None):
+        """Steps up to `horizon`; a module with driven inputs needs their values."""
+        while self.now < horizon and not self.quiescent:
+            self.step(inputs, until=horizon)
+        return self
+
+
+def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
+    """Run `module` from its initial state up to time `horizon` and return the trace; see
+    `Simulation` for the arguments. The module's only external is the time reference."""
+    sim = Simulation(module, t=t, seed=seed, scheduler=scheduler)
+    if sim.inputs:
+        raise TypeError("simulate(): the module has driven inputs; drive them with Simulation.step")
+    return sim.run(horizon).trace
