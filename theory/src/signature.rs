@@ -134,7 +134,6 @@ pub trait Signature<MS: MultiSort> {
 
 /// Helper for substitutions in the signature (for type-checking)
 enum SubstType<MS: MultiSort> {
-    None,
     // elem with elem
     Elem(SignatureElem<MS>, SignatureElem<MS>),
     // variable name with name
@@ -169,6 +168,102 @@ where
     greatest
 }
 
+/// Collect the elements of the signature (the domain followed by the codomain)
+/// into a vector, shifting the names of all variables by `offset`
+fn collect_shifted<S, MS>(sig: &S, offset: usize) -> Result<Vec<SignatureElem<MS>>, String>
+where
+    S: Signature<MS>,
+    MS: MultiSort,
+{
+    let shift = |x: Name| {
+        u8::try_from(x.0 as usize + offset)
+            .map(Name)
+            .map_err(|_| "Too many variables in the signatures".to_string())
+    };
+
+    sig.dom()
+        .chain(sig.cod())
+        .map(|mut e| {
+            match &mut e {
+                SignatureElem::TypeVar(x) => *x = shift(*x)?,
+                SignatureElem::Mat(_, m, n) => {
+                    for d in [m, n] {
+                        if let Dim::Sym(x) = d {
+                            *x = shift(*x)?;
+                        }
+                    }
+                }
+                _ => (),
+            }
+            Ok(e)
+        })
+        .collect()
+}
+
+/// Find the next substitution that unifies the elements of `sig1` and `sig2`,
+/// or `None` if there is no substitution left to do
+fn find_subst<MS: MultiSort>(
+    sig1: &[SignatureElem<MS>],
+    sig2: &[SignatureElem<MS>],
+) -> Option<SubstType<MS>> {
+    for (e1, e2) in sig1.iter().zip(sig2) {
+        match (e1, e2) {
+            // for two type variables, pick the left one (it doesn't matter which one, but we
+            // need to pick) -- and only if they are not the same (to ensure progress)
+            (SignatureElem::TypeVar(n), SignatureElem::TypeVar(m)) => {
+                if n != m {
+                    return Some(SubstType::Elem(*e2, *e1));
+                }
+            }
+            (SignatureElem::TypeVar(_), _) => return Some(SubstType::Elem(*e1, *e2)),
+            (_, SignatureElem::TypeVar(_)) => return Some(SubstType::Elem(*e2, *e1)),
+            (SignatureElem::Mat(_, n1, m1), SignatureElem::Mat(_, n2, m2)) => {
+                for (d1, d2) in [(n1, n2), (m1, m2)] {
+                    match (d1, d2) {
+                        (Dim::Sym(x), Dim::Sym(y)) => {
+                            if x != y {
+                                return Some(SubstType::DimName(*y, *x));
+                            }
+                        }
+                        (Dim::Sym(x), Dim::Const(y)) | (Dim::Const(y), Dim::Sym(x)) => {
+                            return Some(SubstType::DimConst(*x, *y));
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+    None
+}
+
+/// Apply the substitution `subst` to the elements `elems`
+fn apply_subst<MS: MultiSort + PartialEq>(subst: &SubstType<MS>, elems: &mut [SignatureElem<MS>]) {
+    // replace the dimension name `orig` with `new` in the matrix `e`
+    let subst_dim = |e: &mut SignatureElem<MS>, orig: Name, new: Dim| {
+        if let SignatureElem::Mat(_, m, n) = e {
+            for d in [m, n] {
+                if *d == Dim::Sym(orig) {
+                    *d = new;
+                }
+            }
+        }
+    };
+
+    for e in elems {
+        match *subst {
+            SubstType::Elem(orig, new) => {
+                if *e == orig {
+                    *e = new;
+                }
+            }
+            SubstType::DimName(orig, new) => subst_dim(e, orig, Dim::Sym(new)),
+            SubstType::DimConst(orig, new) => subst_dim(e, orig, Dim::Const(new)),
+        }
+    }
+}
+
 /// Check if signatures `sig1` and `sig2` are compatible.
 pub fn typecheck<S, MS>(sig1: S, sig2: S) -> Result<(), String>
 where
@@ -198,127 +293,15 @@ where
 
     // First pass: gather the greatest name of a variable in `sig1`.
     let offset = greatest_var_name(&sig1).map_or(0, |x| x.0 as usize + 1);
-    let shift = |x: Name| {
-        u8::try_from(x.0 as usize + offset)
-            .map(Name)
-            .map_err(|_| "Too many variables in the signatures".to_string())
-    };
 
     // Second pass: collect the signatures, renaming the variables of `sig2`
-    let mut sig1_vec: Vec<SignatureElem<MS>> = sig1.dom().chain(sig1.cod()).collect();
-    let mut sig2_vec: Vec<SignatureElem<MS>> = sig2
-        .dom()
-        .chain(sig2.cod())
-        .map(|mut e| {
-            match &mut e {
-                SignatureElem::TypeVar(x) => *x = shift(*x)?,
-                SignatureElem::Mat(_, m, n) => {
-                    for d in [m, n] {
-                        if let Dim::Sym(x) = d {
-                            *x = shift(*x)?;
-                        }
-                    }
-                }
-                _ => (),
-            }
-            Ok(e)
-        })
-        .collect::<Result<_, String>>()?;
+    let mut sig1_vec = collect_shifted(&sig1, 0)?;
+    let mut sig2_vec = collect_shifted(&sig2, offset)?;
     debug_assert!(sig1_vec.len() == sig2_vec.len());
 
-    loop {
-        let mut subst: SubstType<MS> = SubstType::None;
-        // find the next substitution
-        'gather: for (e1, e2) in sig1_vec.iter().zip(sig2_vec.iter()) {
-            match (e1, e2) {
-                // for two type variables, pick the left one (it doesn't matter which one, but we
-                // need to pick) -- and only if they are not the same (to ensure progress)
-                (SignatureElem::TypeVar(n), SignatureElem::TypeVar(m)) => {
-                    if *n != *m {
-                        subst = SubstType::Elem(*e2, *e1);
-                        break;
-                    }
-                }
-                (SignatureElem::TypeVar(_), _) => {
-                    subst = SubstType::Elem(*e1, *e2);
-                    break;
-                }
-                (_, SignatureElem::TypeVar(_)) => {
-                    subst = SubstType::Elem(*e2, *e1);
-                    break;
-                }
-                (SignatureElem::Mat(_, n1, m1), SignatureElem::Mat(_, n2, m2)) => {
-                    for (d1, d2) in [(n1, n2), (m1, m2)] {
-                        match (d1, d2) {
-                            (Dim::Sym(x), Dim::Sym(y)) => {
-                                if *x != *y {
-                                    subst = SubstType::DimName(*y, *x);
-                                    break 'gather;
-                                }
-                            }
-                            (Dim::Sym(x), Dim::Const(y)) => {
-                                subst = SubstType::DimConst(*x, *y);
-                                break 'gather;
-                            }
-                            (Dim::Const(y), Dim::Sym(x)) => {
-                                subst = SubstType::DimConst(*x, *y);
-                                break 'gather;
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        // do the substitutions
-        match subst {
-            SubstType::None => break,
-            SubstType::Elem(orig, new) => {
-                for e in &mut sig1_vec.iter_mut().chain(sig2_vec.iter_mut()) {
-                    if *e == orig {
-                        *e = new;
-                    }
-                }
-            }
-            SubstType::DimName(orig, new) => {
-                for e in &mut sig1_vec.iter_mut().chain(sig2_vec.iter_mut()) {
-                    if let SignatureElem::Mat(s, m, n) = *e {
-                        match (m, n) {
-                            (Dim::Sym(x), Dim::Sym(y)) if x == orig && y == orig => {
-                                *e = SignatureElem::Mat(s, Dim::Sym(new), Dim::Sym(new))
-                            }
-                            (Dim::Sym(x), rhs) if x == orig => {
-                                *e = SignatureElem::Mat(s, Dim::Sym(new), rhs)
-                            }
-                            (lhs, Dim::Sym(y)) if y == orig => {
-                                *e = SignatureElem::Mat(s, lhs, Dim::Sym(new))
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-            }
-            SubstType::DimConst(orig, new) => {
-                for e in &mut sig1_vec.iter_mut().chain(sig2_vec.iter_mut()) {
-                    if let SignatureElem::Mat(s, m, n) = *e {
-                        match (m, n) {
-                            (Dim::Sym(x), Dim::Sym(y)) if x == orig && y == orig => {
-                                *e = SignatureElem::Mat(s, Dim::Const(new), Dim::Const(new))
-                            }
-                            (Dim::Sym(x), rhs) if x == orig => {
-                                *e = SignatureElem::Mat(s, Dim::Const(new), rhs)
-                            }
-                            (lhs, Dim::Sym(y)) if y == orig => {
-                                *e = SignatureElem::Mat(s, lhs, Dim::Const(new))
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-            }
-        }
+    while let Some(subst) = find_subst(&sig1_vec, &sig2_vec) {
+        apply_subst(&subst, &mut sig1_vec);
+        apply_subst(&subst, &mut sig2_vec);
     }
 
     // check if the two signatures are the same
