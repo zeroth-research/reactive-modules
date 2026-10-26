@@ -176,12 +176,50 @@ def test_a_place_composes_with_any_module():
     assert trace.series(p.count) == [0, 1, 2, 3, 3]
 
 
+def test_a_delay_variable_arms_the_clock():
+    # a deterministic timer: the delay is a constant, the firings land exactly
+    class Fixed(Module):
+        def init(self):
+            return 0.5
+
+        def next(self, delay):
+            return 0.5
+
+    delay = Var(Clock())
+    tick, out = Fixed(theory=SPN, ctrl=(delay,)), Arc("production")
+    tr = Transition(rate=delay, outputs=[out])
+    assert tr.rate is delay and delay in tr.extl
+    p = Place(inputs=[out])
+    trace = simulate(compose(tick, tr, p), horizon=2.0)
+    assert trace.times == [0.0, 0.5, 1.0, 1.5, 2.0] and trace.series(p.count) == [0, 1, 2, 3, 4]
+
+
+def test_a_delay_chosen_by_the_marking():
+    # births at 2 while the place is empty, at 0.5 once it holds a token
+    from zrth.sugar import exp
+
+    class Dependent(Module):
+        def init(self, n):
+            return exp(2.0)
+
+        def next(self, delay, n):
+            return ite(n == 0, exp(2.0), exp(0.5))
+
+    delay, bth = Var(Clock()), Arc("production")
+    birth = Transition(rate=delay, outputs=[bth])
+    place = Place(inputs=[bth])
+    speed = Dependent(theory=SPN, ctrl=(delay,), extl=(place.count,))
+    trace = simulate(compose(speed, birth, place), horizon=200.0, seed=1)
+    gaps = [b - a for a, b in zip(trace.times, trace.times[1:])][1:-1]
+    assert len(gaps) > 50 and 1.0 < sum(gaps) / len(gaps) < 3.0  # about 2, as 1/0.5
+
+
 def test_bad_arguments_raise():
     prod, cons = Arc("production"), Arc("consumption")
     with pytest.raises(TypeError, match="rate"):
         Transition(rate=0, outputs=[prod])
-    with pytest.raises(NotImplementedError, match="variable"):
-        Transition(rate=Var(Clock()), outputs=[prod])
+    with pytest.raises(TypeError, match="delay variable"):
+        Transition(rate=Var(Nat()), outputs=[prod])
     with pytest.raises(TypeError, match="time reference"):
         Transition(rate=1.0, t=Var(Clock(1)), outputs=[prod])
     with pytest.raises(TypeError, match="at least one arc"):

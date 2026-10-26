@@ -25,18 +25,19 @@ A transition owns a clock, armed with an exponential delay at its rate and run d
 the time reference `TIME` (`t=` for another) while it is non-negative; whenever it expires
 the clock is re-armed, and the transition fires if every input arc is enabled (an expiry
 otherwise is a lost attempt; for exponential rates this is the same process as a clock that
-waits). The clock is private, reachable as `transition.clock` to plot a trace. A place owns
+waits). The rate may instead be a `Var(Clock())` holding the time to the next expiry, driven
+by a module you compose: a constant for a deterministic delay, `exp(...)` chosen by the
+marking for a rate that depends on it; the clock is armed with its value of the round. The clock is private, reachable as `transition.clock` to plot a trace. A place owns
 its token count: the tokens of each firing input come in, those of each firing consumption
 go out while there are enough, and it keeps each output arc's `enabled` current in the
 same round the count changes. Two transitions firing in one round and competing for the
 tokens are served in the order of `outputs`, a firing the count cannot serve dropped there.
 
-A rate given by a variable waits for the theory.
 """
 
 from .zrth import SPN, Var
 from .sort import Bool, Clock, Event, Nat
-from .sugar import Module, d, exp, fired, ite
+from .sugar import Module, X, d, exp, fired, ite
 
 TIME = Var(Clock())
 """The time reference every clock runs against unless told otherwise: a net's one external."""
@@ -88,12 +89,15 @@ def _build(cls, blocks, **config):
 
 class Transition(Module):
     """A stochastic transition: `inputs` are the arcs it takes tokens through, `outputs` the
-    arcs it produces through; it fires `arc.fired` on every one of them."""
+    arcs it produces through; it fires `arc.fired` on every one of them. `rate` is a
+    number, the rate of an exponential delay, or a `Var(Clock())` holding the delay."""
 
     def __new__(cls, rate, *, t=TIME, inputs=(), outputs=(), name=None):
-        if isinstance(rate, Var):
-            raise NotImplementedError("a rate given by a variable waits for the theory")
-        if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
+        delay = rate if isinstance(rate, Var) else None
+        if delay is not None:
+            if delay.dtype != Clock():
+                raise TypeError(f"a delay variable is a Var(Clock()), got {delay!r}")
+        elif isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
             raise TypeError(f"a transition's rate is a positive number, got {rate!r}")
         if not isinstance(t, Var) or t.dtype != Clock():
             raise TypeError(f"the time reference is a Var(Clock()), got {t!r}")
@@ -101,22 +105,28 @@ class Transition(Module):
         outputs = _arcs(outputs, True, "a transition's outputs")
         if not inputs and not outputs:
             raise TypeError("a transition needs at least one arc")
-        rate = float(rate)
+        rate = rate if delay is not None else float(rate)
         clock = Var(Clock())
         events = [a.fired for a in inputs + outputs]
         k = len(events)
+        m = len(inputs)
 
-        # the variables bind positionally: clk, *events, t, *enabled
-        def init(self, t, *enabled):
-            return exp(rate), *[False] * k
+        # the arming value: a fresh exponential sample, or the delay variable as the
+        # driving module writes it this round
+        def armed(rest):
+            return exp(rate) if delay is None else X(rest[-1])
+
+        # the variables bind positionally: clk, *events, t, *enabled, [delay]
+        def init(self, t, *rest):
+            return armed(rest), *[False] * k
 
         def next(self, clk, *rest):
-            events, enabled = rest[:k], rest[k + 1 :]
+            events, enabled = rest[:k], rest[k + 1 : k + 1 + m]
             expired = clk == 0
             fires = expired
             for e in enabled:
                 fires = fires & e
-            return ite(expired, exp(rate), clk), *[ite(fires, ~ev, ev) for ev in events]
+            return ite(expired, armed(rest), clk), *[ite(fires, ~ev, ev) for ev in events]
 
         def flow(self, clk, *rest):
             return ite(clk >= 0, -1 * d(rest[k]), None), *[0] * k
@@ -125,7 +135,7 @@ class Transition(Module):
             cls,
             {"init": init, "next": next, "flow": flow},
             ctrl=(clock, *events),
-            extl=(t, *[a.enabled for a in inputs]),
+            extl=(t, *[a.enabled for a in inputs], *([delay] if delay is not None else [])),
             hide={clock},
         )
         self.rate, self.t, self.name = rate, t, name
