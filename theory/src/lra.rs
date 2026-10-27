@@ -21,15 +21,16 @@ The operations in [`LRA`] are:
 - [`LRA::RealZerograd`], [`LRA::BoolZerograd`] — the zero derivatives.
 
 `LRA` implements [`Signature`] over [`Sort`], with matrices of scalars
-`Real(1, 1)` and `Bool(1, 1)`, e.g., the signature of [`LRA::ReLU`]
-is `Mat(Real(1, 1), a, b) -> Mat(Real(1, 1), a, b)`. These are the signatures
-over values: the arithmetic operations also work on the derivatives of reals
-(of the same degree), e.g., `ReLU` also has the signature
-`Mat(TReal(1, 1; 1), a, b) -> Mat(TReal(1, 1; 1), a, b)`.
+`Real(1, 1)` and `Bool(1, 1)`, e.g., the signature of [`LRA::Not`]
+is `Mat(Bool(1, 1), a, b) -> Mat(Bool(1, 1), a, b)`. The arithmetic operations
+work on reals and on their derivatives (of the same degree), so their signatures
+have the symbolic sort `'t` of matrix elements, e.g., the signature of
+[`LRA::ReLU`] is `Mat('t, a, b) -> Mat('t, a, b)`.
 
 `LRA` implements [`Theory`]; [`Theory::check`] typechecks the sorts of the
-read and write wires against the signature of the operation (over values, or
-over the derivatives of the degree of the first real wire).
+read and write wires against the signature of the operation. Signatures cannot
+restrict `'t` to reals and their derivatives, so `check` also checks that
+the arithmetic operations do not read booleans (or their derivatives).
 
 ## Examples
 
@@ -52,7 +53,7 @@ assert!(LRA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
-use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature};
+use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -208,19 +209,21 @@ impl Theory for LRA {
     {
         let check = || -> Result<(), String> {
             let (read, write) = (wire_sorts(read)?, wire_sorts(write)?);
-            // the operation works on values, or on derivatives (of the first real wire)
-            let degree = read
-                .iter()
-                .chain(&write)
-                .find_map(Sort::real_degree)
-                .unwrap_or(0);
-            let mut sig = signature(self, degree)?;
-            // `Uninterpreted` either writes or reads a single value, but its signature
-            // has the write
+            let mut sig = signature(self)?;
+            // XXX: `Uninterpreted` either writes or reads a single value, but this we know only
+            // from the wires, not from the signature
             if matches!(self, LRA::Uninterpreted(_)) && !read.is_empty() {
                 std::mem::swap(&mut sig.dom, &mut sig.cod);
             }
-            typecheck_wires(sig, &read, &write, sort_elem)
+            typecheck_wires(sig, &read, &write, sort_elem)?;
+            // FIXME: signatures cannot restrict the sort `'t` of the arithmetic operations
+            // to reals and their derivatives, so we check it here
+            if is_arithmetic(self)
+                && let Some(sort) = read.iter().find(|s| s.real_degree().is_none())
+            {
+                return Err(format!("expected reals or their derivatives, got {sort}"));
+            }
+            Ok(())
         };
         check().map_err(|e| format!("{self:?}: {e}"))
     }
@@ -228,9 +231,11 @@ impl Theory for LRA {
 
 type Elem = SignatureElem<Sort>;
 
-/// The signatures over values. Matrices in the signatures are matrices of scalars:
-/// `Real([i, j])` is `Mat(Real([1, 1]), i, j)`, `TReal([i, j], d)` is
-/// `Mat(TReal([1, 1], d), i, j)`, and similarly for `Bool` and `Zero`.
+/// Matrices in the signatures are matrices of scalars: `Real([i, j])` is
+/// `Mat(Real([1, 1]), i, j)`, `TReal([i, j], d)` is `Mat(TReal([1, 1], d), i, j)`,
+/// and similarly for `Bool` and `Zero`. The symbolic sort `'t` of the arithmetic
+/// operations stands for reals and their derivatives, but nothing restricts it
+/// to them ([`Theory::check`] does).
 ///
 /// # Panics
 ///
@@ -255,22 +260,41 @@ impl Signature<Sort> for LRA {
 }
 
 fn expect_signature(op: &LRA) -> VecSignature<Sort> {
-    signature(op, 0).unwrap_or_else(|e| panic!("{op:?}: {e}"))
+    signature(op).unwrap_or_else(|e| panic!("{op:?}: {e}"))
 }
 
-/// The signature of `op` over values (`degree` 0), or over the derivatives of reals of
-/// the given `degree`, e.g., `Add` adds them, and `Lt` compares them (into values).
-/// It is an error if `op` is ill-formed.
-fn signature(op: &LRA, degree: u8) -> Result<VecSignature<Sort>, String> {
-    // the sorts of the elements of matrices: values, and reals of the `degree`
-    let (real0, bool) = (Sort::Real([1, 1]), Sort::Bool([1, 1]));
-    let real = (0..degree).fold(real0, |s, _| s.T());
+/// Is `op` an arithmetic operation, i.e., on reals or on their derivatives (`'t` in
+/// its signature)? E.g., `Add` adds them, and `Lt` compares them (into values).
+fn is_arithmetic(op: &LRA) -> bool {
+    matches!(
+        op,
+        LRA::Le()
+            | LRA::Lt()
+            | LRA::Ge()
+            | LRA::Gt()
+            | LRA::Eq()
+            | LRA::Ne()
+            | LRA::Linear(..)
+            | LRA::Add()
+            | LRA::Sub()
+            | LRA::Min()
+            | LRA::Max()
+            | LRA::ReLU()
+            | LRA::Argmax()
+    )
+}
+
+/// The signature of `op`, or an error if `op` is ill-formed
+fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
+    // the sorts of the elements of matrices: reals and their derivatives (of any degree,
+    // see `is_arithmetic`), and booleans
+    let (real, bool) = (MatSort::from('t'), MatSort::S(Sort::Bool([1, 1])));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
-    let m = |s: Sort| Mat(s, 'a', 'b');
+    let m = |s: MatSort<Sort>| Mat(s, 'a', 'b');
     let (dom, cod) = match op {
         LRA::Real(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            (vec![], vec![Mat(real0, rows, cols)])
+            (vec![], vec![Mat(Sort::Real([1, 1]), rows, cols)])
         }
         LRA::Bool(cm) => {
             let [rows, cols] = shape_2d(cm)?;
@@ -817,15 +841,23 @@ mod tests {
 
     #[test]
     fn signatures() {
-        let r = "Mat(Real(1, 1), a, b)";
-        assert_eq!(sig(LRA::Add()), format!("({r}, {r}) -> ({r})"));
+        // reals and their derivatives
+        let t = "Mat('t, a, b)";
+        assert_eq!(sig(LRA::Add()), format!("({t}, {t}) -> ({t})"));
         assert_eq!(
             sig(LRA::Lt()),
-            format!("({r}, {r}) -> (Mat(Bool(1, 1), a, b))")
+            format!("({t}, {t}) -> (Mat(Bool(1, 1), a, b))")
         );
         assert_eq!(
             sig(LRA::Linear(real_tensor(2, 3), real_tensor(0, 0))),
-            "(Mat(Real(1, 1), 3, b)) -> (Mat(Real(1, 1), 2, b))"
+            "(Mat('t, 3, b)) -> (Mat('t, 2, b))"
+        );
+        assert_eq!(sig(LRA::Argmax()), format!("({t}) -> (Mat('t, 1, 1))"));
+        let b = "Mat(Bool(1, 1), a, b)";
+        assert_eq!(sig(LRA::And()), format!("({b}, {b}) -> ({b})"));
+        assert_eq!(
+            sig(LRA::Real(real_tensor(2, 3))),
+            "() -> (Mat(Real(1, 1), 2, 3))"
         );
         assert_eq!(
             sig(LRA::RealZerograd([2, 3])),
@@ -837,20 +869,19 @@ mod tests {
         );
         assert_eq!(sig(LRA::AnyReal([2, 3])), "() -> (Mat(Real(1, 1), 2, 3))");
         assert_eq!(sig(LRA::Transpose()), "(Mat('t, a, b)) -> (Mat('t, b, a))");
-        // over derivatives
-        let dr = "Mat(TReal(1, 1; 1), a, b)";
-        let sig1 = |op| {
-            let sig = signature(&op, 1).unwrap();
-            (
-                sig.dom.len(),
-                sig.cod.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-            )
-        };
-        assert_eq!(sig1(LRA::Add()), (2, vec![dr.to_string()]));
-        assert_eq!(
-            sig1(LRA::Lt()),
-            (2, vec!["Mat(Bool(1, 1), a, b)".to_string()])
-        );
+    }
+
+    #[test]
+    fn signature_typecheck() {
+        use crate::signature::typecheck;
+        assert_eq!(typecheck(LRA::Add(), LRA::Max()), Ok(()));
+        assert!(typecheck(LRA::AnyReal([2, 3]), LRA::AnyBool([2, 3])).is_err());
+        let linear = |n| LRA::Linear(real_tensor(2, n), real_tensor(0, 0));
+        assert!(typecheck(linear(3), linear(4)).is_err());
+        // FIXME: signatures cannot restrict `'t` to reals and their derivatives,
+        // so `Add` on booleans unifies with `And`, and `Lt` with `Add`
+        assert_eq!(typecheck(LRA::Add(), LRA::And()), Ok(()));
+        assert_eq!(typecheck(LRA::Lt(), LRA::Add()), Ok(()));
     }
 
     #[test]
@@ -858,25 +889,34 @@ mod tests {
         assert_eq!(
             LRA::Add().check([real(1, 1), real(1, 2)].map(ok), [real(1, 1)].map(ok)),
             Err(
-                "Add: Failed unifying `(Mat(Real(1, 1), a, b), Mat(Real(1, 1), a, b)) -> Mat(Real(1, 1), a, b)` \
+                "Add: Failed unifying `(Mat('t, a, b), Mat('t, a, b)) -> Mat('t, a, b)` \
                  with `(Mat(Real(1, 1), 1, 1), Mat(Real(1, 1), 1, 2)) -> Mat(Real(1, 1), 1, 1)` \
                  on `Mat(Real(1, 1), 1, 1)` and `Mat(Real(1, 1), 1, 2)`"
                     .to_string()
             )
         );
-        // over derivatives, the signature is over the tangents
+        // derivatives and values do not mix
         let dr = real(1, 1).T();
         assert_eq!(
             LRA::Add().check([dr, real(1, 1)].map(ok), [dr].map(ok)),
             Err(
-                "Add: Failed unifying `(Mat(TReal(1, 1; 1), a, b), Mat(TReal(1, 1; 1), a, b)) -> Mat(TReal(1, 1; 1), a, b)` \
+                "Add: Failed unifying `(Mat('t, a, b), Mat('t, a, b)) -> Mat('t, a, b)` \
                  with `(Mat(TReal(1, 1; 1), 1, 1), Mat(Real(1, 1), 1, 1)) -> Mat(TReal(1, 1; 1), 1, 1)` \
                  on `Mat(TReal(1, 1; 1), 1, 1)` and `Mat(Real(1, 1), 1, 1)`"
                     .to_string()
             )
         );
-        // errors of wires are propagated
+        // the arithmetic operations are on reals (checked apart from the signature)
         let b = bool_t(1, 1);
+        assert_eq!(
+            LRA::Add().check([b, b].map(ok), [b].map(ok)),
+            Err("Add: expected reals or their derivatives, got Bool(1, 1)".to_string())
+        );
+        assert_eq!(
+            LRA::Lt().check([b.T(), b.T()].map(ok), [b].map(ok)),
+            Err("Lt: expected reals or their derivatives, got Zero(1, 1)".to_string())
+        );
+        // errors of wires are propagated
         assert_eq!(
             LRA::Not().check([Err("bad wire")], [b].map(Ok)),
             Err("Not: bad wire".to_string())
