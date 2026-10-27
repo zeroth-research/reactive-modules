@@ -49,7 +49,7 @@ assert!(LIA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
-use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature};
+use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature, sig};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -217,19 +217,19 @@ fn signature(op: &LIA) -> Result<VecSignature<Sort>, String> {
     let (int, bool) = (Sort::Int([1, 1]), Sort::Bool([1, 1]));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
     let m = |s: Sort| Mat(s, 'a', 'b');
-    let (dom, cod) = match op {
+    Ok(match op {
         LIA::Int(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            (vec![], vec![Mat(int, rows, cols)])
+            sig!(() -> Mat(int, rows, cols))
         }
         LIA::Bool(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            (vec![], vec![Mat(bool, rows, cols)])
+            sig!(() -> Mat(bool, rows, cols))
         }
-        LIA::And() | LIA::Or() | LIA::Xor() => (vec![m(bool), m(bool)], vec![m(bool)]),
-        LIA::Not() => (vec![m(bool)], vec![m(bool)]),
+        LIA::And() | LIA::Or() | LIA::Xor() => sig!((m(bool), m(bool)) -> m(bool)),
+        LIA::Not() => sig!(m(bool) -> m(bool)),
         LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
-            (vec![m(int), m(int)], vec![m(bool)])
+            sig!((m(int), m(int)) -> m(bool))
         }
         LIA::Linear(a, b) => {
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
@@ -237,27 +237,23 @@ fn signature(op: &LIA) -> Result<VecSignature<Sort>, String> {
             if b.numel() != 0 && shape_2d(b)? != [out, 1] {
                 return Err(format!("`B` must be a column vector [{out}x1]"));
             }
-            (vec![Mat(int, inp, 'b')], vec![Mat(int, out, 'b')])
+            sig!(Mat(int, inp, 'b') -> Mat(int, out, 'b'))
         }
         // `Min` and `Max` are pointwise, as in the evaluator
-        LIA::Add() | LIA::Sub() | LIA::Min() | LIA::Max() => (vec![m(int), m(int)], vec![m(int)]),
-        LIA::ReLU() => (vec![m(int)], vec![m(int)]),
+        LIA::Add() | LIA::Sub() | LIA::Min() | LIA::Max() => sig!((m(int), m(int)) -> m(int)),
+        LIA::ReLU() => sig!(m(int) -> m(int)),
         // the index into the flattened matrix, as in the evaluator and the Python builder
-        LIA::Argmax() => (vec![m(int)], vec![Mat(int, 1, 1)]),
+        LIA::Argmax() => sig!(m(int) -> Mat(int, 1, 1)),
         // of any sort, as in the evaluator
-        LIA::Transpose() => (vec![Mat('t', 'a', 'b')], vec![Mat('t', 'b', 'a')]),
-        LIA::Ite() => (
-            vec![Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')],
-            vec![TypeVar('a')],
-        ),
-        LIA::Id() => (vec![TypeVar('a')], vec![TypeVar('a')]),
+        LIA::Transpose() => sig!(Mat('t', 'a', 'b') -> Mat('t', 'b', 'a')),
+        LIA::Ite() => sig!((Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),
+        LIA::Id() => sig!(TypeVar('a') -> TypeVar('a')),
         // `Uninterpreted` either writes or reads a single value, but a signature
         // has a fixed arity: we pick the write (used by the builder for untraced calls)
-        LIA::Uninterpreted(_) => (vec![], vec![TypeVar('a')]),
-        LIA::AnyInt(shape) => (vec![], vec![sort_elem(Sort::Int(*shape))]),
-        LIA::AnyBool(shape) => (vec![], vec![sort_elem(Sort::Bool(*shape))]),
-    };
-    Ok(VecSignature { dom, cod })
+        LIA::Uninterpreted(_) => sig!(() -> TypeVar('a')),
+        LIA::AnyInt(shape) => sig!(() -> sort_elem(Sort::Int(*shape))),
+        LIA::AnyBool(shape) => sig!(() -> sort_elem(Sort::Bool(*shape))),
+    })
 }
 
 /// The signature element of `sort`: a matrix of scalars

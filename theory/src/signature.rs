@@ -193,6 +193,36 @@ impl<MS: MultiSort> Signature<MS> for VecSignature<MS> {
     }
 }
 
+/// A [`VecSignature`] written as it is printed: `sig!((A, B) -> C)` reads `A` and `B`
+/// and writes `C`. The domain and the codomain are tuples of elements or single elements,
+/// e.g., `sig!(() -> Mat(int, 'a', 'b'))` or `sig!(TypeVar('a') -> TypeVar('a'))`.
+macro_rules! sig {
+    // collect the tokens of the domain up to `->`
+    (@dom [$($dom:tt)*] -> $($cod:tt)+) => {
+        $crate::signature::VecSignature {
+            dom: $crate::signature::sig!(@elems $($dom)*),
+            cod: $crate::signature::sig!(@elems $($cod)+),
+        }
+    };
+    (@dom [$($dom:tt)*] $next:tt $($rest:tt)*) => {
+        $crate::signature::sig!(@dom [$($dom)* $next] $($rest)*)
+    };
+    (@dom [$($dom:tt)*]) => {
+        compile_error!("expected a signature `(A, B) -> C`")
+    };
+    // a tuple of elements, or a single element
+    (@elems ($($elem:expr),* $(,)?)) => {
+        vec![$($elem),*]
+    };
+    (@elems $elem:expr) => {
+        vec![$elem]
+    };
+    ($($sig:tt)+) => {
+        $crate::signature::sig!(@dom [] $($sig)+)
+    };
+}
+pub(crate) use sig;
+
 /// Helper for substitutions in the signature (for type-checking)
 enum SubstType<MS: MultiSort> {
     // type variable (also as the sort of matrix elements) with elem
@@ -432,4 +462,25 @@ where
     let dom = sig.dom().map(|e| e.to_string()).collect();
     let cod = sig.cod().map(|e| e.to_string()).collect();
     format!("{} -> {}", elems_to_string(dom), elems_to_string(cod))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lia::Sort;
+
+    #[test]
+    fn sig_macro() {
+        let (int, a): (_, SignatureElem<Sort>) = (Sort::Int([1, 1]), TypeVar('a'));
+        let show = |sig: VecSignature<Sort>| signature_to_string(&sig);
+        assert_eq!(show(sig!(() -> a)), "() -> 'a");
+        assert_eq!(show(sig!(a -> ())), "'a -> ()");
+        assert_eq!(
+            show(sig!((a, Mat(int, 2, 'b')) -> Mat(int, 2, 'b'))),
+            "('a, Mat(Int(1, 1), 2, b)) -> Mat(Int(1, 1), 2, b)"
+        );
+        // one-element tuples are single elements, and tuples can have a trailing comma
+        assert_eq!(show(sig!((a) -> (a,))), "'a -> 'a");
+        assert_eq!(show(sig!((a, a,) -> (a, a))), "('a, 'a) -> ('a, 'a)");
+    }
 }

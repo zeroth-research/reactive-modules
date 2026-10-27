@@ -53,7 +53,7 @@ assert!(LRA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
-use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature};
+use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature, sig};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -291,19 +291,19 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
     let (real, bool) = (MatSort::from('t'), MatSort::S(Sort::Bool([1, 1])));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
     let m = |s: MatSort<Sort>| Mat(s, 'a', 'b');
-    let (dom, cod) = match op {
+    Ok(match op {
         LRA::Real(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            (vec![], vec![Mat(Sort::Real([1, 1]), rows, cols)])
+            sig!(() -> Mat(Sort::Real([1, 1]), rows, cols))
         }
         LRA::Bool(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            (vec![], vec![Mat(bool, rows, cols)])
+            sig!(() -> Mat(bool, rows, cols))
         }
-        LRA::And() | LRA::Or() | LRA::Xor() => (vec![m(bool), m(bool)], vec![m(bool)]),
-        LRA::Not() => (vec![m(bool)], vec![m(bool)]),
+        LRA::And() | LRA::Or() | LRA::Xor() => sig!((m(bool), m(bool)) -> m(bool)),
+        LRA::Not() => sig!(m(bool) -> m(bool)),
         LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
-            (vec![m(real), m(real)], vec![m(bool)])
+            sig!((m(real), m(real)) -> m(bool))
         }
         LRA::Linear(a, b) => {
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
@@ -311,32 +311,26 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
             if b.numel() != 0 && shape_2d(b)? != [out, 1] {
                 return Err(format!("`B` must be a column vector [{out}x1]"));
             }
-            (vec![Mat(real, inp, 'b')], vec![Mat(real, out, 'b')])
+            sig!(Mat(real, inp, 'b') -> Mat(real, out, 'b'))
         }
         // `Min` and `Max` are pointwise, as in the evaluator
-        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => {
-            (vec![m(real), m(real)], vec![m(real)])
-        }
-        LRA::ReLU() => (vec![m(real)], vec![m(real)]),
+        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => sig!((m(real), m(real)) -> m(real)),
+        LRA::ReLU() => sig!(m(real) -> m(real)),
         // the index into the flattened matrix, as in the evaluator and the Python builder
-        LRA::Argmax() => (vec![m(real)], vec![Mat(real, 1, 1)]),
+        LRA::Argmax() => sig!(m(real) -> Mat(real, 1, 1)),
         // of any sort, as in the evaluator
-        LRA::Transpose() => (vec![Mat('t', 'a', 'b')], vec![Mat('t', 'b', 'a')]),
-        LRA::Ite() => (
-            vec![Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')],
-            vec![TypeVar('a')],
-        ),
-        LRA::Id() => (vec![TypeVar('a')], vec![TypeVar('a')]),
+        LRA::Transpose() => sig!(Mat('t', 'a', 'b') -> Mat('t', 'b', 'a')),
+        LRA::Ite() => sig!((Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),
+        LRA::Id() => sig!(TypeVar('a') -> TypeVar('a')),
         // `Uninterpreted` either writes or reads a single value, but a signature
         // has a fixed arity: we pick the write (used by the builder for untraced calls)
-        LRA::Uninterpreted(_) => (vec![], vec![TypeVar('a')]),
+        LRA::Uninterpreted(_) => sig!(() -> TypeVar('a')),
         // the zero derivatives
-        LRA::BoolZerograd(shape) => (vec![], vec![sort_elem(Sort::Bool(*shape).T())]),
-        LRA::RealZerograd(shape) => (vec![], vec![sort_elem(Sort::Real(*shape).T())]),
-        LRA::AnyBool(shape) => (vec![], vec![sort_elem(Sort::Bool(*shape))]),
-        LRA::AnyReal(shape) => (vec![], vec![sort_elem(Sort::Real(*shape))]),
-    };
-    Ok(VecSignature { dom, cod })
+        LRA::BoolZerograd(shape) => sig!(() -> sort_elem(Sort::Bool(*shape).T())),
+        LRA::RealZerograd(shape) => sig!(() -> sort_elem(Sort::Real(*shape).T())),
+        LRA::AnyBool(shape) => sig!(() -> sort_elem(Sort::Bool(*shape))),
+        LRA::AnyReal(shape) => sig!(() -> sort_elem(Sort::Real(*shape))),
+    })
 }
 
 /// The signature element of `sort`: a matrix of scalars

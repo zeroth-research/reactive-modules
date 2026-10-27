@@ -52,7 +52,7 @@ assert!(BV::Add().check([a, b].map(ok), [c].map(ok)).is_err());
 ```
 */
 
-use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature};
+use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature, sig};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -280,17 +280,17 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
     let (elem, bit) = (bw.map_or(MatSort::from('t'), bv), bv(1));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
     let m = |s: MatSort<Sort>| Mat(s, 'a', 'b');
-    let (dom, cod) = match op {
+    Ok(match op {
         BV::Const(cm) => {
             let [rows, cols] = shape_2d(cm)?;
             if let Some(bw) = bw {
                 check_fits(cm, bw)?;
             }
-            (vec![], vec![Mat(elem, rows, cols)])
+            sig!(() -> Mat(elem, rows, cols))
         }
         // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
         // does not fit into BV<N>
-        BV::Not() | BV::Neg() | BV::Abs() => (vec![m(elem)], vec![m(elem)]),
+        BV::Not() | BV::Neg() | BV::Abs() => sig!(m(elem) -> m(elem)),
         BV::Add()
         | BV::Sub()
         | BV::Mul()
@@ -300,7 +300,7 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
         | BV::SMod()
         | BV::And()
         | BV::Or()
-        | BV::Xor() => (vec![m(elem), m(elem)], vec![m(elem)]),
+        | BV::Xor() => sig!((m(elem), m(elem)) -> m(elem)),
         BV::ULe()
         | BV::ULt()
         | BV::UGe()
@@ -310,12 +310,9 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
         | BV::SGe()
         | BV::SGt()
         | BV::Eq()
-        | BV::Ne() => (vec![m(elem), m(elem)], vec![m(bit)]),
-        BV::MatMul() => (
-            vec![Mat(elem, 'a', 'b'), Mat(elem, 'b', 'c')],
-            vec![Mat(elem, 'a', 'c')],
-        ),
-        BV::BVToBool() => (vec![m(elem)], vec![m(bit)]),
+        | BV::Ne() => sig!((m(elem), m(elem)) -> m(bit)),
+        BV::MatMul() => sig!((Mat(elem, 'a', 'b'), Mat(elem, 'b', 'c')) -> Mat(elem, 'a', 'c')),
+        BV::BVToBool() => sig!(m(elem) -> m(bit)),
         BV::BitSelect { high, low } => {
             if high < low {
                 return Err(format!("high ({high}) must be >= low ({low})"));
@@ -325,23 +322,19 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
             {
                 return Err(format!("high ({high}) is out of range for width {bw}"));
             }
-            (vec![m(elem)], vec![m(bv(high - low + 1))])
+            sig!(m(elem) -> m(bv(high - low + 1)))
         }
         BV::Extend { extra } => {
             let extended = bw.map_or(MatSort::from('u'), |bw| bv(bw + extra));
-            (vec![m(elem)], vec![m(extended)])
+            sig!(m(elem) -> m(extended))
         }
-        BV::Ite() => (
-            vec![Mat(bit, 1, 1), TypeVar('a'), TypeVar('a')],
-            vec![TypeVar('a')],
-        ),
-        BV::Id() => (vec![TypeVar('a')], vec![TypeVar('a')]),
+        BV::Ite() => sig!((Mat(bit, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),
+        BV::Id() => sig!(TypeVar('a') -> TypeVar('a')),
         // `Uninterpreted` either writes or reads a single value, but a signature
         // has a fixed arity: we pick the write (used by the builder for untraced calls)
-        BV::Uninterpreted(_) => (vec![], vec![TypeVar('a')]),
-        BV::Havoc(width, shape) => (vec![], vec![sort_elem(Sort::BV(*width, *shape))]),
-    };
-    Ok(VecSignature { dom, cod })
+        BV::Uninterpreted(_) => sig!(() -> TypeVar('a')),
+        BV::Havoc(width, shape) => sig!(() -> sort_elem(Sort::BV(*width, *shape))),
+    })
 }
 
 /// The signature element of `sort`: a matrix of scalars
