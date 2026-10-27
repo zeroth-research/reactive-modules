@@ -126,17 +126,6 @@ where
     Ok(())
 }
 
-fn next_sort<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<S, String>
-where
-    R: Iterator<Item = Result<S, E>>,
-{
-    if let Some(item) = iter.next() {
-        item.map_err(|e| e.to_string())
-    } else {
-        Err(format!("Arg {pos} expected, but got none"))
-    }
-}
-
 /// The sorts of `wires`, or the error of the first wire that has none
 fn wire_sorts<S, I, E: fmt::Display>(wires: I) -> Result<Vec<S>, String>
 where
