@@ -30,18 +30,19 @@ let a = Sort::BV(8, [2, 3]);
 let b = Sort::BV(8, [3, 4]);
 let c = Sort::BV(8, [2, 4]);
 
-let deg0 = |s| Ok::<_, String>((s, 0u8));
+let ok = |s| Ok::<_, String>(s);
 
 // Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(BV::MatMul().check([a, b].map(deg0), [c].map(deg0)).is_ok());
+assert!(BV::MatMul().check([a, b].map(ok), [c].map(ok)).is_ok());
 
 // Elementwise Add requires matching shapes.
 let m = Sort::BV(8, [2, 3]);
-assert!(BV::Add().check([m, m].map(deg0), [m].map(deg0)).is_ok());
-assert!(BV::Add().check([a, b].map(deg0), [c].map(deg0)).is_err());
+assert!(BV::Add().check([m, m].map(ok), [m].map(ok)).is_ok());
+assert!(BV::Add().check([a, b].map(ok), [c].map(ok)).is_err());
 ```
 */
 
+use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -54,19 +55,28 @@ use std::fmt::Debug;
 pub enum Sort {
     // matrix of bitvectors determined by (bitvector-length, [# rows, # cols])
     BV(usize, [usize; 2]),
+    // the tangent of `BV` (it has only the zero derivative)
+    Zero([usize; 2]),
 }
 
 impl Sort {
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Sort::BV(_, shape) => shape,
+            Sort::BV(_, shape) | Sort::Zero(shape) => shape,
         }
     }
 
+    /// The bit-width, `0` for the derivatives (zero-width bit-vectors have the only value 0)
     pub fn bw(&self) -> usize {
         match self {
             Sort::BV(bw, _) => *bw,
+            Sort::Zero(_) => 0,
         }
+    }
+
+    /// Is this sort a tangent (i.e., a sort of derivatives)?
+    pub fn is_tangent(&self) -> bool {
+        matches!(self, Sort::Zero(..))
     }
 }
 
@@ -74,7 +84,18 @@ impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Sort::BV(bw, [i, j]) => write!(f, "BV<{bw}>({i}, {j})"),
+            Sort::Zero([i, j]) => write!(f, "Zero({i}, {j})"),
         }
+    }
+}
+
+impl MultiSort for Sort {
+    const NAME: &'static str = "BVSort";
+}
+
+impl TangentMultiSort for Sort {
+    fn T(&self) -> Self {
+        Sort::Zero(*self.shape())
     }
 }
 
@@ -173,8 +194,23 @@ impl Sequential for BV {
 
 impl Combinatorial for BV {
     fn havoc(range: &Self::Sort) -> Self {
+        // a derivative cannot be havoced: the check of the term with `Zero` fails
         Havoc(range.bw(), *range.shape())
     }
+}
+
+/// The next sort, that must be a value (not a derivative)
+fn next_value<R, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<Sort, String>
+where
+    R: Iterator<Item = Result<Sort, E>>,
+{
+    let sort = next_sort(iter, pos)?;
+    if sort.is_tangent() {
+        return Err(format!(
+            "Arg {pos} expected to be a value, got derivative {sort}"
+        ));
+    }
+    Ok(sort)
 }
 
 fn check_init_dims(cm: &crate::PyTensor, bw: usize, i: usize, j: usize) -> Result<(), String> {
@@ -217,8 +253,8 @@ impl Theory for BV {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         let mut read = read.into_iter();
         let mut write = write.into_iter();
@@ -228,9 +264,10 @@ impl Theory for BV {
                 if read.next().is_some() {
                     return Err("Const: cannot read values".into());
                 }
-                let dtype = next_expect_degree(&mut write, 0, 0)?;
+                let dtype = next_value(&mut write, 0)?;
                 match dtype {
                     Sort::BV(bw, [i, j]) => check_init_dims(cm, bw, i, j)?,
+                    Sort::Zero(_) => unreachable!("`next_value` returns only values"),
                 }
                 if write.next().is_some() {
                     return Err("Const: returns more than one value".into());
@@ -241,10 +278,7 @@ impl Theory for BV {
             // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
             // does not fit into BV<N>
             BV::Not() | BV::Id() | BV::Neg() | BV::Abs() => {
-                let (r, w) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut write, 0, 0)?,
-                );
+                let (r, w) = (next_value(&mut read, 0)?, next_value(&mut write, 0)?);
                 if r != w {
                     return Err(format!(
                         "{:?}: input and output type must be the same",
@@ -273,13 +307,13 @@ impl Theory for BV {
             | BV::Eq()
             | BV::Ne() => {
                 let (r1, r2, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if r1 != r2 {
@@ -295,13 +329,13 @@ impl Theory for BV {
             }
             BV::UDiv() | BV::UMod() => {
                 let (r1, r2, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if !matches!(r1, Sort::BV(..)) {
@@ -319,13 +353,13 @@ impl Theory for BV {
             }
             BV::SDiv() | BV::SMod() => {
                 let (r1, r2, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
                     read.next(),
                 ) else {
                     return Err(format!("{self}: must read exactly two values"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if !matches!(r1, Sort::BV(..)) {
@@ -342,10 +376,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::And() | BV::Or() | BV::Xor() | BV::Add() | BV::Sub() | BV::Mul() => {
-                let w1 = next_expect_degree(&mut write, 0, 0)?;
+                let w1 = next_value(&mut write, 0)?;
                 let (r1, r2, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
@@ -363,11 +397,11 @@ impl Theory for BV {
             }
 
             BV::Ite() => {
-                let w1 = next_expect_degree(&mut write, 0, 0)?;
+                let w1 = next_value(&mut write, 0)?;
                 let (r1, r2, r3, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
-                    next_expect_degree(&mut read, 2, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
+                    next_value(&mut read, 2)?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
@@ -392,13 +426,13 @@ impl Theory for BV {
 
             BV::MatMul() => {
                 let (r1, r2, None) = (
-                    next_expect_degree(&mut read, 0, 0)?,
-                    next_expect_degree(&mut read, 1, 0)?,
+                    next_value(&mut read, 0)?,
+                    next_value(&mut read, 1)?,
                     read.next(),
                 ) else {
                     return Err(format!("{:?}: must read exactly two values", self));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{:?}: must write exactly one value", self));
                 };
 
@@ -446,10 +480,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::BVToBool() => {
-                let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+                let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 let [rows, cols] = r1.shape();
@@ -461,10 +495,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::BitSelect { high, low } => {
-                let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+                let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 if high < low {
@@ -486,10 +520,10 @@ impl Theory for BV {
                 Ok(())
             }
             BV::Extend { extra } => {
-                let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+                let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
                 };
-                let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+                let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                     return Err(format!("{self}: must write exactly one value"));
                 };
                 let out_bw = r1.bw() + extra;
@@ -545,8 +579,8 @@ mod tests {
         Sort::BV(bw, [r, c])
     }
 
-    pub fn deg0<S>(s: S) -> Result<(S, u8), String> {
-        Ok((s, 0))
+    pub fn ok<S>(s: S) -> Result<S, String> {
+        Ok(s)
     }
 
     // --- Type helpers ---
@@ -568,42 +602,42 @@ mod tests {
     fn const_ok() {
         let t = bv(8, 2, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(BV::Const(cm).check([], [t].map(deg0)).is_ok());
+        assert!(BV::Const(cm).check([], [t].map(ok)).is_ok());
     }
 
     #[test]
     fn const_value_overflow_fails() {
         let t = bv(8, 1, 1);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[256i64]]).into();
-        assert!(BV::Const(cm).check(vec![], [t].map(deg0)).is_err());
+        assert!(BV::Const(cm).check(vec![], [t].map(ok)).is_err());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = bv(8, 1, 1);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[255i64]]).into();
-        assert!(BV::Const(cm).check(vec![], [t].map(deg0)).is_ok());
+        assert!(BV::Const(cm).check(vec![], [t].map(ok)).is_ok());
     }
 
     #[test]
     fn const_wrong_row_count_fails() {
         let t = bv(8, 2, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
-        assert!(BV::Const(cm).check(vec![], [t].map(deg0)).is_err());
+        assert!(BV::Const(cm).check(vec![], [t].map(ok)).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = bv(8, 1, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(BV::Const(cm).check(vec![], [t].map(deg0)).is_err());
+        assert!(BV::Const(cm).check(vec![], [t].map(ok)).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = bv(8, 1, 1);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(BV::Const(cm).check([t].map(deg0), [t].map(deg0)).is_err());
+        assert!(BV::Const(cm).check([t].map(ok), [t].map(ok)).is_err());
     }
 
     // --- Not / Id ---
@@ -611,14 +645,14 @@ mod tests {
     #[test]
     fn not_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Not().check([t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Not().check([t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn not_type_mismatch_fails() {
         assert!(
             BV::Not()
-                .check([bv(8, 1, 1)].map(deg0), [bv(8, 2, 2)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(8, 2, 2)].map(ok))
                 .is_err()
         );
     }
@@ -626,7 +660,7 @@ mod tests {
     #[test]
     fn id_ok() {
         let t = bv(32, 4, 4);
-        assert!(BV::Id().check([t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Id().check([t].map(ok), [t].map(ok)).is_ok());
     }
 
     // --- Binary elementwise (Add, Mul, And, Or, Xor) ---
@@ -634,17 +668,14 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = bv(8, 3, 3);
-        assert!(BV::Add().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Add().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
         assert!(
             BV::Add()
-                .check(
-                    [bv(8, 1, 2), bv(8, 2, 1)].map(deg0),
-                    [bv(8, 1, 2)].map(deg0)
-                )
+                .check([bv(8, 1, 2), bv(8, 2, 1)].map(ok), [bv(8, 1, 2)].map(ok))
                 .is_err()
         );
     }
@@ -652,25 +683,25 @@ mod tests {
     #[test]
     fn mul_ok() {
         let t = bv(16, 1, 1);
-        assert!(BV::Mul().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Mul().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn and_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::And().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::And().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let t = bv(1, 2, 2);
-        assert!(BV::Or().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Or().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let t = bv(4, 1, 1);
-        assert!(BV::Xor().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Xor().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     // --- Comparisons ---
@@ -679,38 +710,38 @@ mod tests {
     fn lt_ok() {
         let t = bv(8, 2, 3);
         let out = bv(1, 2, 3);
-        assert!(BV::ULt().check([t, t].map(deg0), [out].map(deg0)).is_ok());
-        assert!(BV::SLt().check([t, t].map(deg0), [out].map(deg0)).is_ok());
+        assert!(BV::ULt().check([t, t].map(ok), [out].map(ok)).is_ok());
+        assert!(BV::SLt().check([t, t].map(ok), [out].map(ok)).is_ok());
     }
 
     #[test]
     fn le_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::ULe().check([t, t].map(deg0), [out].map(deg0)).is_ok());
-        assert!(BV::SLe().check([t, t].map(deg0), [out].map(deg0)).is_ok());
+        assert!(BV::ULe().check([t, t].map(ok), [out].map(ok)).is_ok());
+        assert!(BV::SLe().check([t, t].map(ok), [out].map(ok)).is_ok());
     }
 
     #[test]
     fn eq_ok() {
         let t = bv(32, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Eq().check([t, t].map(deg0), [out].map(deg0)).is_ok());
+        assert!(BV::Eq().check([t, t].map(ok), [out].map(ok)).is_ok());
     }
 
     #[test]
     fn ne_ok() {
         let t = bv(8, 1, 1);
         let out = bv(1, 1, 1);
-        assert!(BV::Ne().check([t, t].map(deg0), [out].map(deg0)).is_ok());
+        assert!(BV::Ne().check([t, t].map(ok), [out].map(ok)).is_ok());
     }
 
     #[test]
     fn cmp_wrong_output_type_fails() {
         let t = bv(8, 2, 3);
         // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::ULt().check([t, t].map(deg0), [t].map(deg0)).is_err());
-        assert!(BV::SLt().check([t, t].map(deg0), [t].map(deg0)).is_err());
+        assert!(BV::ULt().check([t, t].map(ok), [t].map(ok)).is_err());
+        assert!(BV::SLt().check([t, t].map(ok), [t].map(ok)).is_err());
     }
 
     #[test]
@@ -718,7 +749,7 @@ mod tests {
         let out = bv(1, 1, 1);
         assert!(
             BV::Eq()
-                .check([bv(8, 1, 1), bv(16, 1, 1)].map(deg0), [out].map(deg0))
+                .check([bv(8, 1, 1), bv(16, 1, 1)].map(ok), [out].map(ok))
                 .is_err()
         );
     }
@@ -728,13 +759,13 @@ mod tests {
     #[test]
     fn udiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::UDiv().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::UDiv().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn sdiv_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::SDiv().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::SDiv().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     // --- MatMul ---
@@ -744,7 +775,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul().check([a, b].map(deg0), [c].map(deg0)).is_ok());
+        assert!(BV::MatMul().check([a, b].map(ok), [c].map(ok)).is_ok());
     }
 
     #[test]
@@ -752,7 +783,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(8, 4, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul().check([a, b].map(deg0), [c].map(deg0)).is_err());
+        assert!(BV::MatMul().check([a, b].map(ok), [c].map(ok)).is_err());
     }
 
     #[test]
@@ -760,7 +791,7 @@ mod tests {
         let a = bv(8, 2, 3);
         let b = bv(16, 3, 4);
         let c = bv(8, 2, 4);
-        assert!(BV::MatMul().check([a, b].map(deg0), [c].map(deg0)).is_err());
+        assert!(BV::MatMul().check([a, b].map(ok), [c].map(ok)).is_err());
     }
 
     // --- Ite ---
@@ -769,22 +800,14 @@ mod tests {
     fn ite_ok() {
         let cond = bv(1, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite()
-                .check([cond, t, t].map(deg0), [t].map(deg0))
-                .is_ok()
-        );
+        assert!(BV::Ite().check([cond, t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn ite_bad_condition_bw_fails() {
         let cond = bv(8, 1, 1);
         let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite()
-                .check([cond, t, t].map(deg0), [t].map(deg0))
-                .is_err()
-        );
+        assert!(BV::Ite().check([cond, t, t].map(ok), [t].map(ok)).is_err());
     }
 
     // --- Sub / Neg / UMod / SMod ---
@@ -792,20 +815,20 @@ mod tests {
     #[test]
     fn sub_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Sub().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Sub().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn neg_ok() {
         let t = bv(8, 2, 3);
-        assert!(BV::Neg().check([t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::Neg().check([t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn neg_type_mismatch_fails() {
         assert!(
             BV::Neg()
-                .check([bv(8, 1, 1)].map(deg0), [bv(8, 2, 2)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(8, 2, 2)].map(ok))
                 .is_err()
         );
     }
@@ -813,13 +836,13 @@ mod tests {
     #[test]
     fn umod_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::UMod().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::UMod().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn smod_ok() {
         let t = bv(8, 1, 1);
-        assert!(BV::SMod().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(BV::SMod().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     // --- BVToBool / BoolToBV (SMV bool(...) / word1(...)) ---
@@ -829,7 +852,7 @@ mod tests {
         // BV<8>(2,3) -> BV<1>(2,3)
         assert!(
             BV::BVToBool()
-                .check([bv(8, 2, 3)].map(deg0), [bv(1, 2, 3)].map(deg0))
+                .check([bv(8, 2, 3)].map(ok), [bv(1, 2, 3)].map(ok))
                 .is_ok()
         );
     }
@@ -839,7 +862,7 @@ mod tests {
         // BV<1> -> BV<1> is also fine (idempotent on already-bool input).
         assert!(
             BV::BVToBool()
-                .check([bv(1, 1, 1)].map(deg0), [bv(1, 1, 1)].map(deg0))
+                .check([bv(1, 1, 1)].map(ok), [bv(1, 1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -848,7 +871,7 @@ mod tests {
     fn bv_to_bool_wrong_out_width_fails() {
         assert!(
             BV::BVToBool()
-                .check([bv(8, 1, 1)].map(deg0), [bv(8, 1, 1)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(8, 1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -857,7 +880,7 @@ mod tests {
     fn bv_to_bool_shape_mismatch_fails() {
         assert!(
             BV::BVToBool()
-                .check([bv(8, 2, 3)].map(deg0), [bv(1, 1, 1)].map(deg0))
+                .check([bv(8, 2, 3)].map(ok), [bv(1, 1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -869,7 +892,7 @@ mod tests {
         // BV<16>[11:4] -> BV<8>
         assert!(
             BV::BitSelect { high: 11, low: 4 }
-                .check([bv(16, 1, 1)].map(deg0), [bv(8, 1, 1)].map(deg0))
+                .check([bv(16, 1, 1)].map(ok), [bv(8, 1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -878,7 +901,7 @@ mod tests {
     fn bit_select_single_bit_ok() {
         assert!(
             BV::BitSelect { high: 3, low: 3 }
-                .check([bv(8, 2, 2)].map(deg0), [bv(1, 2, 2)].map(deg0))
+                .check([bv(8, 2, 2)].map(ok), [bv(1, 2, 2)].map(ok))
                 .is_ok()
         );
     }
@@ -887,7 +910,7 @@ mod tests {
     fn bit_select_out_of_range_fails() {
         assert!(
             BV::BitSelect { high: 8, low: 0 }
-                .check([bv(8, 1, 1)].map(deg0), [bv(9, 1, 1)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(9, 1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -896,7 +919,7 @@ mod tests {
     fn bit_select_wrong_out_width_fails() {
         assert!(
             BV::BitSelect { high: 7, low: 0 }
-                .check([bv(16, 1, 1)].map(deg0), [bv(7, 1, 1)].map(deg0))
+                .check([bv(16, 1, 1)].map(ok), [bv(7, 1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -905,7 +928,7 @@ mod tests {
     fn extend_ok() {
         assert!(
             BV::Extend { extra: 8 }
-                .check([bv(8, 1, 1)].map(deg0), [bv(16, 1, 1)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(16, 1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -914,7 +937,7 @@ mod tests {
     fn extend_wrong_out_width_fails() {
         assert!(
             BV::Extend { extra: 4 }
-                .check([bv(8, 1, 1)].map(deg0), [bv(16, 1, 1)].map(deg0))
+                .check([bv(8, 1, 1)].map(ok), [bv(16, 1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -925,8 +948,8 @@ mod tests {
         assert!(
             BV::Ite()
                 .check(
-                    [cond, bv(8, 1, 1), bv(16, 1, 1)].map(deg0),
-                    [bv(8, 1, 1)].map(deg0)
+                    [cond, bv(8, 1, 1), bv(16, 1, 1)].map(ok),
+                    [bv(8, 1, 1)].map(ok)
                 )
                 .is_err()
         );

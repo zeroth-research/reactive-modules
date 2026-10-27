@@ -168,6 +168,31 @@ pub trait Signature<MS: MultiSort> {
     fn cod_arity(&self) -> usize;
 }
 
+/// A signature given by the elements of its domain and codomain
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VecSignature<MS: MultiSort> {
+    pub dom: Vec<SignatureElem<MS>>,
+    pub cod: Vec<SignatureElem<MS>>,
+}
+
+impl<MS: MultiSort> Signature<MS> for VecSignature<MS> {
+    fn dom(&self) -> impl Iterator<Item = SignatureElem<MS>> {
+        self.dom.iter().copied()
+    }
+
+    fn cod(&self) -> impl Iterator<Item = SignatureElem<MS>> {
+        self.cod.iter().copied()
+    }
+
+    fn dom_arity(&self) -> usize {
+        self.dom.len()
+    }
+
+    fn cod_arity(&self) -> usize {
+        self.cod.len()
+    }
+}
+
 /// Helper for substitutions in the signature (for type-checking)
 enum SubstType<MS: MultiSort> {
     // type variable (also as the sort of matrix elements) with elem
