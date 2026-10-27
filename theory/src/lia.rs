@@ -216,7 +216,7 @@ fn signature(op: &LIA) -> Result<VecSignature<Sort>, String> {
     // the sorts of the elements of matrices
     let (int, bool) = (Sort::Int([1, 1]), Sort::Bool([1, 1]));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
-    let m = |s: Sort| Mat(s, 'a', 'b');
+    let mat = |s: Sort| Mat(s, 'a', 'b');
     Ok(match op {
         LIA::Int(cm) => {
             let [rows, cols] = shape_2d(cm)?;
@@ -226,10 +226,10 @@ fn signature(op: &LIA) -> Result<VecSignature<Sort>, String> {
             let [rows, cols] = shape_2d(cm)?;
             sig!(() -> Mat(bool, rows, cols))
         }
-        LIA::And() | LIA::Or() | LIA::Xor() => sig!((m(bool), m(bool)) -> m(bool)),
-        LIA::Not() => sig!(m(bool) -> m(bool)),
+        LIA::And() | LIA::Or() | LIA::Xor() => sig!((mat(bool), mat(bool)) -> mat(bool)),
+        LIA::Not() => sig!(mat(bool) -> mat(bool)),
         LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
-            sig!((m(int), m(int)) -> m(bool))
+            sig!((mat(int), mat(int)) -> mat(bool))
         }
         LIA::Linear(a, b) => {
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
@@ -240,10 +240,10 @@ fn signature(op: &LIA) -> Result<VecSignature<Sort>, String> {
             sig!(Mat(int, inp, 'b') -> Mat(int, out, 'b'))
         }
         // `Min` and `Max` are pointwise, as in the evaluator
-        LIA::Add() | LIA::Sub() | LIA::Min() | LIA::Max() => sig!((m(int), m(int)) -> m(int)),
-        LIA::ReLU() => sig!(m(int) -> m(int)),
+        LIA::Add() | LIA::Sub() | LIA::Min() | LIA::Max() => sig!((mat(int), mat(int)) -> mat(int)),
+        LIA::ReLU() => sig!(mat(int) -> mat(int)),
         // the index into the flattened matrix, as in the evaluator and the Python builder
-        LIA::Argmax() => sig!(m(int) -> Mat(int, 1, 1)),
+        LIA::Argmax() => sig!(mat(int) -> Mat(int, 1, 1)),
         // of any sort, as in the evaluator
         LIA::Transpose() => sig!(Mat('t', 'a', 'b') -> Mat('t', 'b', 'a')),
         LIA::Ite() => sig!((Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),

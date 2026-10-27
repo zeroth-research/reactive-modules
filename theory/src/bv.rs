@@ -279,7 +279,7 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
     let bv = |bw| MatSort::S(Sort::BV(bw, [1, 1]));
     let (elem, bit) = (bw.map_or(MatSort::from('t'), bv), bv(1));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
-    let m = |s: MatSort<Sort>| Mat(s, 'a', 'b');
+    let mat = |s: MatSort<Sort>| Mat(s, 'a', 'b');
     Ok(match op {
         BV::Const(cm) => {
             let [rows, cols] = shape_2d(cm)?;
@@ -290,7 +290,7 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
         }
         // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
         // does not fit into BV<N>
-        BV::Not() | BV::Neg() | BV::Abs() => sig!(m(elem) -> m(elem)),
+        BV::Not() | BV::Neg() | BV::Abs() => sig!(mat(elem) -> mat(elem)),
         BV::Add()
         | BV::Sub()
         | BV::Mul()
@@ -300,7 +300,7 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
         | BV::SMod()
         | BV::And()
         | BV::Or()
-        | BV::Xor() => sig!((m(elem), m(elem)) -> m(elem)),
+        | BV::Xor() => sig!((mat(elem), mat(elem)) -> mat(elem)),
         BV::ULe()
         | BV::ULt()
         | BV::UGe()
@@ -310,9 +310,9 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
         | BV::SGe()
         | BV::SGt()
         | BV::Eq()
-        | BV::Ne() => sig!((m(elem), m(elem)) -> m(bit)),
+        | BV::Ne() => sig!((mat(elem), mat(elem)) -> mat(bit)),
         BV::MatMul() => sig!((Mat(elem, 'a', 'b'), Mat(elem, 'b', 'c')) -> Mat(elem, 'a', 'c')),
-        BV::BVToBool() => sig!(m(elem) -> m(bit)),
+        BV::BVToBool() => sig!(mat(elem) -> mat(bit)),
         BV::BitSelect { high, low } => {
             if high < low {
                 return Err(format!("high ({high}) must be >= low ({low})"));
@@ -322,11 +322,11 @@ fn signature(op: &BV, bw: Option<usize>) -> Result<VecSignature<Sort>, String> {
             {
                 return Err(format!("high ({high}) is out of range for width {bw}"));
             }
-            sig!(m(elem) -> m(bv(high - low + 1)))
+            sig!(mat(elem) -> mat(bv(high - low + 1)))
         }
         BV::Extend { extra } => {
             let extended = bw.map_or(MatSort::from('u'), |bw| bv(bw + extra));
-            sig!(m(elem) -> m(extended))
+            sig!(mat(elem) -> mat(extended))
         }
         BV::Ite() => sig!((Mat(bit, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),
         BV::Id() => sig!(TypeVar('a') -> TypeVar('a')),

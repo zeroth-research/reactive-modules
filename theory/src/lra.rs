@@ -290,7 +290,7 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
     // see `is_arithmetic`), and booleans
     let (real, bool) = (MatSort::from('t'), MatSort::S(Sort::Bool([1, 1])));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
-    let m = |s: MatSort<Sort>| Mat(s, 'a', 'b');
+    let mat = |s: MatSort<Sort>| Mat(s, 'a', 'b');
     Ok(match op {
         LRA::Real(cm) => {
             let [rows, cols] = shape_2d(cm)?;
@@ -300,10 +300,10 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
             let [rows, cols] = shape_2d(cm)?;
             sig!(() -> Mat(bool, rows, cols))
         }
-        LRA::And() | LRA::Or() | LRA::Xor() => sig!((m(bool), m(bool)) -> m(bool)),
-        LRA::Not() => sig!(m(bool) -> m(bool)),
+        LRA::And() | LRA::Or() | LRA::Xor() => sig!((mat(bool), mat(bool)) -> mat(bool)),
+        LRA::Not() => sig!(mat(bool) -> mat(bool)),
         LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
-            sig!((m(real), m(real)) -> m(bool))
+            sig!((mat(real), mat(real)) -> mat(bool))
         }
         LRA::Linear(a, b) => {
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
@@ -314,10 +314,12 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
             sig!(Mat(real, inp, 'b') -> Mat(real, out, 'b'))
         }
         // `Min` and `Max` are pointwise, as in the evaluator
-        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => sig!((m(real), m(real)) -> m(real)),
-        LRA::ReLU() => sig!(m(real) -> m(real)),
+        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => {
+            sig!((mat(real), mat(real)) -> mat(real))
+        }
+        LRA::ReLU() => sig!(mat(real) -> mat(real)),
         // the index into the flattened matrix, as in the evaluator and the Python builder
-        LRA::Argmax() => sig!(m(real) -> Mat(real, 1, 1)),
+        LRA::Argmax() => sig!(mat(real) -> Mat(real, 1, 1)),
         // of any sort, as in the evaluator
         LRA::Transpose() => sig!(Mat('t', 'a', 'b') -> Mat('t', 'b', 'a')),
         LRA::Ite() => sig!((Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')) -> TypeVar('a')),
