@@ -95,9 +95,9 @@ module LaunchSatellite[id]
         launch_event' := not(launch_event);
         fired' := true;
     delay
-      // A sampled upper bound is outside the propositional timed fragment.
-      [] clk <= deadline -> clk' <= deadline
-      // after firing, impose no restriction on elapsed time.
+      // (a sampled upper bound is outside the propositional timed fragment)
+      [] !fired && clk <= deadline -> clk' <= deadline
+      // After firing, impose no restriction on elapsed time.
       [] fired -> true
 
 
