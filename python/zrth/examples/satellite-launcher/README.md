@@ -85,7 +85,7 @@ module LaunchSatellite[id]
   private deadline: Real, clk: Clock
   atom x[id], y[id], direction[id], velocity[id], deadline
     init
-      deadline' := Poisson(launch_rate);
+      deadline' := Exponential(rate = launch_rate);
       launch_event' := false
     update
       [] clk = deadline ->
