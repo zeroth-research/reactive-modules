@@ -1,27 +1,35 @@
 /*!
-# Linear integer arithmetic
+# Linear real arithmetic
 
-Defines the theory [`LRA`] of linear integer arithmetic over matrices,
-mixing integer and boolean matrices in a single signature.
+Defines the theory [`LRA`] of linear real arithmetic over matrices,
+mixing real and boolean matrices in a single signature.
 
-A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
-`Type` converts to and from [`int::IntType`] and [`bool::PropType`]
-so that integer and propositional terms embed directly into `RLA`. The
-operations in [`LRA`] are:
+A [`Sort`] value is either `Real(rows, cols)` or `Bool(rows, cols)`, or
+the sort of their derivatives: `TReal(rows, cols; d)` of the degree `d >= 1`
+for reals and `Zero(rows, cols)` for booleans (see [`TangentMultiSort::T`]).
+The operations in [`LRA`] are:
 
-- [`LRA::Real`] — a matrix literal whose sort (real or boolean) is taken
-  from the write wire; the tensor's element kind must match that sort.
+- [`LRA::Real`], [`LRA::Bool`] — real and boolean matrix literals.
 - [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
-  — boolean operations on the boolean fragment of `Type`.
+  — boolean operations.
 - [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
-  — pointwise integer comparisons producing a scalar `Bool(1,1)`.
+  — pointwise real comparisons producing a boolean matrix.
 - [`LRA::Ite`] — if-then-else: reads a boolean guard and two same-typed branches.
 - [`LRA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
-  `B` constant integer matrices of compatible shapes.
-- [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+  `B` constant real matrices of compatible shapes.
+- [`LRA::ReLU`] — the shape-preserving rectified-linear map on real matrices.
+- [`LRA::RealZerograd`], [`LRA::BoolZerograd`] — the zero derivatives.
 
-`RLA` implements [`Theory`]; [`Theory::check`] validates read/write
-shapes against the selected operation.
+`LRA` implements [`Signature`] over [`Sort`], with matrices of scalars
+`Real(1, 1)` and `Bool(1, 1)`, e.g., the signature of [`LRA::ReLU`]
+is `Mat(Real(1, 1), a, b) -> Mat(Real(1, 1), a, b)`. These are the signatures
+over values: the arithmetic operations also work on the derivatives of reals
+(of the same degree), e.g., `ReLU` also has the signature
+`Mat(TReal(1, 1; 1), a, b) -> Mat(TReal(1, 1; 1), a, b)`.
+
+`LRA` implements [`Theory`]; [`Theory::check`] typechecks the sorts of the
+read and write wires against the signature of the operation (over values, or
+over the derivatives of the degree of the first real wire).
 
 ## Examples
 
@@ -44,6 +52,7 @@ assert!(LRA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
+use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -82,11 +91,11 @@ impl Sort {
         }
     }
 
-    /// The shape and the degree of a real sort or its tangent, `None` for other sorts
-    fn real_with_degree(&self) -> Option<([usize; 2], u8)> {
+    /// The degree of a real sort (`0`) or of its tangent, `None` for other sorts
+    fn real_degree(&self) -> Option<u8> {
         match self {
-            Sort::Real(shape) => Some((*shape, 0)),
-            Sort::TReal(shape, degree) => Some((*shape, *degree)),
+            Sort::Real(_) => Some(0),
+            Sort::TReal(_, degree) => Some(*degree),
             _ => None,
         }
     }
@@ -120,7 +129,7 @@ impl TangentMultiSort for Sort {
 #[derive(Clone, Debug, strum::Display)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
-    // constant matrix literal; its sort (Real or Bool) is taken from the write wire
+    // real and boolean matrix literals
     #[strum(to_string = "{0}")]
     Real(crate::PyTensor),
     #[strum(to_string = "{0}")]
@@ -130,7 +139,7 @@ pub enum LRA {
     Or(),
     Xor(),
     Not(),
-    // integer comparisons
+    // real comparisons
     Le(),
     Lt(),
     Ge(),
@@ -197,456 +206,122 @@ impl Theory for LRA {
         R: IntoIterator<Item = Result<Sort, E>>,
         W: IntoIterator<Item = Result<Sort, E>>,
     {
-        match self {
-            LRA::Real(cm) | LRA::Bool(cm) => check_const(cm, read, write),
-            LRA::BoolZerograd(shape) => check_zero(&Sort::Bool(*shape).T(), read, write),
-            LRA::RealZerograd(shape) => check_zero(&Sort::Real(*shape).T(), read, write),
-            LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
-            LRA::AnyReal(shape) => check_havoc(&Sort::Real(*shape), read, write),
-            LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
-            LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
-                check_cmp(self, read, write)
+        let check = || -> Result<(), String> {
+            let (read, write) = (wire_sorts(read)?, wire_sorts(write)?);
+            // the operation works on values, or on derivatives (of the first real wire)
+            let degree = read
+                .iter()
+                .chain(&write)
+                .find_map(Sort::real_degree)
+                .unwrap_or(0);
+            let mut sig = signature(self, degree)?;
+            // `Uninterpreted` either writes or reads a single value, but its signature
+            // has the write
+            if matches!(self, LRA::Uninterpreted(_)) && !read.is_empty() {
+                std::mem::swap(&mut sig.dom, &mut sig.cod);
             }
-            LRA::Linear(a, b) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                check_linear_affine(self, a, b, &mut read, &mut write)
-            }
-            LRA::Add() | LRA::Sub() | LRA::ReLU() | LRA::Argmax() | LRA::Min() | LRA::Max() => {
-                check_mat_ops(self, read, write)
-            }
-            LRA::Transpose() => check_transpose(self, read, write),
-            LRA::Ite() | LRA::Id() => check_flow(self, read, write),
-            LRA::Uninterpreted(_) => {
-                let mut read = read.into_iter();
-                let mut write = write.into_iter();
-                // uninterpreted has either one read or one write
-                if read.next().is_some() {
-                    if read.next().is_some() {
-                        return Err(format!("{:?}: expected exactly one read, got more", self));
-                    }
-                    if write.next().is_some() {
-                        return Err(format!(
-                            "{:?}: expected exactly one read, got also write",
-                            self
-                        ));
-                    }
-                    return Ok(());
-                }
-                if write.next().is_some() {
-                    if write.next().is_some() {
-                        return Err(format!("{:?}: expected exactly one write, got more", self));
-                    }
-                    if read.next().is_some() {
-                        return Err(format!(
-                            "{:?}: expected exactly one write, got also read",
-                            self
-                        ));
-                    }
-                    return Ok(());
-                }
-                Err(format!(
-                    "{:?}: expected exactly one write or one read, got none",
-                    self
-                ))
-            }
-        }
+            typecheck_wires(sig, &read, &write, sort_elem)
+        };
+        check().map_err(|e| format!("{self:?}: {e}"))
     }
 }
 
-/// The next sort, that must be a value (not a derivative)
-fn next_value<R, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<Sort, String>
-where
-    R: Iterator<Item = Result<Sort, E>>,
-{
-    let sort = next_sort(iter, pos)?;
-    if sort.is_tangent() {
-        return Err(format!(
-            "Arg {pos} expected to be a value, got derivative {sort}"
-        ));
+type Elem = SignatureElem<Sort>;
+
+/// The signatures over values. Matrices in the signatures are matrices of scalars:
+/// `Real([i, j])` is `Mat(Real([1, 1]), i, j)`, `TReal([i, j], d)` is
+/// `Mat(TReal([1, 1], d), i, j)`, and similarly for `Bool` and `Zero`.
+///
+/// # Panics
+///
+/// If the operation is ill-formed: its tensors are not 2D, or `B` of [`LRA::Linear`]
+/// is not a column vector ([`Theory::check`] reports these as errors).
+impl Signature<Sort> for LRA {
+    fn dom(&self) -> impl Iterator<Item = Elem> {
+        expect_signature(self).dom.into_iter()
     }
-    Ok(sort)
+
+    fn cod(&self) -> impl Iterator<Item = Elem> {
+        expect_signature(self).cod.into_iter()
+    }
+
+    fn dom_arity(&self) -> usize {
+        expect_signature(self).dom.len()
+    }
+
+    fn cod_arity(&self) -> usize {
+        expect_signature(self).cod.len()
+    }
 }
 
-fn check_const<R, W, E: fmt::Display>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    if read.next().is_some() {
-        return Err("Const: cannot read values".into());
-    }
-    // the sort comes from the write wire; validate the tensor's kind matches it
-    let [i, j] = match next_sort(&mut write, 0)? {
-        Sort::Real([i, j]) => {
-            if cm.is_bool() {
-                return Err("Const: write wire is Real but initializer is a boolean tensor".into());
+fn expect_signature(op: &LRA) -> VecSignature<Sort> {
+    signature(op, 0).unwrap_or_else(|e| panic!("{op:?}: {e}"))
+}
+
+/// The signature of `op` over values (`degree` 0), or over the derivatives of reals of
+/// the given `degree`, e.g., `Add` adds them, and `Lt` compares them (into values).
+/// It is an error if `op` is ill-formed.
+fn signature(op: &LRA, degree: u8) -> Result<VecSignature<Sort>, String> {
+    // the sorts of the elements of matrices: values, and reals of the `degree`
+    let (real0, bool) = (Sort::Real([1, 1]), Sort::Bool([1, 1]));
+    let real = (0..degree).fold(real0, |s, _| s.T());
+    // a matrix with symbolic dimensions, the same for all (pointwise) arguments
+    let m = |s: Sort| Mat(s, 'a', 'b');
+    let (dom, cod) = match op {
+        LRA::Real(cm) => {
+            let [rows, cols] = shape_2d(cm)?;
+            (vec![], vec![Mat(real0, rows, cols)])
+        }
+        LRA::Bool(cm) => {
+            let [rows, cols] = shape_2d(cm)?;
+            (vec![], vec![Mat(bool, rows, cols)])
+        }
+        LRA::And() | LRA::Or() | LRA::Xor() => (vec![m(bool), m(bool)], vec![m(bool)]),
+        LRA::Not() => (vec![m(bool)], vec![m(bool)]),
+        LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
+            (vec![m(real), m(real)], vec![m(bool)])
+        }
+        LRA::Linear(a, b) => {
+            // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
+            let [out, inp] = shape_2d(a)?;
+            if b.numel() != 0 && shape_2d(b)? != [out, 1] {
+                return Err(format!("`B` must be a column vector [{out}x1]"));
             }
-            [i, j]
+            (vec![Mat(real, inp, 'b')], vec![Mat(real, out, 'b')])
         }
-        Sort::Bool([i, j]) => {
-            if !cm.is_bool() {
-                return Err(
-                    "Const: write wire is Bool but initializer is not a boolean tensor".into(),
-                );
-            }
-            [i, j]
+        // `Min` and `Max` are pointwise, as in the evaluator
+        LRA::Add() | LRA::Sub() | LRA::Min() | LRA::Max() => {
+            (vec![m(real), m(real)], vec![m(real)])
         }
-        Sort::TReal(..) => {
-            return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
-        }
-        Sort::Zero(..) => {
-            return Err("Cannot derive a bool. Use ZERO to apply a no change".to_string());
-        }
+        LRA::ReLU() => (vec![m(real)], vec![m(real)]),
+        // the index into the flattened matrix, as in the evaluator and the Python builder
+        LRA::Argmax() => (vec![m(real)], vec![Mat(real, 1, 1)]),
+        // of any sort, as in the evaluator
+        LRA::Transpose() => (vec![Mat('t', 'a', 'b')], vec![Mat('t', 'b', 'a')]),
+        LRA::Ite() => (
+            vec![Mat(bool, 1, 1), TypeVar('a'), TypeVar('a')],
+            vec![TypeVar('a')],
+        ),
+        LRA::Id() => (vec![TypeVar('a')], vec![TypeVar('a')]),
+        // `Uninterpreted` either writes or reads a single value, but a signature
+        // has a fixed arity: we pick the write (used by the builder for untraced calls)
+        LRA::Uninterpreted(_) => (vec![], vec![TypeVar('a')]),
+        // the zero derivatives
+        LRA::BoolZerograd(shape) => (vec![], vec![sort_elem(Sort::Bool(*shape).T())]),
+        LRA::RealZerograd(shape) => (vec![], vec![sort_elem(Sort::Real(*shape).T())]),
+        LRA::AnyBool(shape) => (vec![], vec![sort_elem(Sort::Bool(*shape))]),
+        LRA::AnyReal(shape) => (vec![], vec![sort_elem(Sort::Real(*shape))]),
     };
-    let size = cm.size();
-    if size.len() != 2 {
-        return Err(format!(
-            "Const: initializer must be a 2D tensor, got {}D",
-            size.len()
-        ));
-    }
-    if size[0] as usize != i {
-        return Err(format!(
-            "Const: initializer has wrong number of rows (has {}, expected {})",
-            size[0], i
-        ));
-    }
-    if size[1] as usize != j {
-        return Err(format!("Const: some row has wrong length, expected {}", j));
-    }
-    if write.next().is_some() {
-        return Err("Const: returns more than one value".into());
-    }
-    Ok(())
+    Ok(VecSignature { dom, cod })
 }
 
-fn check_bool<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match op {
-        LRA::Not() => {
-            let (r, w) = (next_value(&mut read, 0)?, next_value(&mut write, 0)?);
-            if !matches!(r, Sort::Bool(..)) {
-                return Err(format!("{:?}: input must be Bool", op));
-            }
-            if r != w {
-                return Err(format!("{:?}: input and output type must be the same", op));
-            }
-            if read.next().is_some() {
-                return Err(format!("{:?}: must read a single value (reads more)", op));
-            }
-            if write.next().is_some() {
-                return Err(format!("{:?}: must write a single value (writes more)", op));
-            }
-            Ok(())
-        }
-        LRA::And() | LRA::Or() | LRA::Xor() => {
-            let w1 = next_value(&mut write, 0)?;
-            let (r1, r2, None) = (
-                next_value(&mut read, 0)?,
-                next_value(&mut read, 1)?,
-                read.next(),
-            ) else {
-                return Err(format!("{:?}: must read exactly two values", op));
-            };
-            if !matches!(w1, Sort::Bool(..)) {
-                return Err(format!("{:?}: output must be Bool", op));
-            }
-            if r1 != r2 {
-                return Err(format!("{:?}: input values must have the same type", op));
-            }
-            if w1 != r1 {
-                return Err(format!(
-                    "{:?}: input and output values must have the same type",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        _ => unreachable!(),
-    }
-}
-
-fn check_cmp<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let r1 = next_sort(&mut read, 0)?;
-    let r2 = next_sort(&mut read, 1)?;
-    if r1 != r2 {
-        return Err(format!("{:?}: input values must have the same type", op));
-    }
-    // compares values or derivatives (of the same degree)
-    let shape = match r1.real_with_degree() {
-        Some((s, _)) => s,
-        _ => {
-            return Err(format!(
-                "{:?}: inputs must be Real matrices, got {}",
-                op, r1
-            ));
-        }
-    };
-    let w1 = next_value(&mut write, 0)?;
-    if w1 != Sort::Bool(shape) {
-        return Err(format!(
-            "{:?}: output must be Bool({:?}), got {w1}",
-            op, shape
-        ));
-    }
-    Ok(())
-}
-
-fn check_mat_ops<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match op {
-        LRA::Add() | LRA::Sub() => {
-            let (r1, r2, None) = (
-                next_sort(&mut read, 0)?,
-                next_sort(&mut read, 1)?,
-                read.next(),
-            ) else {
-                return Err(format!("{:?}: must read exactly two values", op));
-            };
-            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-
-            if r1 != r2 {
-                return Err(format!("{:?}: inputs must have the same type", op));
-            }
-            if r1 != w1 {
-                return Err(format!(
-                    "{:?}: input and output must have the same type",
-                    op
-                ));
-            }
-            if w1.real_with_degree().is_none() {
-                return Err(format!(
-                    "{:?}: input and output values must be real matrices",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        LRA::ReLU() => {
-            let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
-                return Err(format!("{:?}: must read exactly one value", op));
-            };
-            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            if r1 != w1 {
-                return Err(format!(
-                    "{:?}: input and output must have the same type",
-                    op
-                ));
-            }
-            if w1.real_with_degree().is_none() {
-                return Err(format!(
-                    "{:?}: input and output values must be real matrices",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        LRA::Argmax() | LRA::Min() | LRA::Max() => {
-            // TODO: check whether the conditions of the read are sound
-            let (_r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
-                return Err(format!("{:?}: must read exactly one value", op));
-            };
-            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            match w1.real_with_degree() {
-                Some(([i, j], _)) => {
-                    // FIXME: we should fix which dimension is 1..
-                    if i == 1 || j == 1 {
-                        return Ok(());
-                    }
-                    Err(format!(
-                        "{:?}: output must be a vector, got matrix {}x{}",
-                        op, i, j
-                    ))
-                }
-                _ => Err(format!("{:?}: output must be real matrix", op)),
-            }
-        }
-        _ => unreachable!(),
-    }
-}
-
-fn check_linear_affine<R, W, E: fmt::Display>(
-    op: &LRA,
-    a: &crate::PyTensor,
-    b: &crate::PyTensor,
-    read: &mut R,
-    write: &mut W,
-) -> Result<(), String>
-where
-    R: Iterator<Item = Result<Sort, E>>,
-    W: Iterator<Item = Result<Sort, E>>,
-{
-    let (r1, None) = (next_sort(read, 0)?, read.next()) else {
-        return Err(format!("{:?}: must read exactly one value", op));
-    };
-    let (w1, None) = (next_sort(write, 0)?, write.next()) else {
-        return Err(format!("{:?}: must write exactly one value", op));
-    };
-
-    // Convention: Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1], Y=[out,batch].
-    let a_size = a.size();
-    if a_size.len() != 2 {
-        return Err(format!("{:?}: `A` must be a 2D tensor", op));
-    }
-    let a_rows = a_size[0] as usize; // out_features
-    let a_cols = a_size[1] as usize; // in_features
-    if a_rows == 0 {
-        return Err(format!("{:?}: `A` is empty", op));
-    }
-
-    let b_size = b.size();
-    let (b_rows, b_cols) = if b.numel() == 0 {
-        (0usize, 0usize)
-    } else {
-        if b_size.len() != 2 {
-            return Err(format!("{:?}: `B` must be a 2D tensor", op));
-        }
-        (b_size[0] as usize, b_size[1] as usize)
-    };
-
-    match (r1.real_with_degree(), w1.real_with_degree()) {
-        (Some(([d1, d2], deg0)), Some(([d3, d4], deg1))) => {
-            // X has shape [d1=in, d2=batch]; A has shape [a_rows=out, a_cols=in].
-            if d1 != a_cols {
-                return Err(format!(
-                    "{:?}: dimension mismatch: X has {}x{} but A has {}x{} (need X.rows == A.cols)",
-                    op, d1, d2, a_rows, a_cols
-                ));
-            }
-            // B must be a column vector [out, 1] matching the output rows.
-            if b_rows > 0 && (b_rows != a_rows || b_cols != 1) {
-                return Err(format!(
-                    "{:?}: B must be a column vector [{}x1], got {}x{}",
-                    op, a_rows, b_rows, b_cols
-                ));
-            }
-            // Output Y = A·X has shape [a_rows=out, d2=batch].
-            if a_rows != d3 || d2 != d4 {
-                return Err(format!(
-                    "{:?}: bad output matrix dimensions, expected {}x{} but got {}x{}",
-                    op, a_rows, d2, d3, d4
-                ));
-            }
-            if deg0 != deg1 {
-                return Err("Differential form degree mismatch".to_string());
-            }
-            Ok(())
-        }
-        _ => Err(format!("{:?}: input and output must be real matrices", op)),
-    }
-}
-
-fn check_transpose<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
-        return Err(format!("{:?}: must read exactly one value", op));
-    };
-    let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-        return Err(format!("{:?}: must write exactly one value", op));
-    };
-    match (r1.real_with_degree(), w1.real_with_degree()) {
-        (Some(([d1, d2], deg0)), Some(([e1, e2], deg1))) => {
-            if d2 != e1 || d1 != e2 {
-                return Err(format!(
-                    "{:?}: transpose of {}x{} must produce {}x{}, got {}x{}",
-                    op, d1, d2, d2, d1, e1, e2
-                ));
-            }
-            if deg0 != deg1 {
-                return Err("Differential form degree mismatch".to_string());
-            }
-            Ok(())
-        }
-        _ => Err(format!("{:?}: input and output must be real matrices", op)),
-    }
-}
-
-fn check_flow<R, W, E: fmt::Display>(op: &LRA, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match op {
-        LRA::Id() => {
-            let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
-                return Err(format!("{:?}: must read exactly one value", op));
-            };
-            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            if r1 != w1 {
-                return Err(format!(
-                    "{:?}: input and output must have the same type and degree",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        LRA::Ite() => {
-            let (r1, r2, r3, None) = (
-                next_value(&mut read, 0)?,
-                next_sort(&mut read, 1)?,
-                next_sort(&mut read, 2)?,
-                read.next(),
-            ) else {
-                return Err(format!("{:?}: must read exactly three values", op));
-            };
-            let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
-                return Err(format!("{:?}: must write exactly one value", op));
-            };
-            if r2 != r3 {
-                return Err(format!(
-                    "{:?}: 2nd and 3rd inputs must have the same type",
-                    op
-                ));
-            }
-            if w1 != r2 {
-                return Err(format!(
-                    "{:?}: inputs and output must have the same type",
-                    op
-                ));
-            }
-            if r1 != Sort::Bool([1, 1]) {
-                return Err(format!(
-                    "{:?}: input and output values must have the same type",
-                    op
-                ));
-            }
-            Ok(())
-        }
-        _ => unreachable!(),
+/// The signature element of `sort`: a matrix of scalars
+fn sort_elem(sort: Sort) -> Elem {
+    match sort {
+        Sort::Real([i, j]) => Mat(Sort::Real([1, 1]), i, j),
+        Sort::Bool([i, j]) => Mat(Sort::Bool([1, 1]), i, j),
+        Sort::TReal([i, j], degree) => Mat(Sort::TReal([1, 1], degree), i, j),
+        Sort::Zero([i, j]) => Mat(Sort::Zero([1, 1]), i, j),
     }
 }
 
@@ -727,7 +402,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LRA::Real(cm)
+            LRA::Bool(cm)
                 .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
         );
@@ -736,7 +411,7 @@ mod tests {
     #[test]
     fn const_bool_real_write_fails() {
         assert!(
-            LRA::Real(tch::Tensor::from_slice2(&[[true]]).into())
+            LRA::Bool(tch::Tensor::from_slice2(&[[true]]).into())
                 .check([].map(ok), [real(1, 1)].map(ok))
                 .is_err()
         );
@@ -882,7 +557,7 @@ mod tests {
     fn argmax_ok() {
         assert!(
             LRA::Argmax()
-                .check([real(3, 4)].map(ok), [real(1, 4)].map(ok))
+                .check([real(3, 4)].map(ok), [real(1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -898,11 +573,10 @@ mod tests {
 
     #[test]
     fn min_ok() {
-        assert!(
-            LRA::Min()
-                .check([real(4, 1)].map(ok), [real(1, 1)].map(ok))
-                .is_ok()
-        );
+        // pointwise
+        let t = real(4, 1);
+        assert!(LRA::Min().check([t, t].map(ok), [t].map(ok)).is_ok());
+        assert!(LRA::Max().check([t].map(ok), [real(1, 1)].map(ok)).is_err());
     }
 
     #[test]
@@ -1126,6 +800,128 @@ mod tests {
             LRA::RealZerograd([1, 1])
                 .check([].map(ok), [].map(ok))
                 .is_err()
+        );
+    }
+
+    fn real_tensor(rows: i64, cols: i64) -> crate::PyTensor {
+        tch::Tensor::zeros([rows, cols], (tch::Kind::Float, tch::Device::Cpu)).into()
+    }
+
+    // Formats the signature of `op` as `(dom) -> (cod)`
+    fn sig(op: LRA) -> String {
+        let join = |elems: Vec<String>| elems.join(", ");
+        let dom = join(op.dom().map(|e| e.to_string()).collect());
+        let cod = join(op.cod().map(|e| e.to_string()).collect());
+        format!("({dom}) -> ({cod})")
+    }
+
+    #[test]
+    fn signatures() {
+        let r = "Mat(Real(1, 1), a, b)";
+        assert_eq!(sig(LRA::Add()), format!("({r}, {r}) -> ({r})"));
+        assert_eq!(
+            sig(LRA::Lt()),
+            format!("({r}, {r}) -> (Mat(Bool(1, 1), a, b))")
+        );
+        assert_eq!(
+            sig(LRA::Linear(real_tensor(2, 3), real_tensor(0, 0))),
+            "(Mat(Real(1, 1), 3, b)) -> (Mat(Real(1, 1), 2, b))"
+        );
+        assert_eq!(
+            sig(LRA::RealZerograd([2, 3])),
+            "() -> (Mat(TReal(1, 1; 1), 2, 3))"
+        );
+        assert_eq!(
+            sig(LRA::BoolZerograd([2, 3])),
+            "() -> (Mat(Zero(1, 1), 2, 3))"
+        );
+        assert_eq!(sig(LRA::AnyReal([2, 3])), "() -> (Mat(Real(1, 1), 2, 3))");
+        assert_eq!(sig(LRA::Transpose()), "(Mat('t, a, b)) -> (Mat('t, b, a))");
+        // over derivatives
+        let dr = "Mat(TReal(1, 1; 1), a, b)";
+        let sig1 = |op| {
+            let sig = signature(&op, 1).unwrap();
+            (
+                sig.dom.len(),
+                sig.cod.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(sig1(LRA::Add()), (2, vec![dr.to_string()]));
+        assert_eq!(
+            sig1(LRA::Lt()),
+            (2, vec!["Mat(Bool(1, 1), a, b)".to_string()])
+        );
+    }
+
+    #[test]
+    fn check_errors() {
+        assert_eq!(
+            LRA::Add().check([real(1, 1), real(1, 2)].map(ok), [real(1, 1)].map(ok)),
+            Err(
+                "Add: Failed unifying `(Mat(Real(1, 1), a, b), Mat(Real(1, 1), a, b)) -> Mat(Real(1, 1), a, b)` \
+                 with `(Mat(Real(1, 1), 1, 1), Mat(Real(1, 1), 1, 2)) -> Mat(Real(1, 1), 1, 1)` \
+                 on `Mat(Real(1, 1), 1, 1)` and `Mat(Real(1, 1), 1, 2)`"
+                    .to_string()
+            )
+        );
+        // over derivatives, the signature is over the tangents
+        let dr = real(1, 1).T();
+        assert_eq!(
+            LRA::Add().check([dr, real(1, 1)].map(ok), [dr].map(ok)),
+            Err(
+                "Add: Failed unifying `(Mat(TReal(1, 1; 1), a, b), Mat(TReal(1, 1; 1), a, b)) -> Mat(TReal(1, 1; 1), a, b)` \
+                 with `(Mat(TReal(1, 1; 1), 1, 1), Mat(Real(1, 1), 1, 1)) -> Mat(TReal(1, 1; 1), 1, 1)` \
+                 on `Mat(TReal(1, 1; 1), 1, 1)` and `Mat(Real(1, 1), 1, 1)`"
+                    .to_string()
+            )
+        );
+        // errors of wires are propagated
+        let b = bool_t(1, 1);
+        assert_eq!(
+            LRA::Not().check([Err("bad wire")], [b].map(Ok)),
+            Err("Not: bad wire".to_string())
+        );
+    }
+
+    #[test]
+    fn check_ill_formed_ops() {
+        // ill-formed tensors are reported, not panicking
+        let t: crate::PyTensor = tch::Tensor::from_slice(&[0.0f64, 1.0]).into();
+        let res = LRA::Real(t).check([].map(ok), [real(1, 2)].map(ok));
+        assert!(res.unwrap_err().ends_with("expected a 2D tensor, got 1D"));
+        let res = LRA::Linear(real_tensor(2, 3), real_tensor(2, 2))
+            .check([real(3, 1)].map(ok), [real(2, 1)].map(ok));
+        assert!(
+            res.unwrap_err()
+                .ends_with("`B` must be a column vector [2x1]")
+        );
+    }
+
+    #[test]
+    fn check_uninterpreted() {
+        let f = || LRA::Uninterpreted("f".into());
+        let t = real(2, 3);
+        // either a single write, or a single read of any sort
+        assert!(f().check([].map(ok), [t].map(ok)).is_ok());
+        assert!(f().check([t].map(ok), [].map(ok)).is_ok());
+        assert!(f().check([t.T()].map(ok), [].map(ok)).is_ok());
+        assert!(f().check([t].map(ok), [t].map(ok)).is_err());
+        assert!(f().check([t, t].map(ok), [].map(ok)).is_err());
+        assert!(f().check([].map(ok), [].map(ok)).is_err());
+    }
+
+    #[test]
+    fn linear_derivatives() {
+        // `2 * d(t)` folds to a Linear over derivatives
+        let lin = || LRA::Linear(real_tensor(2, 3), real_tensor(2, 1));
+        let (x, y) = (real(3, 1), real(2, 1));
+        assert!(lin().check([x.T()].map(ok), [y.T()].map(ok)).is_ok());
+        assert!(lin().check([x.T()].map(ok), [y].map(ok)).is_err());
+        assert!(lin().check([x].map(ok), [y.T()].map(ok)).is_err());
+        assert!(
+            lin()
+                .check([x.T().T()].map(ok), [y.T().T()].map(ok))
+                .is_ok()
         );
     }
 }

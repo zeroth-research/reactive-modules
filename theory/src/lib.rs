@@ -6,6 +6,8 @@ pub mod signature;
 pub mod sort;
 pub mod tensor;
 
+use signature::{SignatureElem, VecSignature};
+use sort::MultiSort;
 use std::fmt;
 use std::fmt::Debug;
 pub use tensor::PyTensor;
@@ -132,5 +134,43 @@ where
         item.map_err(|e| e.to_string())
     } else {
         Err(format!("Arg {pos} expected, but got none"))
+    }
+}
+
+/// The sorts of `wires`, or the error of the first wire that has none
+fn wire_sorts<S, I, E: fmt::Display>(wires: I) -> Result<Vec<S>, String>
+where
+    I: IntoIterator<Item = Result<S, E>>,
+{
+    wires
+        .into_iter()
+        .map(|w| w.map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Typecheck the sorts of the wires that an operation reads and writes against
+/// the signature `sig` of the operation, where `elem` gives the signature element
+/// of a sort
+fn typecheck_wires<S>(
+    sig: VecSignature<S>,
+    read: &[S],
+    write: &[S],
+    elem: impl Fn(S) -> SignatureElem<S>,
+) -> Result<(), String>
+where
+    S: MultiSort + PartialEq + fmt::Display,
+{
+    let wires = VecSignature {
+        dom: read.iter().copied().map(&elem).collect(),
+        cod: write.iter().copied().map(&elem).collect(),
+    };
+    signature::typecheck(sig, wires)
+}
+
+/// The `[rows, cols]` shape of the 2D tensor `t`
+fn shape_2d(t: &PyTensor) -> Result<[usize; 2], String> {
+    match t.size().as_slice() {
+        &[rows, cols] => Ok([rows as usize, cols as usize]),
+        size => Err(format!("expected a 2D tensor, got {}D", size.len())),
     }
 }

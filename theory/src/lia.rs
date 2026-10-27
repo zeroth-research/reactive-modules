@@ -49,7 +49,7 @@ assert!(LIA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
-use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature, typecheck};
+use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature};
 use crate::sort::{MultiSort, TangentMultiSort};
 use crate::*;
 #[cfg(feature = "pyo3")]
@@ -167,17 +167,14 @@ impl Theory for LIA {
         W: IntoIterator<Item = Result<Sort, E>>,
     {
         let check = || -> Result<(), String> {
-            let wires = VecSignature {
-                dom: wire_elems(read)?,
-                cod: wire_elems(write)?,
-            };
+            let (read, write) = (wire_sorts(read)?, wire_sorts(write)?);
             let mut sig = signature(self)?;
             // `Uninterpreted` either writes or reads a single value, but its signature
             // has the write
-            if matches!(self, LIA::Uninterpreted(_)) && !wires.dom.is_empty() {
+            if matches!(self, LIA::Uninterpreted(_)) && !read.is_empty() {
                 std::mem::swap(&mut sig.dom, &mut sig.cod);
             }
-            typecheck(sig, wires)
+            typecheck_wires(sig, &read, &write, sort_elem)
         };
         check().map_err(|e| format!("{self:?}: {e}"))
     }
@@ -269,24 +266,6 @@ fn sort_elem(sort: Sort) -> Elem {
         Sort::Int([i, j]) => Mat(Sort::Int([1, 1]), i, j),
         Sort::Bool([i, j]) => Mat(Sort::Bool([1, 1]), i, j),
         Sort::Zero([i, j]) => Mat(Sort::Zero([1, 1]), i, j),
-    }
-}
-
-/// The signature elements of the sorts of `wires`
-fn wire_elems<I, E: fmt::Display>(wires: I) -> Result<Vec<Elem>, String>
-where
-    I: IntoIterator<Item = Result<Sort, E>>,
-{
-    wires
-        .into_iter()
-        .map(|wire| wire.map(sort_elem).map_err(|e| e.to_string()))
-        .collect()
-}
-
-fn shape_2d(t: &crate::PyTensor) -> Result<[usize; 2], String> {
-    match t.size().as_slice() {
-        &[rows, cols] => Ok([rows as usize, cols as usize]),
-        size => Err(format!("expected a 2D tensor, got {}D", size.len())),
     }
 }
 
