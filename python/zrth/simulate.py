@@ -443,7 +443,7 @@ class Simulation:
     """A run of `module`, one step at a time.
 
     `t` is the module's time reference, an external that reads the current time and runs
-    at rate 1; left out, it is the module's one external. Any other external must be a
+    at rate 1; left out, it is the module's one Clock external. Any other external must be a
     Bool, an Event or a Nat: a *driven input*, whose value every `step` receives and holds
     from then through the round the step ends with. `seed` feeds the exponential clocks and
     the `uniform` scheduler. `scheduler` is `last()` (the default), `first(gap)`,
@@ -463,8 +463,10 @@ class Simulation:
 
     def __init__(self, module, *, t=None, seed=0, scheduler=None, inputs=None):
         extl = list(module.extl)
-        if t is None and len(extl) == 1 and extl[0].dtype == Clock():
-            [t] = extl
+        if t is None:
+            clocks = [v for v in extl if v.dtype == Clock()]
+            if len(clocks) == 1:
+                [t] = clocks
         if t is not None and t.dtype != Clock():
             raise TypeError(f"the time reference must be a Clock, got {t.dtype}")
         if t is not None and t not in extl:
