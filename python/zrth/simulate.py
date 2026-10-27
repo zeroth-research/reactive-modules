@@ -449,11 +449,13 @@ class Simulation:
     the `uniform` scheduler. `scheduler` is `last()` (the default), `first(gap)`,
     `uniform(gap)`, or a function `(hi, rng) -> delta` choosing how long the step flows,
     `0 < delta <= hi`, where `hi` is how long the invariants allow (already clipped).
+    `policy(time, state) -> {var: value}` supplies the driven inputs of every step that
+    is not given them, from the state the step starts in.
 
         sim = Simulation(net, seed=1)
         while sim.now < 100.0:
-            time, seen, after = sim.step({pick: True}, until=100.0)
-        sim.trace
+            time, seen, after = sim.step({go.enabled: after[queue.count] > 2}, until=100.0)
+        sim.trace                                   # or, with a policy, sim.run(100.0).trace
 
     A step raises `NoFlow` when the run cannot go on, with the trace so far attached: the
     flow has no value in the current state, or time cannot pass and the round changes
@@ -461,7 +463,7 @@ class Simulation:
     straight to `until`, and `until` is then required.
     """
 
-    def __init__(self, module, *, t=None, seed=0, scheduler=None, inputs=None):
+    def __init__(self, module, *, t=None, seed=0, scheduler=None, policy=None, inputs=None):
         extl = list(module.extl)
         if t is None:
             clocks = [v for v in extl if v.dtype == Clock()]
@@ -480,6 +482,7 @@ class Simulation:
                 )
         self.module, self.t = module, t
         self.pick = last() if scheduler is None else scheduler
+        self.policy = policy
         self.rng = random.Random(seed)
         self.ctrl = list(module.ctrl)
         self.clocks = [v for v in self.ctrl if isinstance(v.dtype, Clock)]
@@ -519,8 +522,11 @@ class Simulation:
 
     def step(self, inputs=None, *, until=math.inf):
         """Flow, then one round; returns `(time, seen, after)`, the instant of the round
-        and the states it saw and produced, which the trace also records."""
+        and the states it saw and produced, which the trace also records. The driven
+        inputs come from `inputs`, else from the policy."""
         if self.inputs:
+            if inputs is None and self.policy is not None:
+                inputs = self.policy(self.now, self._snapshot())
             self._drive(self.state, inputs or {}, f"step at {self.now}")
         try:
             hi, rates, pins = _oracle(self.module, self.state, self.clocks, self.t)
@@ -564,10 +570,10 @@ class Simulation:
         return self
 
 
-def simulate(module, *, t=None, horizon, seed=0, scheduler=None) -> Trace:
+def simulate(module, *, t=None, horizon, seed=0, scheduler=None, policy=None) -> Trace:
     """Run `module` from its initial state up to time `horizon` and return the trace; see
-    `Simulation` for the arguments. The module's only external is the time reference."""
-    sim = Simulation(module, t=t, seed=seed, scheduler=scheduler)
-    if sim.inputs:
-        raise TypeError("simulate(): the module has driven inputs; drive them with Simulation.step")
+    `Simulation` for the arguments. A module with driven inputs needs a `policy`."""
+    sim = Simulation(module, t=t, seed=seed, scheduler=scheduler, policy=policy)
+    if sim.inputs and policy is None:
+        raise TypeError("simulate(): the module has driven inputs; pass a policy")
     return sim.run(horizon).trace

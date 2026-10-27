@@ -330,8 +330,22 @@ def test_a_driven_input_gates_a_transition():
     assert fired_at == [1.0, 3.0, 5.0]
     with pytest.raises(TypeError, match="no value for the driven inputs"):
         sim.step()
-    with pytest.raises(TypeError, match="driven inputs"):
+    with pytest.raises(TypeError, match="pass a policy"):
         simulate(Gated(theory=SPN, ctrl=(clk, ev), extl=(t, pick)), t=t, horizon=1.0)
+
+    # a policy supplies the inputs of every step that is not given them
+    seen_by_policy = []
+
+    def every_other(time, state):
+        seen_by_policy.append((time, state[ev]))
+        return {pick: int(time) % 2 == 0}
+
+    trace = simulate(Gated(theory=SPN, ctrl=(clk, ev), extl=(t, pick)), t=t, horizon=6.0, policy=every_other)
+    toggles = [trace.times[i] for i in range(1, len(trace)) if trace.states[i][ev] != trace.before[i][ev]]
+    assert toggles == [1.0, 3.0, 5.0] and seen_by_policy[0] == (0.0, False)
+    sim = Simulation(Gated(theory=SPN, ctrl=(clk, ev), extl=(t, pick)), t=t, policy=every_other)
+    assert sim.step({pick: False})[1][pick] is False  # an explicit input wins over the policy
+    assert sim.step()[1][pick] is False  # time 1.0: the policy's turn
     with pytest.raises(TypeError, match="not a driven input"):
         sim.step({pick: True, t: 0.0})
 
