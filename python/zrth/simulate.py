@@ -267,19 +267,45 @@ def _affine(op, r, in_flow, breakpoints):
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class _Atom:
+    """An atom's blocks as tuples `(wire written, wires read, op)`, read from the
+    extension once, and its controlled variables with their next and tangent wires."""
+
+    init: tuple
+    update: tuple
+    delay: tuple
+    ctrl: tuple  # (v, X(v), d(v))
+
+
+def _compile(module) -> list:
+    def terms(block):
+        return tuple((term.write[0], tuple(term.read), term.itype) for term in block)
+
+    return [
+        _Atom(
+            terms(atom.init),
+            terms(atom.update),
+            terms(atom.delay),
+            tuple((v, X(v), d(v)) for v in atom.ctrl),
+        )
+        for atom in module.atoms
+    ]
+
+
 def _walk(terms, state, fn):
-    for term in terms:
-        state[term.write[0]] = fn(term.itype, [state[w] for w in term.read])
+    for w, reads, op in terms:
+        state[w] = fn(op, [state[r] for r in reads])
 
 
-def _round(module, state, fn):
+def _round(atoms, state, fn):
     """Every atom's `next` once, in await order; an atom whose next has no value
     stutters, and the atoms awaiting it read the latched value."""
-    for atom in module.atoms:
+    for atom in atoms:
         _walk(atom.update, state, fn)
-        for v in atom.ctrl:
-            if state[X(v)] is NOVALUE:
-                state[X(v)] = state[v]
+        for v, nxt, _ in atom.ctrl:
+            if state[nxt] is NOVALUE:
+                state[nxt] = state[v]
 
 
 def _latch(state, ctrl) -> bool:
@@ -317,9 +343,9 @@ def _snapshot(state, variables):
 # ---------------------------------------------------------------------------
 
 
-def _rates(module, state, clocks) -> dict:
+def _rates(atoms, state, clocks) -> dict:
     s = dict(state)
-    for atom in module.atoms:
+    for atom in atoms:
         _walk(atom.delay, s, lambda op, r: _eval(op, r, None))
     rates = {}
     for v in clocks:
@@ -332,7 +358,7 @@ def _rates(module, state, clocks) -> dict:
     return rates
 
 
-def _breakpoints(module, state, clocks, rates, t) -> dict:
+def _breakpoints(atoms, state, clocks, rates, t) -> dict:
     s = dict(state)
     for v in clocks:
         s[v] = _Aff(state[v], rates[v], v)
@@ -340,13 +366,13 @@ def _breakpoints(module, state, clocks, rates, t) -> dict:
         s[t] = _Aff(state[t], 1.0, t)
         s[X(t)] = s[t]
     breakpoints = {}
-    for atom in module.atoms:
+    for atom in atoms:
         _walk(atom.delay, s, lambda op, r: _affine(op, r, True, breakpoints))
-    for atom in module.atoms:
+    for atom in atoms:
         _walk(atom.update, s, lambda op, r: _affine(op, r, False, breakpoints))
-        for v in atom.ctrl:
-            if s[X(v)] is NOVALUE:
-                s[X(v)] = s[v]
+        for v, nxt, _ in atom.ctrl:
+            if s[nxt] is NOVALUE:
+                s[nxt] = s[v]
     return breakpoints
 
 
@@ -358,20 +384,21 @@ class _Probe:
     changing: tuple  # per atom: would a round here change its state?
 
 
-def _probe(module, state, clocks, rates, t, delta, pins, at_breakpoint) -> _Probe:
+def _probe(atoms, state, clocks, rates, t, delta, pins, at_breakpoint) -> _Probe:
     s = _advanced(state, clocks, rates, t, delta, pins)
-    for atom in module.atoms:
+    for atom in atoms:
         _walk(atom.delay, s, lambda op, r: _eval(op, r, None))
-    flowing = tuple(all(s[d(v)] is not NOVALUE for v in atom.ctrl) for atom in module.atoms)
+    flowing = tuple(all(s[tan] is not NOVALUE for _, _, tan in atom.ctrl) for atom in atoms)
     scratch = random.Random(0)
-    _round(module, s, lambda op, r: _eval(op, r, scratch))
-    changing = tuple(any(s[X(v)] != s[v] for v in atom.ctrl) for atom in module.atoms)
+    _round(atoms, s, lambda op, r: _eval(op, r, scratch))
+    changing = tuple(any(s[nxt] != s[v] for v, nxt, _ in atom.ctrl) for atom in atoms)
     return _Probe(delta, at_breakpoint, flowing, changing)
 
 
-def _probes(module, state, clocks, rates, t, pins) -> list:
-    """At 0, at every breakpoint, and in between: the predicates are constant on each
-    open interval, so one point per interval tells everything about it."""
+def _probes(atoms, state, clocks, rates, t, pins) -> list:
+    """At 0, at every breakpoint, and in between, until a flow stops: the predicates are
+    constant on each open interval, so one point per interval tells everything about it,
+    and nothing past the first stop matters."""
     deltas = [0.0]
     for b in sorted(pins):
         if b > deltas[-1]:
@@ -381,7 +408,12 @@ def _probes(module, state, clocks, rates, t, pins) -> list:
         points.append(((prev + b) / 2, False))
         points.append((b, True))
     points.append((deltas[-1] + 1.0, False))
-    return [_probe(module, state, clocks, rates, t, dl, pins, bp) for dl, bp in points]
+    probes = []
+    for dl, bp in points:
+        probes.append(_probe(atoms, state, clocks, rates, t, dl, pins, bp))
+        if not all(probes[-1].flowing):
+            break
+    return probes
 
 
 def _stops_at(probes, i) -> float:
@@ -393,13 +425,13 @@ def _stops_at(probes, i) -> float:
     return math.inf
 
 
-def _oracle(module, state, clocks, t):
+def _oracle(atoms, state, clocks, t):
     """`(hi, rates, pins)`: how long the flows may go on, the rates the clocks run at
     until then, and what a breakpoint pins exactly."""
-    rates = _rates(module, state, clocks)
-    pins = _breakpoints(module, state, clocks, rates, t)
-    probes = _probes(module, state, clocks, rates, t, pins)
-    atoms = range(len(module.atoms))
+    rates = _rates(atoms, state, clocks)
+    pins = _breakpoints(atoms, state, clocks, rates, t)
+    probes = _probes(atoms, state, clocks, rates, t, pins)
+    atoms = range(len(atoms))
     hi = min((_stops_at(probes, i) for i in atoms), default=math.inf)
     at_hi = probes[-1] if hi == math.inf else next(p for p in probes if p.delta == hi)
     for i in atoms:
@@ -485,6 +517,7 @@ class Simulation:
         self.policy = policy
         self.rng = random.Random(seed)
         self.ctrl = list(module.ctrl)
+        self.atoms = _compile(module)
         self.clocks = [v for v in self.ctrl if isinstance(v.dtype, Clock)]
         self.quiescent = False
 
@@ -493,7 +526,7 @@ class Simulation:
             state[t] = state[X(t)] = 0.0
             state[d(t)] = 1.0
         self._drive(state, inputs or {}, "init")
-        for atom in module.atoms:
+        for atom in self.atoms:
             try:
                 _walk(atom.init, state, lambda op, r: _eval(op, r, self.rng))
             except KeyError as e:
@@ -529,7 +562,7 @@ class Simulation:
                 inputs = self.policy(self.now, self._snapshot())
             self._drive(self.state, inputs or {}, f"step at {self.now}")
         try:
-            hi, rates, pins = _oracle(self.module, self.state, self.clocks, self.t)
+            hi, rates, pins = _oracle(self.atoms, self.state, self.clocks, self.t)
         except NoFlow as e:
             e.trace = self.trace
             raise
@@ -551,7 +584,7 @@ class Simulation:
         if self.quiescent:
             after = seen
         else:
-            _round(self.module, self.state, lambda op, r: _eval(op, r, self.rng))
+            _round(self.atoms, self.state, lambda op, r: _eval(op, r, self.rng))
             changed = _latch(self.state, self.ctrl)
             if hi == 0.0 and not changed:
                 e = NoFlow(f"stuck at {self.now}: time cannot pass and the round changes nothing")
