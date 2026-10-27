@@ -12,9 +12,12 @@ each colored token as a reactive module):
  variables (or events) + quantification or broadcast in reactive modules. This
  would be something similar to [Cubicle][].
  
- 1. If we chose to parameterize the number of colored tokens and transitions, we
- cannot express infinitely many firings of a transition (not when a PN
- transition interacts/produces an infinite number of tokens).
+ 1. We can express infinitely many firings with finitely many reactive modules.
+ However, with the encoding below, we can only launch as many satellites as we
+ have token modules. Each launch adds a token, and collisions and crashes do
+ not remove tokens from the net (they move them to Debris). Even if we
+ only consider a finite time horizon, there is no fixed bound on the number of
+ launches: for a positive launch rate, the count is almost surely finite.
  
  1. We could avoid introducing reactive modules for transitions by encoding the
  update/flow logic of each transition directly in the reactive module of each
