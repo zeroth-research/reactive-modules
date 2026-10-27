@@ -1,5 +1,7 @@
 # Probabilistic Satellite Launcher
 
+## First attempt
+
 This is a naive attempt to translate the (S)DCPN of Petrinaut's [probabilistic
 satellite launcher example][psl] into a system of reactive modules.
 
@@ -138,6 +140,56 @@ module Collision[id1, id2]
       // the upper bound is a variable?
       // -> outside Alur/Henzinger "propositional timed" fragment
       [] true -> clk' <= deadline
+```
+
+## Second attempt
+
+This is a second attempt at modeling the DCPN as a hybrid reactive module.
+
+```rust
+module Satellite[i]
+  // Petri net places become discrete mode component
+  private pn_place[i]: {⊥, space, debris}
+  // Delays become Real-valued discrete components
+  private w: discrete Real
+  
+  // Continuous valued components
+  private x[i], y[i], direction[i], velocity[i]: Real
+  
+  // Clock
+  private c: Clock
+
+  atom location[i], x[i], direction[i], velocity[i], c, w
+
+    init
+      location[i]' := ⊥  // token does not exist
+          
+      x[i]' := 0
+      y[i]' := 0
+      direction[i]' := 0
+      velocity[i]' := 0
+      
+      c' := 0
+      w' ~ Exponential(rate = launch_rate)
+
+  update
+    [] true -> // skip
+
+  flow
+    [] location[i] = space -> 
+      d(x) := velocity * cos(direction)
+      d(y) := velocity * sin(direction)
+      d(direction) := (-ax * sin(direction) + ay * cos(direction)) / velocity
+      d(velocity) := ax * cos(direction) + ay * sin(direction)
+    
+    [] location[i] != space -> 
+      d(x) := 0
+      d(y) := 0
+      d(direction) := 0
+      d(velocity) := 0
+
+  delay
+    [] true -> true
 ```
 
 [psl]: https://demo.petrinaut.org/local/151b7bdb-f199-4980-a1df-d33377809421
