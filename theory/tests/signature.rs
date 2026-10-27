@@ -1,5 +1,7 @@
 use std::fmt;
-use theory::signature::{Dim, Mat, Name, Signature, SignatureElem, Tan, TypeVar, typecheck};
+use theory::signature::{
+    Dim, Mat, MatSort, Name, Signature, SignatureElem, Tan, TypeVar, typecheck,
+};
 use theory::sort::{MultiSort, TangentMultiSort};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -129,8 +131,25 @@ fn dim_from() {
     assert_eq!(Dim::from('a'), Dim::Sym(Name(0)));
     assert_eq!(
         Mat(TestSort::A(), 'n', 5),
-        SignatureElem::Mat(TestSort::A(), Dim::Sym(Name(13)), Dim::Const(5))
+        SignatureElem::Mat(MatSort::S(TestSort::A()), Dim::Sym(Name(13)), Dim::Const(5))
     );
+}
+
+#[test]
+fn mat_sort_from() {
+    assert_eq!(MatSort::from(TestSort::A()), MatSort::S(TestSort::A()));
+    assert_eq!(MatSort::<TestSort>::from('t'), MatSort::Sym(Name(19)));
+    assert_eq!(
+        Mat::<TestSort>('t', 'n', 5),
+        SignatureElem::Mat(MatSort::Sym(Name(19)), Dim::Sym(Name(13)), Dim::Const(5))
+    );
+}
+
+#[test]
+fn display_mat_sort() {
+    assert_eq!(MatSort::<TestSort>::Sym(Name(19)).to_string(), "'t");
+    assert_eq!(MatSort::S(TestSort::B(3)).to_string(), "B(3)");
+    assert_eq!(Mat::<TestSort>('t', 'n', 5).to_string(), "Mat('t, n, 5)");
 }
 
 #[test]
@@ -502,5 +521,214 @@ fn typecheck_matrix_symbolic_dims() {
         err(
             "Failed unifying `Mat(A, a, a) -> A` with `Mat(A, 2, 3) -> A` on `Mat(A, 2, 2)` and `Mat(A, 2, 3)`"
         )
+    );
+}
+
+#[test]
+fn typecheck_matrix_symbolic_elem_sort() {
+    // Mat('t, a, b) -> Mat('t, b, a)
+    let transpose = || sig(&[Mat('t', 'a', 'b')], &[Mat('t', 'b', 'a')]);
+    assert_eq!(typecheck(transpose(), transpose()), Ok(()));
+    assert_eq!(
+        typecheck(
+            transpose(),
+            sig(&[Mat(TestSort::A(), 2, 3)], &[Mat(TestSort::A(), 3, 2)])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            transpose(),
+            sig(&[Mat(TestSort::A(), 2, 3)], &[Mat(TestSort::B(3), 3, 2)])
+        ),
+        err(
+            "Failed unifying `Mat('t, a, b) -> Mat('t, b, a)` with `Mat(A, 2, 3) -> Mat(B(3), 3, 2)` \
+             on `Mat(A, 3, 2)` and `Mat(B(3), 3, 2)`"
+        )
+    );
+    // `'s` and `'t` unified through `'u` must be instantiated by the same sort
+    fn m(s: impl Into<MatSort<TestSort>>) -> Elem {
+        Mat(s, 1, 1)
+    }
+    assert_eq!(
+        typecheck(
+            sig(&[m('s'), m('t')], &[m('s')]),
+            sig(&[m('u'), m('u')], &[m(TestSort::A())])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            sig(&[m('s'), m('t')], &[m('t')]),
+            sig(&[m('u'), m(TestSort::A())], &[m('u')])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            sig(&[m('s'), m('s')], &[m('s')]),
+            sig(&[m('u'), m(TestSort::A())], &[m(TestSort::B(3))])
+        ),
+        err(
+            "Failed unifying `(Mat('s, 1, 1), Mat('s, 1, 1)) -> Mat('s, 1, 1)` \
+             with `(Mat('u, 1, 1), Mat(A, 1, 1)) -> Mat(B(3), 1, 1)` \
+             on `Mat(A, 1, 1)` and `Mat(B(3), 1, 1)`"
+        )
+    );
+}
+
+#[test]
+fn typecheck_matrix_symbolic_elem_sort_with_type_var() {
+    // a type variable unifies with a matrix of a symbolic sort
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('a')], &[TypeVar('a')]),
+            sig(&[Mat('t', 2, 3)], &[Mat('t', 2, 3)])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('a')], &[TypeVar('a')]),
+            sig(&[Mat('t', 2, 3)], &[Mat(TestSort::A(), 2, 3)])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('a')], &[TypeVar('a')]),
+            sig(&[Mat('t', 2, 3)], &[Mat('t', 3, 2)])
+        ),
+        err(
+            "Failed unifying `'a -> 'a` with `Mat('t, 2, 3) -> Mat('t, 3, 2)` \
+             on `Mat('u, 2, 3)` and `Mat('u, 3, 2)`"
+        )
+    );
+}
+
+#[test]
+fn typecheck_type_var_as_elem_sort() {
+    // the type variable `'t` and the sort of elements `'t` are the same variable
+    let sig1 = || sig(&[TypeVar('t')], &[Mat('t', 'a', 'b')]);
+    assert_eq!(
+        typecheck(sig1(), sig(&[a()], &[Mat(TestSort::A(), 2, 3)])),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(sig1(), sig(&[a()], &[Mat(TestSort::B(3), 2, 3)])),
+        err(
+            "Failed unifying `'t -> Mat('t, a, b)` with `A -> Mat(B(3), 2, 3)` \
+             on `Mat(A, 2, 3)` and `Mat(B(3), 2, 3)`"
+        )
+    );
+    // ... also when the sort of elements is unified first
+    assert_eq!(
+        typecheck(
+            sig(&[Mat('t', 'a', 'b')], &[TypeVar('t')]),
+            sig(&[Mat(TestSort::A(), 2, 3)], &[b(3)])
+        ),
+        err(
+            "Failed unifying `Mat('t, a, b) -> 't` with `Mat(A, 2, 3) -> B(3)` \
+             on `A` and `B(3)`"
+        )
+    );
+    // ... and when it is renamed
+    assert_eq!(
+        typecheck(
+            sig(&[Mat('s', 1, 1)], &[TypeVar('s')]),
+            sig(&[Mat('u', 1, 1)], &[TypeVar('u')])
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        typecheck(
+            sig(&[Mat('s', 1, 1), TypeVar('s')], &[a()]),
+            sig(&[Mat('u', 1, 1), b(3)], &[TypeVar('u')])
+        ),
+        err(
+            "Failed unifying `(Mat('s, 1, 1), 's) -> A` with `(Mat('u, 1, 1), B(3)) -> 'u` \
+             on `A` and `B(3)`"
+        )
+    );
+    // the dimension `a` is a different variable than `'a`
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('a'), Mat('a', 'a', 2)], &[TypeVar('a')]),
+            sig(&[b(8), Mat(TestSort::B(8), 3, 2)], &[b(8)])
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn typecheck_type_var_as_elem_sort_not_mat_or_tan() {
+    // the sort of matrix elements cannot be a matrix (or a tangent), for now
+    let sig1 = || sig(&[TypeVar('t')], &[Mat('t', 1, 1)]);
+    assert_eq!(
+        typecheck(
+            sig1(),
+            sig(&[Mat(TestSort::A(), 2, 2)], &[Mat(TestSort::A(), 1, 1)])
+        ),
+        err(
+            "Failed unifying `'t -> Mat('t, 1, 1)` with `Mat(A, 2, 2) -> Mat(A, 1, 1)` \
+             on `A` and `Mat(A, 2, 2)`"
+        )
+    );
+    assert_eq!(
+        typecheck(
+            sig1(),
+            sig(&[Tan(TestSort::B(4))], &[Mat(TestSort::B(4), 1, 1)])
+        ),
+        err(
+            "Failed unifying `'t -> Mat('t, 1, 1)` with `Tan(B(4)) -> Mat(B(4), 1, 1)` \
+             on `B(4)` and `Tan(B(4))`"
+        )
+    );
+    // ... even if the sort of the elements is not determined
+    assert_eq!(
+        typecheck(sig1(), sig(&[Mat('s', 2, 2)], &[Mat('u', 1, 1)])),
+        err(
+            "Failed unifying `'t -> Mat('t, 1, 1)` with `Mat('s, 2, 2) -> Mat('u, 1, 1)` \
+             on `'t` and `Mat('m1, 2, 2)`"
+        )
+    );
+    // a type variable that is not a sort of matrix elements can still be a matrix
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('t')], &[Mat('s', 1, 1)]),
+            sig(&[Mat(TestSort::A(), 2, 2)], &[Mat(TestSort::A(), 1, 1)])
+        ),
+        Ok(())
+    );
+    // `'t` would be an infinite matrix `Mat(Mat(Mat(...), 1, 1), 1, 1)`
+    assert_eq!(
+        typecheck(
+            sig(&[TypeVar('t'), TypeVar('t')], &[]),
+            sig(&[TypeVar('u'), Mat('u', 1, 1)], &[])
+        ),
+        err(
+            "Failed unifying `('t, 't) -> ()` with `('u, Mat('u, 1, 1)) -> ()` on `'t` and `Mat('t, 1, 1)`"
+        )
+    );
+}
+
+#[test]
+fn typecheck_elem_sort_signatures_do_not_share_vars() {
+    // `'t` is `A` in the first signature and `B(8)` in the second one
+    fn m(s: impl Into<MatSort<TestSort>>) -> Elem {
+        Mat(s, 1, 1)
+    }
+    assert_eq!(
+        typecheck(
+            sig(&[m('t'), m(TestSort::B(8))], &[m('t')]),
+            sig(&[m(TestSort::A()), m('t')], &[m(TestSort::A())])
+        ),
+        Ok(())
+    );
+    // no name is left for renaming `t` of the second signature apart from `v9` (255)
+    let max = SignatureElem::Mat(MatSort::Sym(Name(255)), Dim::Const(1), Dim::Const(1));
+    assert_eq!(
+        typecheck(sig(&[max], &[]), sig(&[m('t')], &[])),
+        err("Too many variables in the signatures")
     );
 }
