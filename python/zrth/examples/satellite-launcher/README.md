@@ -138,10 +138,14 @@ module Collision[id1, id2]
 
 ### Limitations
 
-- **Incorrect aggregate launch rate.** All `LaunchSatellite[id]` modules above start their independent timers at
-initialization. With N unused satellite modules, the first launch therefore has
-rate `N * launch_rate`, not `launch_rate`; the total rate then decreases as
-modules fire. The launch variants below avoid this problem.
+- **Incorrect aggregate launch rate.** All `LaunchSatellite[id]` modules above
+  start their independent timers at initialization. With N unused satellite
+  modules, the first launch therefore has rate `N * launch_rate`, not
+  `launch_rate`; the total rate then decreases as modules fire. The launch
+  variants below avoid this problem.
+- **Double consumption of a satellite token.** Independent collision modules can
+  fire for overlapping pairs, such as `(i, j)` and `(i, k)`, in the same update
+  round, effectively removing satellite `i` from Space twice.
 
 ## Second attempt
 
