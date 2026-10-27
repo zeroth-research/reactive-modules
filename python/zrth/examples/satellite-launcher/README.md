@@ -268,6 +268,10 @@ module Launch[i]
 
 For `i==1`, start immediately in armed.
 
+**No extensions needed.** The chaining protocol itself works in plain reactive
+modules without extensions: for a fixed N, expand the instances and wire their
+events directly.
+
 #### Indexed launcher
 
 A singleton launcher indexes into the instances of `Satellite`. Each firing
