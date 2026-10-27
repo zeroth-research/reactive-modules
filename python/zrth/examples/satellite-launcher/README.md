@@ -136,55 +136,176 @@ module Collision[id1, id2]
       [] true -> clk' <= deadline
 ```
 
+### Limitations
+
+- **Incorrect aggregate launch rate.** All `LaunchSatellite[id]` modules above start their independent timers at
+initialization. With N unused satellite modules, the first launch therefore has
+rate `N * launch_rate`, not `launch_rate`; the total rate then decreases as
+modules fire. The launch variants below avoid this problem.
+
 ## Second attempt
 
-This is a second attempt at modeling the DCPN as a hybrid reactive module.
+We give launcher variants below are alternatives using the same token representation.
+
+### Token representation
+
+Each `Satellite[i]` represents one potential token. Its discrete mode records the
+Petri-net place, with `⊥` meaning that the token does not yet exist.
 
 ```rust
 module Satellite[i]
-  // Petri net places become discrete mode component
-  private pn_place[i]: {⊥, space, debris}
-  // Delays become Real-valued discrete components
-  private w: discrete Real
-  
-  // Continuous valued components
-  private x[i], y[i], direction[i], velocity[i]: Real
-  
-  // Clock
-  private c: Clock
+  external launch_event: Event
 
-  atom location[i], x[i], direction[i], velocity[i], c, w
+  // Petri net places become a discrete mode component
+  private location[i]: {⊥, space, debris}
+
+  // Continuous-valued components
+  interface x[i], y[i], direction[i], velocity[i]: Real
+
+  atom location[i], x[i], y[i], direction[i], velocity[i]
+    awaits launch_event
+    reads location[i], x[i], y[i], direction[i], velocity[i], launch_event
 
     init
       location[i]' := ⊥  // token does not exist
-          
       x[i]' := 0
       y[i]' := 0
       direction[i]' := 0
       velocity[i]' := 0
-      
-      c' := 0
+
+    update
+      [] location[i] = ⊥ && launch_event? ->
+         let distance = planet_radius + altitude
+         let angle ~ Uniform(0, Math.PI * 2)
+         location[i]' := space
+         x[i]' := cos(angle) * distance
+         y[i]' := sin(angle) * distance
+         direction[i]' ~ Uniform(0, Math.PI * 2)
+         velocity[i]' ~ Gaussian(initial_velocity, initial_velocity * 0.1)
+
+      // the default update leaves all controlled variables unchanged
+
+    flow
+      [] location[i] = space ->
+         let r = hypot(x[i], y[i])
+         let ax = (-mu * x[i]) / (r * r * r)
+         let ay = (-mu * y[i]) / (r * r * r)
+         d(x[i]) := velocity[i] * cos(direction[i])
+         d(y[i]) := velocity[i] * sin(direction[i])
+         d(direction[i]) :=
+           (-ax * sin(direction[i]) + ay * cos(direction[i])) / velocity[i]
+         d(velocity[i]) := ax * cos(direction[i]) + ay * sin(direction[i])
+
+      [] location[i] != space ->
+         d(x[i]) := 0
+         d(y[i]) := 0
+         d(direction[i]) := 0
+         d(velocity[i]) := 0
+
+    delay
+      [] true -> true
+```
+
+### Launch transition
+
+The DCPN's `LaunchSatellite` has no input arcs and a constant rate, so it is
+always pre-enabled. Its successive waiting times are independent exponential
+samples with rate `launch_rate`.
+
+Both variants below assume `launch_rate > 0` and a pool of N satellite modules,
+indexed from 1 to N. For `launch_rate = 0`, disable launching and permit
+unrestricted delay instead of sampling an exponential waiting time.
+
+#### Indexed launcher
+
+A singleton launcher indexes into the instances of `Satellite`. Each firing
+increments the count, identifying the next unused satellite, and restarts its
+timer.
+
+```rust
+module IndexedLauncher
+  interface launch_event: Event
+  interface count: {0, ..., N}
+  private clk: Clock
+  private w: discrete Real
+
+  atom launch_event, count, clk, w
+    init
+      launch_event' := false
+      count' := 0
+      clk' := 0
       w' ~ Exponential(rate = launch_rate)
 
-  update
-    [] true -> // skip
+    update
+      [] count < N && clk = w ->
+         launch_event!
+         count' := count + 1
+         clk' := 0
+         w' ~ Exponential(rate = launch_rate)
 
-  flow
-    [] location[i] = space -> 
-      d(x) := velocity * cos(direction)
-      d(y) := velocity * sin(direction)
-      d(direction) := (-ax * sin(direction) + ay * cos(direction)) / velocity
-      d(velocity) := ax * cos(direction) + ay * sin(direction)
-    
-    [] location[i] != space -> 
-      d(x) := 0
-      d(y) := 0
-      d(direction) := 0
-      d(velocity) := 0
+      [] true -> skip
 
-  delay
-    [] true -> true
+    delay
+      [] count < N && clk <= w -> clk' <= w
+      [] count = N -> true
 ```
+
+Specialize the satellite module as follows:
+
+- Add `external count: {0, ..., N}` and await `count` as well as `launch_event`:
+- Replace its launch guard with
+  `location[i] = ⊥ && launch_event? && count' = i`.
+
+#### Replicated launcher chain
+
+Alternatively, give each satellite a one-shot launcher. Only the first launcher
+starts armed; each subsequent launcher is activated by its predecessor's firing.
+
+```text
+Launch[1] --launch[1]--> Launch[2] --launch[2]--> Launch[3] ...
+              |                         |
+              v                         v
+         Satellite[1]              Satellite[2]
+```
+
+```rust
+module Launch[i]
+  external launch[i-1]: Event
+  interface launch[i]: Event
+  private state: {idle, armed, done}
+  private clk: Clock
+  private w: discrete Real
+
+  atom state, clk, w, launch[i]
+    awaits launch[i-1]
+    reads state, clk, w, launch[i], launch[i-1]
+
+    init
+      state' := if i = 1 then armed else idle
+      clk' := 0
+      w' ~ Exponential(rate = launch_rate)
+      launch[i]' := false
+
+    update
+      [] state = idle && launch[i-1]? ->
+         state' := armed
+         clk' := 0
+
+      [] state = armed && clk = w ->
+         launch[i]!
+         state' := done
+
+    delay
+      [] state = idle || state = done -> true
+      [] state = armed && clk <= w -> clk' <= w
+```
+
+For `i==1`, start immediately in armed.
+
+### Limitations
+
+- **Finite capacity.** Both variants implement only the first N launches,
+  corresponding to a bounded number of tokens.
 
 [psl]: https://demo.petrinaut.org/local/151b7bdb-f199-4980-a1df-d33377809421
 [Cubicle]: https://usr.lmf.cnrs.fr/cubicle/
