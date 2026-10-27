@@ -1,7 +1,7 @@
 # Probabilistic Satellite Launcher
 
-This is a naive attempt to translate SDCPN of the [probabilistic satellite
-launcher][psl] into a system of reactive modules.
+This is a naive attempt to translate the (S)DCPN of Petrinaut's [probabilistic
+satellite launcher example][psl] into a system of reactive modules.
 
 Our findings so far, assuming that we use the encoding below (where we model
 each colored token as a reactive module):
