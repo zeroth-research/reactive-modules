@@ -210,6 +210,12 @@ module Satellite[i]
       [] true -> true
 ```
 
+Alternatively, we could fold the N satellite modules into a single module with
+indexed vectors `location[1..N]`, `x[1..N]`, `y[1..N]`, `direction[1..N]`, and
+`velocity[1..N]`. Its module body would be the parallel composition of the
+per-token atoms. Since these atoms do not await one another, we could also merge
+them into one vector-valued atom
+
 ### Launch transition
 
 The DCPN's `LaunchSatellite` has no input arcs and a constant rate, so it is
@@ -258,7 +264,73 @@ Specialize the satellite module as follows:
 
 - Add `external count: {0, ..., N}` and await `count` as well as `launch_event`:
 - Replace its launch guard with
-  `location[i] = ⊥ && launch_event? && count' = i`.
+  `location[i] = ⊥ && launch_event? && selected' = i`.
+
+#### Existential selection
+
+Instead of counting launches, the singleton launcher can choose an unused
+satellite. Here `∃ i ∈ 1..N : location[i] = ⊥` tests whether such a slot exists;
+`choose i ...` nondeterministically selects exactly one witness. An existential
+guard alone must not broadcast a launch to every unused satellite.
+
+```rust
+module ExistentialLauncher
+  external location[1..N]: {⊥, space, debris}
+  interface launch_event: Event
+  interface selected: {1, ..., N}
+  private clk: Clock
+  private w: discrete Real
+
+  atom launch_event, selected, clk, w
+    // Read latched locations; do not await the satellites' updated locations.
+    reads location[1..N], launch_event, selected, clk, w
+
+    init
+      launch_event' := false
+      selected' := 1  // immaterial until a launch event occurs
+      clk' := 0
+      w' ~ Exponential(rate = launch_rate)
+
+    update
+      [] clk = w && (∃ i ∈ 1..N : location[i] = ⊥) ->
+         choose i ∈ 1..N such that location[i] = ⊥
+         selected' := i
+         launch_event!
+         clk' := 0
+         w' ~ Exponential(rate = launch_rate)
+
+      [] clk = w && !(∃ i ∈ 1..N : location[i] = ⊥) ->
+         // No available slot: renew the timer without emitting a launch.
+         clk' := 0
+         w' ~ Exponential(rate = launch_rate)
+
+    delay
+      [] clk <= w -> clk' <= w
+```
+
+This assumes `N >= 1`, all slots initially have location `⊥`, and only this
+launcher allocates them. No transition returns a satellite to `⊥`. The launcher
+keeps `clk` as an ordinary `Clock`, with no counter or cached availability flag.
+After the pool is exhausted, it silently renews the timer at each deadline,
+without changing `selected` or emitting a launch event. These private updates
+allow time to progress but incur simulation work; they do not remove the
+finite-capacity limitation. The delay constraint refers only to controlled
+variables, so the launcher need not await satellite locations.
+
+Specialize the satellite module as follows:
+
+- Expose `location[i]` as an interface variable rather than a private variable.
+- Add `external selected: {1, ..., N}` and await it alongside `launch_event`.
+- Replace the launch guard with
+  `location[i] = ⊥ && launch_event? && selected' = i`.
+
+The launcher reads old locations, while satellites await the new selection and
+launch event. Thus exactly one satellite is created in the same update round,
+without a cyclic await dependency. Choosing a slot nondeterministically changes
+only its storage identity, provided all satellite instances have identical
+behaviour and slot identities are not observable in the DCPN interpretation.
+The quantifier and witness-selection syntax are schematic; for a finite pool
+they can be unfolded into finite guarded choices.
 
 #### Replicated launcher chain
 
