@@ -7,8 +7,8 @@ import pytest
 from zrth import SPN, Clock, Event, Nat, Var
 from zrth import Module as compose
 from zrth.petri import TIME, Arc, Place, Transition
-from zrth.simulate import simulate
-from zrth.sugar import Module, d, ite
+from zrth.simulate import Simulation, simulate
+from zrth.sugar import Module, X, d, ite
 
 
 def birth_death(lam=2.0, mu=1.0, t=TIME):
@@ -212,6 +212,33 @@ def test_a_delay_chosen_by_the_marking():
     trace = simulate(compose(speed, birth, place), horizon=200.0, seed=1)
     gaps = [b - a for a, b in zip(trace.times, trace.times[1:])][1:-1]
     assert len(gaps) > 50 and 1.0 < sum(gaps) / len(gaps) < 3.0  # about 2, as 1/0.5
+
+
+def test_an_enabling_arc_with_no_place_is_a_control():
+    # the arc's `enabled` is written by whoever drives it: here the steps, then a module
+    go, done = Arc("enabling"), Arc("production")
+    serve = Transition(rate=1.0, inputs=[go], outputs=[done])
+    served = Place(inputs=[done])
+    sim = Simulation(compose(serve, served))
+    assert sim.inputs == [go.enabled]
+    for k in range(8):
+        sim.step({go.enabled: k < 4})
+    counts = sim.trace.series(served.count)
+    assert counts[4] == 4 and counts[-1] == 4  # fires while allowed, then never again
+
+    class Controller(Module):  # allow a firing only while fewer than two were served
+        def init(self, n):
+            return True
+
+        def next(self, go, n):
+            return X(n) < 2  # awaiting the place: the decision follows the count of the round
+
+    go2, done2 = Arc("enabling"), Arc("production")
+    serve2 = Transition(rate=1.0, inputs=[go2], outputs=[done2])
+    served2 = Place(inputs=[done2])
+    control = Controller(theory=SPN, ctrl=(go2.enabled,), extl=(served2.count,))
+    trace = simulate(compose(control, serve2, served2), horizon=20.0, seed=1)
+    assert trace.series(served2.count)[-1] == 2 and len(trace) > 5
 
 
 def test_bad_arguments_raise():

@@ -27,12 +27,18 @@ the clock is re-armed, and the transition fires if every input arc is enabled (a
 otherwise is a lost attempt; for exponential rates this is the same process as a clock that
 waits). The rate may instead be a `Var(Clock())` holding the time to the next expiry, driven
 by a module you compose: a constant for a deterministic delay, `exp(...)` chosen by the
-marking for a rate that depends on it; the clock is armed with its value of the round. The clock is private, reachable as `transition.clock` to plot a trace. A place owns
-its token count: the tokens of each firing input come in, those of each firing consumption
-go out while there are enough, and it keeps each output arc's `enabled` current in the
-same round the count changes. Two transitions firing in one round and competing for the
-tokens are served in the order of `outputs`, a firing the count cannot serve dropped there.
+marking for a rate that depends on it; the clock is armed with its value of the round. The
+clock is private, reachable as `transition.clock` to plot a trace. A place owns its token
+count: the tokens of each firing input come in, those of each firing consumption go out
+while there are enough, and it keeps each output arc's `enabled` current in the same round
+the count changes. Two transitions firing in one round and competing for the tokens are
+served in the order of `outputs`, a firing the count cannot serve dropped there.
 
+A transition reads `enabled` on its input arcs without caring who writes it, so an enabling
+arc with no place behind it is a control: whatever drives its `enabled`, a composed
+controller module or the inputs of a `Simulation` step, decides whether the transition may
+fire. That is how a controllable transition is written; one without such an arc fires
+whenever it can.
 """
 
 from .zrth import SPN, Var
