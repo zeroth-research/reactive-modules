@@ -94,6 +94,10 @@ module LaunchSatellite[id]
         // Launch this satellite exactly once.
         launch_event' := not(launch_event);
         fired' := true;
+        // Round-insensitivity requires sleeping to remain possible when no
+        // awaited variable changes, even at the deadline. The default update
+        // only applies when no guard is enabled, so we state it explicitly:
+        [] true -> /* leave all controlled variables unchanged */
     delay
       // (a sampled upper bound is outside the propositional timed fragment)
       [] !fired && clk <= deadline -> clk' <= deadline
