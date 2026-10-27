@@ -78,6 +78,15 @@ module Satellite[id]
           d(direction) := (-ax * sin(direction) + ay * cos(direction)) / velocity;
           d(velocity) := ax * cos(direction) + ay * sin(direction);
 
+      [] state = prelaunch || state = debris ->
+          d(x) := 0;
+          d(y) := 0;
+          d(direction) := 0;
+          d(velocity) := 0;
+
+    delay
+      [] true -> true
+
 
 module LaunchSatellite[id]
   interface launch_event: Event
