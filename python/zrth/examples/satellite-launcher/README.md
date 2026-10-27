@@ -82,18 +82,23 @@ module Satellite[id]
 module LaunchSatellite[id]
   interface launch_event: Event
   
-  private deadline: Real, clk: Clock
-  atom x[id], y[id], direction[id], velocity[id], deadline
+  private deadline: Real, clk: Clock, fired: Boolean
+  atom launch_event, deadline, clk, fired
     init
+      clk' := 0;
       deadline' := Exponential(rate = launch_rate);
-      launch_event' := false
+      launch_event' := false;
+      fired' := false;
     update
-      [] clk = deadline ->
-        // launch the satellite
-        launch_event' := not(launch_event)
+      [] !fired && clk = deadline ->
+        // Launch this satellite exactly once.
+        launch_event' := not(launch_event);
+        fired' := true;
     delay
-      // the upper bound is a variable?
-      [] true -> clk' <= deadline
+      // A sampled upper bound is outside the propositional timed fragment.
+      [] clk <= deadline -> clk' <= deadline
+      // after firing, impose no restriction on elapsed time.
+      [] fired -> true
 
 
 // TODO: this is still WIP
