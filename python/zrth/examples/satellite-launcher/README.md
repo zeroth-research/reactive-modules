@@ -222,47 +222,89 @@ The DCPN's `LaunchSatellite` has no input arcs and a constant rate, so it is
 always pre-enabled. Its successive waiting times are independent exponential
 samples with rate `launch_rate`.
 
-Both variants below assume `launch_rate > 0` and a pool of N satellite modules,
-indexed from 1 to N. For `launch_rate = 0`, disable launching and permit
-unrestricted delay instead of sampling an exponential waiting time.
+#### Replicated launcher chain
+
+Give each satellite a one-shot launcher. Only the first launcher
+starts armed; each subsequent launcher is activated by its predecessor's firing.
+
+```text
+Launch[1] --launch[1]--> Launch[2] --launch[2]--> Launch[3] ...
+              |                         |
+              v                         v
+         Satellite[1]              Satellite[2]
+```
+
+```rust
+module Launch[i]
+  external launch[i-1]: Event
+  interface launch[i]: Event
+  private state: {idle, armed, done}
+  private clk: Clock
+  private w: discrete Real
+
+  atom state, clk, w, launch[i]
+    awaits launch[i-1]
+    reads state, clk, w, launch[i], launch[i-1]
+
+    init
+      state' := if i = 1 then armed else idle
+      clk' := 0
+      w' ~ Exponential(rate = launch_rate)
+      launch[i]' := false
+
+    update
+      [] state = idle && launch[i-1]? ->
+         state' := armed
+         clk' := 0
+
+      [] state = armed && clk = w ->
+         launch[i]!
+         state' := done
+
+    delay
+      [] state = idle || state = done -> true
+      [] state = armed && clk <= w -> clk' <= w
+```
+
+For `i==1`, start immediately in armed.
 
 #### Indexed launcher
 
 A singleton launcher indexes into the instances of `Satellite`. Each firing
-increments the count, identifying the next unused satellite, and restarts its
-timer.
+increments `selected`, identifying the next unused satellite, and restarts its
+timer. The initial value 0 means that no satellite has been selected yet.
 
 ```rust
 module IndexedLauncher
   interface launch_event: Event
-  interface count: {0, ..., N}
+  interface selected: {0, ..., N}
   private clk: Clock
   private w: discrete Real
 
-  atom launch_event, count, clk, w
+  atom launch_event, selected, clk, w
     init
       launch_event' := false
-      count' := 0
+      selected' := 0
       clk' := 0
       w' ~ Exponential(rate = launch_rate)
 
     update
-      [] count < N && clk = w ->
+      [] selected < N && clk = w ->
          launch_event!
-         count' := count + 1
+         selected' := selected + 1
          clk' := 0
          w' ~ Exponential(rate = launch_rate)
 
       [] true -> skip
 
     delay
-      [] count < N && clk <= w -> clk' <= w
-      [] count = N -> true
+      [] selected < N && clk <= w -> clk' <= w
+      [] selected = N -> true
 ```
 
 Specialize the satellite module as follows:
 
-- Add `external count: {0, ..., N}` and await `count` as well as `launch_event`:
+- Add `external selected: {0, ..., N}` and await `selected` as well as `launch_event`:
 - Replace its launch guard with
   `location[i] = ⊥ && launch_event? && selected' = i`.
 
@@ -307,76 +349,6 @@ module ExistentialLauncher
     delay
       [] clk <= w -> clk' <= w
 ```
-
-This assumes `N >= 1`, all slots initially have location `⊥`, and only this
-launcher allocates them. No transition returns a satellite to `⊥`. The launcher
-keeps `clk` as an ordinary `Clock`, with no counter or cached availability flag.
-After the pool is exhausted, it silently renews the timer at each deadline,
-without changing `selected` or emitting a launch event. These private updates
-allow time to progress but incur simulation work; they do not remove the
-finite-capacity limitation. The delay constraint refers only to controlled
-variables, so the launcher need not await satellite locations.
-
-Specialize the satellite module as follows:
-
-- Expose `location[i]` as an interface variable rather than a private variable.
-- Add `external selected: {1, ..., N}` and await it alongside `launch_event`.
-- Replace the launch guard with
-  `location[i] = ⊥ && launch_event? && selected' = i`.
-
-The launcher reads old locations, while satellites await the new selection and
-launch event. Thus exactly one satellite is created in the same update round,
-without a cyclic await dependency. Choosing a slot nondeterministically changes
-only its storage identity, provided all satellite instances have identical
-behaviour and slot identities are not observable in the DCPN interpretation.
-The quantifier and witness-selection syntax are schematic; for a finite pool
-they can be unfolded into finite guarded choices.
-
-#### Replicated launcher chain
-
-Alternatively, give each satellite a one-shot launcher. Only the first launcher
-starts armed; each subsequent launcher is activated by its predecessor's firing.
-
-```text
-Launch[1] --launch[1]--> Launch[2] --launch[2]--> Launch[3] ...
-              |                         |
-              v                         v
-         Satellite[1]              Satellite[2]
-```
-
-```rust
-module Launch[i]
-  external launch[i-1]: Event
-  interface launch[i]: Event
-  private state: {idle, armed, done}
-  private clk: Clock
-  private w: discrete Real
-
-  atom state, clk, w, launch[i]
-    awaits launch[i-1]
-    reads state, clk, w, launch[i], launch[i-1]
-
-    init
-      state' := if i = 1 then armed else idle
-      clk' := 0
-      w' ~ Exponential(rate = launch_rate)
-      launch[i]' := false
-
-    update
-      [] state = idle && launch[i-1]? ->
-         state' := armed
-         clk' := 0
-
-      [] state = armed && clk = w ->
-         launch[i]!
-         state' := done
-
-    delay
-      [] state = idle || state = done -> true
-      [] state = armed && clk <= w -> clk' <= w
-```
-
-For `i==1`, start immediately in armed.
 
 ### Limitations
 
