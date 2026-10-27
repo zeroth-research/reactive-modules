@@ -113,7 +113,7 @@ module LaunchSatellite[id]
         // only applies when no guard is enabled, so we state it explicitly:
         [] true -> /* leave all controlled variables unchanged */
     delay
-      // (a sampled upper bound is outside the propositional timed fragment)
+      // (a sampled upper bound is outside the Alur/Henzinger "propositional timed" fragment)
       [] !fired && clk <= deadline -> clk' <= deadline
       // After firing, impose no restriction on elapsed time.
       [] fired -> true
@@ -121,24 +121,18 @@ module LaunchSatellite[id]
 
 // TODO: this is still WIP
 module Collision[id1, id2]
-  interface launch_event: Event
-
   external x[id1], y[id1], x[id2], y[id2]: Real
   
-  private deadline: Real, clk: Clock
-  atom x, y, direction, velocity, deadline
-    init
-      deadline' := Poisson(launch_rate);
-      launch_event' := false
-    update
-      [] ... ->
-        // there is a collision
+  init
+    deadline' := Poisson(launch_rate);
+    launch_event' := false
+  update
+      [] ... -> // there is a collision
         collision_event[id1]!;
         collision_event[id2]!;
 
     delay
-      // the upper bound is a variable?
-      // -> outside Alur/Henzinger "propositional timed" fragment
+      // the upper bound is a variable
       [] true -> clk' <= deadline
 ```
 
