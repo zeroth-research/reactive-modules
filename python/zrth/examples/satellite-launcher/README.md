@@ -359,5 +359,150 @@ module ExistentialLauncher
 - **Finite capacity.** Both variants implement only the first N launches,
   corresponding to a bounded number of tokens.
 
+## Third attempt: existential crash and collision
+
+We merge all token atoms into one vector-valued atom and use indexed syntactic
+sugar for flows and guarded updates.
+
+### Syntactic sugar
+
+For a fixed N, the following constructs can be expanded at instantiation time.
+
+#### Universally indexed flow
+
+```text
+\A i in 1..N:
+  [] Guard_a(i) -> Dynamics_a(i)
+  [] Guard_b(i) -> Dynamics_b(i)
+```
+
+To express this as one ordinary guarded flow block, take the Cartesian product
+of the per-slot alternatives. For N = 2, the expansion is:
+
+```text
+flow
+  [] Guard_a(1) && Guard_a(2) -> Dynamics_a(1); Dynamics_a(2)
+  [] Guard_a(1) && Guard_b(2) -> Dynamics_a(1); Dynamics_b(2);
+  [] Guard_b(1) && Guard_a(2) -> Dynamics_b(1); Dynamics_a(2)
+  [] Guard_b(1) && Guard_b(2) -> Dynamics_b(1); Dynamics_b(2)
+```
+
+The universally indexed initialization similarly expands into simultaneous
+assignments for every slot.
+
+#### Existentially indexed update
+
+```text
+[] \E i in 1..N . Guard(i) -> Body(i)
+```
+
+This notation binds a satisfying witness i for use in the body. It expands into
+one alternative guarded command per possible witness:
+
+```text
+[] Guard(1) -> Body(1)
+[] Guard(2) -> Body(2)
+...
+[] Guard(N) -> Body(N)
+```
+
+For two witnesses,
+
+```text
+[] \E i, j in 1..N . i != j && Guard(i, j) -> Body(i, j)
+```
+
+expands into N^2 commands, one for each ordered pair of distinct indices.
+
+### Example
+
+```rust
+const crash_radius = planet_radius + crash_threshold + satellite_radius;
+const collision_distance = 2 * satellite_radius + collision_threshold;
+
+module SatelliteLauncher
+  private location[1..N]: {⊥, space, debris}
+  interface x[1..N], y[1..N], direction[1..N], velocity[1..N]: Real
+  private clk: Clock
+  private w: discrete Real
+
+  // singleton atom
+  atom location[1..N], x[1..N], y[1..N],
+       direction[1..N], velocity[1..N], clk, w
+    reads location[1..N], x[1..N], y[1..N],
+          direction[1..N], velocity[1..N], clk, w
+
+    init
+      \A i \in 1..N:
+        location[i]' := ⊥
+        x[i]' := 0
+        y[i]' := 0
+        direction[i]' := 0
+        velocity[i]' := 0
+      clk' := 0
+      w' ~ Exponential(rate = launch_rate)
+
+    update
+      // launch one satellite / token into an unused slot
+      [] \E i \in 1..N . location[i] = ⊥ && clk = w ->
+         let distance = planet_radius + altitude
+         let angle ~ Uniform(0, Math.PI * 2)
+         location[i]' := space
+         x[i]' := cos(angle) * distance
+         y[i]' := sin(angle) * distance
+         direction[i]' ~ Uniform(0, Math.PI * 2)
+         velocity[i]' ~ Gaussian(initial_velocity, initial_velocity * 0.1)
+         clk' := 0
+         w' ~ Exponential(rate = launch_rate)
+
+      // Crash transition: consume one Space token and produce one Debris token
+      [] \E i in 1..N .
+           location[i] = space
+           && hypot(x[i], y[i]) <= crash_radius ->
+         location[i]' := debris
+         direction[i]' := 0
+         velocity[i]' := 0
+
+      // Collision transition: consume two distinct Space tokens and produce two Debris
+      [] \E i, j in 1..N .
+           i != j
+           && location[i] = space
+           && location[j] = space
+           && hypot(x[i] - x[j], y[i] - y[j]) <= collision_distance ->
+         location[i]' := debris
+         location[j]' := debris
+         direction[i]' := 0
+         direction[j]' := 0
+         velocity[i]' := 0
+         velocity[j]' := 0
+
+      // stuttering update
+      [] true -> skip
+
+    flow
+      \A i in 1..N:
+        []  location[i] = space ->
+             let r = hypot(x[i], y[i])
+             let ax = (-mu * x[i]) / (r * r * r)
+             let ay = (-mu * y[i]) / (r * r * r)
+             d(x[i]) := velocity[i] * cos(direction[i])
+             d(y[i]) := velocity[i] * sin(direction[i])
+             d(direction[i]) :=
+               (-ax * sin(direction[i]) + ay * cos(direction[i])) / velocity[i]
+             d(velocity[i]) := ax * cos(direction[i]) + ay * sin(direction[i])
+  
+        [] location[i] != space ->
+             d(x[i]) := 0
+             d(y[i]) := 0
+             d(direction[i]) := 0
+             d(velocity[i]) := 0
+
+    delay
+      // Enforce the launch deadline only while an unused slot exists.
+      [] (\E i in 1..N . location[i] = ⊥) && clk <= w -> clk' <= w
+      // At capacity, existing satellites may continue evolving without a launch deadline.
+      [] (\A i in 1..N . location[i] != ⊥) -> true
+```
+
 [psl]: https://demo.petrinaut.org/local/151b7bdb-f199-4980-a1df-d33377809421
 [Cubicle]: https://usr.lmf.cnrs.fr/cubicle/
