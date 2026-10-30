@@ -3,6 +3,7 @@ pub mod bv;
 pub mod lia;
 pub mod lra;
 pub mod signature;
+pub mod boundary;
 pub mod sort;
 pub mod tensor;
 
