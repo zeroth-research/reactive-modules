@@ -1,4 +1,4 @@
-"""SMV (NuSMV) parser for zeroth reactive modules."""
+"""SMV (NuSMV) parser for Reactor."""
 
 from .parser import parse_smv
 

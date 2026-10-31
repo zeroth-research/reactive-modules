@@ -7,7 +7,7 @@ yet (BV ops fall through to a clear error).
 
 import z3 as _z3
 import torch
-from ..zrth import LRA, LIA, BV, Combinatorial
+from ..reactor import LRA, LIA, BV, Combinatorial
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator

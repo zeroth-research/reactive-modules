@@ -1,7 +1,7 @@
 """Live module visualizer with auto-updating via WebSocket.
 
 Usage:
-    from zrth.visual import show
+    from reactor.visual import show
     show(module)           # opens browser, auto-refreshes on value changes
     show(module, poll=0.5) # custom poll interval in seconds
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 import asyncio
 import websockets
 
-from ..zrth import Var, X
+from ..reactor import Var, X
 
 
 _TEMPLATE_PATH = Path(__file__).parent / "template.html"
@@ -77,13 +77,13 @@ def show(module, names=None, poll=0.5, open_browser=True):
     """Start a live visualizer for the given module.
 
     Args:
-        module: A zrth Module (or Env/torch.Module instance).
+        module: A reactor Module (or Env/torch.Module instance).
         names: Optional dict mapping Vars, Wires, or wire ids to display
                names (str); a Var names its latched wire and, primed, its
                next wire. If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
         open_browser: Whether to open the browser automatically. Overridden
-               by the ZRTH_NO_BROWSER environment variable (for headless
+               by the REACTOR_NO_BROWSER environment variable (for headless
                runs, e.g. executing the notebooks as tests).
 
     Returns:
@@ -141,7 +141,7 @@ def show(module, names=None, poll=0.5, open_browser=True):
     threading.Thread(target=run_ws, daemon=True).start()
 
     url = f"http://127.0.0.1:{http_port}"
-    if open_browser and not os.environ.get("ZRTH_NO_BROWSER"):
+    if open_browser and not os.environ.get("REACTOR_NO_BROWSER"):
         webbrowser.open(url)
     print(f"Module viewer running at {url} (ws://127.0.0.1:{ws_port})")
 

@@ -41,7 +41,7 @@ from typing import override
 
 import torch
 
-from .zrth import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
+from .reactor import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
 from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
 from .builder import NonLinearError
 

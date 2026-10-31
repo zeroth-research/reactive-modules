@@ -1,11 +1,11 @@
 [package]
-name = "zrth-python"
+name = "reactor-python"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
 [lib]
-name = "zrth"
+name = "reactor"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -7,7 +7,7 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from .zrth import LRA, LIA, BV
+from .reactor import LRA, LIA, BV
 from .sort import BitVec
 
 
@@ -160,7 +160,7 @@ def eval_itype(itype, read, out_sort=None):
 
 
 # ============================================================================
-# Interpreter helpers (shared by zrth.gym.Wrapper, zrth.gym.Env)
+# Interpreter helpers (shared by reactor.gym.Wrapper, reactor.gym.Env)
 # ============================================================================
 
 

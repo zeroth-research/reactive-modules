@@ -10,8 +10,8 @@ import torch
 import gymnasium as gym
 from gymnasium import spaces
 
-from zrth.gym import Env
-from zrth import NonLinearError, TheoryError, Bool, Real, Int, BitVec
+from reactor.gym import Env
+from reactor import NonLinearError, TheoryError, Bool, Real, Int, BitVec
 
 
 # ── boilerplate ───────────────────────────────────────────────────
@@ -332,7 +332,7 @@ class _Untraced(_MinEnv):
 
 
 def test_untraced_call():
-    from zrth import LRA
+    from reactor import LRA
 
     e = _wrap(_Untraced())  # real env runs the function via delegation
     labels = []

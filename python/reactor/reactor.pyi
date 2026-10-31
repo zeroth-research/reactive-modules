@@ -1,4 +1,4 @@
-"""Type stubs for the `zrth.zrth` native extension (theory_pyo3).
+"""Type stubs for the `reactor.reactor` native extension (theory_pyo3).
 
 They support type checking (mypy) and editor hints only, with no runtime effect, and
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
@@ -24,7 +24,7 @@ type Hide = Callable[[Var], bool] | Iterable[Var] | None
 # Sorts
 # ---------------------------------------------------------------------------
 
-# `zrth.sort` shadows `Sort` with an ABC and registers the extension's enum
+# `reactor.sort` shadows `Sort` with an ABC and registers the extension's enum
 # against it, so the variants present as plain subclasses of `Sort`.
 class Sort:
     @override

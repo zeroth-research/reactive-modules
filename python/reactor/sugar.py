@@ -1,12 +1,12 @@
-"""``zrth.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
+"""``reactor.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
 Subclass ``sugar.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
-variables — ``zrth.Var`` objects — and override any of ``init`` / ``update`` / ``delay``.
+variables — ``reactor.Var`` objects — and override any of ``init`` / ``update`` / ``delay``.
 **Instantiating the subclass *is* a base Module** — the methods run symbolically and the
 module is built in the constructor:
 
-    from zrth import LIA, Int, Var
-    from zrth.sugar import Module
+    from reactor import LIA, Int, Var
+    from reactor.sugar import Module
 
     class Counter(Module):
         def init(self):         return 0
@@ -53,11 +53,11 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from .zrth import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
-# Public authoring surface: `from zrth.sugar import Module, expr, X, d, ite, cast, ...`
+# Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
 __all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
 
 

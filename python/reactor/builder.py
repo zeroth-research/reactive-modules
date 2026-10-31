@@ -9,7 +9,7 @@ helpers below).
 """
 
 import torch
-from .zrth import Wire, Term, LRA, LIA, BV, Var
+from .reactor import Wire, Term, LRA, LIA, BV, Var
 from .sort import Sort, Bool, Real, Int, BitVec
 
 

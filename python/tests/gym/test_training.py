@@ -4,10 +4,10 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from .agent import DQNAgent
 from .train import train
-from zrth.gym import Env
-from zrth.torch import Module
-from zrth import Wire, Real, LRA, Var, X
-from zrth.eval import eval_itype
+from reactor.gym import Env
+from reactor.torch import Module
+from reactor import Wire, Real, LRA, Var, X
+from reactor.eval import eval_itype
 
 
 def test_training():

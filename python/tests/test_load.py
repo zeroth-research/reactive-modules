@@ -1,4 +1,4 @@
 def test_importing():
-    from zrth import zrth
+    from reactor import reactor
 
-    assert zrth
+    assert reactor

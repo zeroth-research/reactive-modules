@@ -3,7 +3,7 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..zrth import Module, Wire, LIA, BV, X, Var
+from ..reactor import Module, Wire, LIA, BV, X, Var
 from ..sort import Sort, Bool, Real, Int, BitVec
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
@@ -254,7 +254,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
 
 
 # ============================================================================
-# zrth.gym.Env — unified wrapper for gym.Env and pure symbolic Modules
+# reactor.gym.Env — unified wrapper for gym.Env and pure symbolic Modules
 # ============================================================================
 
 
@@ -265,7 +265,7 @@ class Env(Module, gym.Wrapper):
     (fully symbolic). At most one gym.Env is allowed.
 
     Usage:
-        from zrth.gym import Env
+        from reactor.gym import Env
 
         Env(gym_env)                        → extract Module, wrap env
         Env(gym_env, module1, module2)      → extract + compose

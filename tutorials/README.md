@@ -1,6 +1,6 @@
 # Tutorials
 
-Jupyter notebooks that walk through `zrth` step by step:
+Jupyter notebooks that walk through `reactor` step by step:
 
 1. **counter.ipynb**: wrapping environments and neural networks, training a ranking function, formal verification with Z3
 2. **pendulum.ipynb**: module composition with shared wires, training a controller, closed-loop verification
@@ -41,7 +41,7 @@ From the project root:
 uv sync --group tutorials
 ```
 
-This installs `zrth` (built via maturin) plus the tutorial dependencies (`ipykernel`, `notebook`, `matplotlib`, `pygame`, `z3-solver`). Requires Python 3.12–3.13 and a Rust toolchain.
+This installs `reactor` (built via maturin) plus the tutorial dependencies (`ipykernel`, `notebook`, `matplotlib`, `pygame`, `z3-solver`). Requires Python 3.12–3.13 and a Rust toolchain.
 
 ## Running
 
@@ -49,7 +49,7 @@ This installs `zrth` (built via maturin) plus the tutorial dependencies (`ipyker
 
 Install the [Jupyter extension](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter), open a notebook, and select the `.venv` kernel.
 
-`zrth` is built in place under `python/` (not installed into site-packages), so if the editor flags `import zrth` as unresolved, create `.vscode/settings.json` with:
+`reactor` is built in place under `python/` (not installed into site-packages), so if the editor flags `import reactor` as unresolved, create `.vscode/settings.json` with:
 
 ```json
 {

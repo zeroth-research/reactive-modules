@@ -4,7 +4,7 @@ requires-python = ">=3.12, <3.14"
 
 [manifest]
 members = [
-    "zrth",
+    "reactor",
 ]
 
 [[package]]
@@ -2091,7 +2091,7 @@ wheels = [
 ]
 
 [[package]]
-name = "zrth"
+name = "reactor"
 source = { editable = "python" }
 dependencies = [
     { name = "gymnasium" },

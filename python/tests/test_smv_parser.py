@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from zrth import Wire, Module, parse_smv, BV, BitVec, Var, X
+from reactor import Wire, Module, parse_smv, BV, BitVec, Var, X
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 

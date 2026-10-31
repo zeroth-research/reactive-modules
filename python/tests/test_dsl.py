@@ -2,15 +2,15 @@
 
 A `sugar.Module` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
 pairs and override `init`/`update`, and the sequential module is built in the constructor.
-These tests build small modules and step them through `zrth.eval` (mirroring test_eval),
+These tests build small modules and step them through `reactor.eval` (mirroring test_eval),
 plus check the ctrl/extl partition and the config surface.
 """
 
 import pytest
 
-from zrth import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
-from zrth.sugar import ite, d, X
-from zrth.eval import eval_itype
+from reactor import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
+from reactor.sugar import ite, d, X
+from reactor.eval import eval_itype
 
 INT = Int([1, 1])
 Real1 = Real([1, 1])

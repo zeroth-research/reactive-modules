@@ -109,11 +109,11 @@ py-build:
 py-rebuild: clean rs-build-all py-build
     #DISABLED: build the `torch` crate and make sure it uses the libtorch that will
     #DISABLED:  be used also by the `python` crate
-    #DISABLED: cd python && uv sync --no-build-package zrth --no-install-project
+    #DISABLED: cd python && uv sync --no-build-package reactor --no-install-project
     #DISABLED: cd python && source .venv/bin/activate  && LIBTORCH_USE_PYTORCH=1 {{ CARGO }} build --package torch
     #DISABLED: cd python && uv run maturin develop  --features enable-torch
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
-          "(or \`uv run python\` to get Python interpreter with \`zrth\` available)"
+          "(or \`uv run python\` to get Python interpreter with \`reactor\` available)"
 
 # Run all or a concrete python test (rebuilding the Python crate first)
 py-test *args: (py-run "pytest" args)
@@ -140,11 +140,11 @@ nb-run: nb-build
 # mountaincar and pendulum are parked: they need non-linear ops (sin/cos/
 # tanh/pow) and Stack, which no current theory provides — the analyzer
 # raises on them by design.
-# (ZRTH_NO_BROWSER keeps zrth.visual.show from opening browser pages during the run)
+# (REACTOR_NO_BROWSER keeps reactor.visual.show from opening browser pages during the run)
 
 # Execute the tutorial notebooks against the current python crate without modifying them; fails on the first cell that errors
 nb-test *notebooks="tutorials/counter.ipynb tutorials/gym_and_sugar.ipynb tutorials/decrement_1d/decrement_1d.ipynb tutorials/cairo/cairo.ipynb tutorials/singapore-2/Singapore-2.ipynb": py-build nb-sync
-    ZRTH_NO_BROWSER=1 uv run jupyter nbconvert --to notebook --execute --stdout \
+    REACTOR_NO_BROWSER=1 uv run jupyter nbconvert --to notebook --execute --stdout \
         --ExecutePreprocessor.timeout=600 {{ notebooks }} > /dev/null
 
 # Fail when a committed notebook carries outputs the stripper would remove (used by CI)
