@@ -6,19 +6,42 @@
 /// A monomial: a concatenation of objects — all at once. As a type, an
 /// anonymous tuple.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Mono<G>(pub Vec<G>);
+pub struct Mono<G>(Vec<G>);
 
 /// A polynomial: alternative monomials — one of them. As a
 /// type, an anonymous variant. The order of the alternatives is tracked, and sums of
 /// monomials are the normal form, so equality of boundaries is
 /// structural.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Poly<G>(pub Vec<Mono<G>>);
+pub struct Poly<G>(Vec<Mono<G>>);
 
 impl<G> Mono<G> {
     /// The unit monomial `I`: the empty word — the unit of `⊗`.
     pub fn unit() -> Self {
         Self(Vec::new())
+    }
+
+    /// The objects of the word, in order.
+    pub fn iter(&self) -> std::slice::Iter<'_, G> {
+        self.0.iter()
+    }
+}
+
+impl<G> IntoIterator for Mono<G> {
+    type Item = G;
+    type IntoIter = std::vec::IntoIter<G>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, G> IntoIterator for &'a Mono<G> {
+    type Item = &'a G;
+    type IntoIter = std::slice::Iter<'a, G>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 
@@ -50,7 +73,7 @@ impl<G> FromIterator<Mono<G>> for Poly<G> {
     }
 }
 
-impl<G: Clone> std::ops::Mul for Mono<G> {
+impl<G> std::ops::Mul for Mono<G> {
     type Output = Mono<G>;
 
     /// `⊗` of monomials: the concatenation of the words.
@@ -60,7 +83,7 @@ impl<G: Clone> std::ops::Mul for Mono<G> {
     }
 }
 
-impl<G: Clone> std::ops::Add for Mono<G> {
+impl<G> std::ops::Add for Mono<G> {
     type Output = Poly<G>;
 
     /// `⊕` of monomials: the polynomial with the two summands.
@@ -69,7 +92,7 @@ impl<G: Clone> std::ops::Add for Mono<G> {
     }
 }
 
-impl<G: Clone> Poly<G> {
+impl<G> Poly<G> {
     /// The zero polynomial: the empty sum — the impossible boundary (a
     /// failed guard).
     pub fn zero() -> Self {
@@ -82,7 +105,32 @@ impl<G: Clone> Poly<G> {
     }
 }
 
-impl<G: Clone> std::ops::Add for Poly<G> {
+impl<G> Poly<G> {
+    /// The summands of the sum, in order.
+    pub fn iter(&self) -> std::slice::Iter<'_, Mono<G>> {
+        self.0.iter()
+    }
+}
+
+impl<G> IntoIterator for Poly<G> {
+    type Item = Mono<G>;
+    type IntoIter = std::vec::IntoIter<Mono<G>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, G> IntoIterator for &'a Poly<G> {
+    type Item = &'a Mono<G>;
+    type IntoIter = std::slice::Iter<'a, Mono<G>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<G> std::ops::Add for Poly<G> {
     type Output = Poly<G>;
 
     /// `⊕`: the concatenation of the sums.
@@ -92,17 +140,15 @@ impl<G: Clone> std::ops::Add for Poly<G> {
     }
 }
 
+/// Distributing duplicates summands, hence `G: Clone`.
 impl<G: Clone> std::ops::Mul for Poly<G> {
     type Output = Poly<G>;
 
     /// `⊗`: pairwise `⊗` of the summands — distributes over `⊕`.
     fn mul(self, other: Self) -> Poly<G> {
-        Poly(
-            self.0
-                .iter()
-                .flat_map(|m| other.0.iter().map(|n| m.clone() * n.clone()))
-                .collect(),
-        )
+        self.iter()
+            .flat_map(|m| other.iter().map(|n| m.clone() * n.clone()))
+            .collect()
     }
 }
 
@@ -111,6 +157,10 @@ impl<G: Clone> std::ops::Mul for Poly<G> {
 /// construction. Checking a boundary is simply checking equality of `dom`
 /// and `cod`: an application is well-formed iff its boundaries equal the
 /// morphism's.
+///
+/// `dom` and `cod` return by value on purpose: the boundary is computed
+/// from the morphism on demand, so implementors need not store it.
+/// Caching should be implemented only if this becomes a critical path.
 pub trait Boundary<G> {
     fn dom(&self) -> Poly<G>;
     fn cod(&self) -> Poly<G>;
@@ -142,5 +192,22 @@ mod tests {
             Poly(vec![Mono(vec!['x', 'z']), Mono(vec!['y', 'z'])])
         );
         assert_eq!(Mono(vec!['x']) * Mono(vec!['y']), Mono(vec!['x', 'y']));
+
+        // ⊗ of sums keeps the order: (x + y) * (z + w) = xz ⊕ xw ⊕ yz ⊕ yw
+        let (x, y, z, w) = (
+            Mono(vec!['x']),
+            Mono(vec!['y']),
+            Mono(vec!['z']),
+            Mono(vec!['w']),
+        );
+        assert_eq!(
+            (x + y) * (z + w),
+            Poly(vec![
+                Mono(vec!['x', 'z']),
+                Mono(vec!['x', 'w']),
+                Mono(vec!['y', 'z']),
+                Mono(vec!['y', 'w']),
+            ])
+        );
     }
 }
