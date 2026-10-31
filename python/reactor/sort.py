@@ -1,4 +1,4 @@
-from .zrth import Sort as _Sort
+from .reactor import Sort as _Sort
 from abc import ABC as _ABC
 
 import torch
@@ -48,5 +48,5 @@ def tensor_for(value, sort):
 
 
 # Required, not boilerplate: without it `from .sort import *` in the package __init__
-# re-exports `torch`, replacing the `zrth.torch` submodule with the torch library.
+# re-exports `torch`, replacing the `reactor.torch` submodule with the torch library.
 __all__ = ["Sort", "tensor_for"] + [n for n in dir(_Sort) if not n.startswith("_")]

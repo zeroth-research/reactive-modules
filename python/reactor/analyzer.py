@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from .zrth import Wire, Term, Var, X
+from .reactor import Wire, Term, Var, X
 from .sort import Bool, Real, Int, BitVec
 from .builder import (
     TermBuilder,

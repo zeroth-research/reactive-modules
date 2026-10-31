@@ -1,6 +1,6 @@
 import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
+from reactor import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
 from gymnasium import spaces
 
 

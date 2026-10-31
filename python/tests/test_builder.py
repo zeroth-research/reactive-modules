@@ -1,11 +1,11 @@
-"""Tests for `zrth.builder` (the term builder used by the gym / SMV / analyzer front-ends)."""
+"""Tests for `reactor.builder` (the term builder used by the gym / SMV / analyzer front-ends)."""
 
 import pytest
 import torch
 
-from zrth import LRA, LIA, Real, Int, Wire
-from zrth.builder import builder_for
-from zrth.eval import eval_itype
+from reactor import LRA, LIA, Real, Int, Wire
+from reactor.builder import builder_for
+from reactor.eval import eval_itype
 
 
 @pytest.mark.parametrize("theory,sort,dtype", [

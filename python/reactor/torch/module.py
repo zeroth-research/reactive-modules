@@ -1,7 +1,7 @@
 import inspect
 import torch.nn as nn
 
-from ..zrth import Module as _BaseModule, X
+from ..reactor import Module as _BaseModule, X
 from ..sort import Real
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
@@ -125,7 +125,7 @@ class Module(_BaseModule, nn.Module):
     Inherits both Module (symbolic reactive module) and nn.Module (trainable).
 
     Usage:
-        from zrth.torch import Module
+        from reactor.torch import Module
 
         wrapped = Module(nn_module_instance)                    # sequential, V(s)
         wrapped = Module(nn_module_instance, theory=LIA)         # integer (e.g. quantised) net

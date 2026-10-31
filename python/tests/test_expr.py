@@ -1,4 +1,4 @@
-"""Tests for the eager, theory-baked Expression (`zrth.expr`).
+"""Tests for the eager, theory-baked Expression (`reactor.expr`).
 
 Covers `expr()`, the `AExpr`/`BExpr`/`WExpr` split, explicit-sort literals, signed/unsigned
 word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, and eval.
@@ -7,10 +7,10 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from zrth import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
-from zrth.builder import NonLinearError
-from zrth.eval import eval_itype
-from zrth.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
+from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
+from reactor.builder import NonLinearError
+from reactor.eval import eval_itype
+from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])

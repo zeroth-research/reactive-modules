@@ -1,6 +1,6 @@
-from zrth import Int, LIA, Var, X
-from zrth.sugar import Module
-from zrth.visual.server import _serialize_module
+from reactor import Int, LIA, Var, X
+from reactor.sugar import Module
+from reactor.visual.server import _serialize_module
 
 
 class _Counter(Module):

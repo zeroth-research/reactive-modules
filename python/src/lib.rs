@@ -25,7 +25,7 @@ use crate::var::Var;
 use crate::wire::Wire;
 
 #[pymodule]
-fn zrth(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Sort>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Var>()?;

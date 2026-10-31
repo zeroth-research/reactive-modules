@@ -5,8 +5,8 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from zrth import Wire, Term, Module, LIA, BV, Bool, Real, Int, BitVec, Var, X
-from zrth.eval import eval_itype, execute_init, execute_update
+from reactor import Wire, Term, Module, LIA, BV, Bool, Real, Int, BitVec, Var, X
+from reactor.eval import eval_itype, execute_init, execute_update
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

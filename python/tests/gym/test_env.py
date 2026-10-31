@@ -9,9 +9,9 @@ from gymnasium import spaces
 
 from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
-from zrth.gym import Env
-from zrth.torch import Module
-from zrth import Wire, Real, Int, Var, X
+from reactor.gym import Env
+from reactor.torch import Module
+from reactor import Wire, Real, Int, Var, X
 
 # SimpleEnv's only private state is `state`; its sort must be declared explicitly.
 STATE = Real([1, 1])

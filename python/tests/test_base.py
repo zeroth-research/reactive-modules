@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, Var, X, d
+from reactor import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, Var, X, d
 
 
 def _bool_t(v):

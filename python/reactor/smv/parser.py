@@ -1,4 +1,4 @@
-"""SMV (NuSMV 2.1 subset) parser — Lark frontend + lowerer to zrth Module."""
+"""SMV (NuSMV 2.1 subset) parser — Lark frontend + lowerer to reactor Module."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..zrth import Wire, Term, Module, BV, Var, X
+from ..reactor import Wire, Term, Module, BV, Var, X
 from ..sort import Sort, BitVec, Bool
 
 

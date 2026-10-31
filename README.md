@@ -1,16 +1,69 @@
-# Zeroth Reactive Modules
+# Reactor
 
-Representation and manipulation of *reactive modules* in Rust and Python.
+Reactor is a library for formally modelling and analysing reactive systems, including
+cyber-physical and multi-agent ones. It describes a system as a composition of *modules*:
+components that interact with their environment in a never-ending loop, reading inputs,
+updating their state and producing outputs. A controller, the physical plant it drives, a neural-network policy, or
+one agent among many are each a module, and larger systems are built by wiring the outputs of
+some modules to the inputs of others. This makes Reactor a common ground for systems that are
+usually modelled with separate tools:
 
-[Reactive modules]((https://link.springer.com/article/10.1023/A:1008739929481)) are a model for defining reactive
-systems,
-i.e., "machines" that in loop compute outputs for incoming inputs.
-This project contains a generic Rust representation of reactive modules with computation steps (atoms)
-defined using wiring diagrams, several concrete instances of reactive modules (e.g., reactive modules
-that use torch tensors as values for computations) and bindings in Python for the Rust code.
+### Software, hardware and communication
+
+- **communication protocols**, as parties exchanging messages over channels;
+- **distributed algorithms**, such as consensus, leader election and mutual exclusion, as processes communicating through shared or message-passing variables;
+- **embedded and real-time software**, as control loops and interrupt handlers updated tick by tick over integers and bit-vectors;
+- **hardware (RTL) designs**, as registers and combinational logic over bit-vectors, updated clock by clock.
+
+### Control and autonomy
+
+- **control systems**, as controllers in closed loop with plants evolving in discrete or continuous time;
+- **autonomous and robotic systems**, as perception, planning and actuation modules, with neural components in the loop;
+- **reinforcement learning**, as environments and policies interacting in closed loop, for training and for verification;
+- **automotive and avionics**, as ECUs and flight controllers coupled with vehicle dynamics;
+- **medical devices**, such as pacemakers and insulin pumps, in closed loop with a physiological model.
+
+### Infrastructure
+
+- **power grids and energy systems**, as generators, storage and loads balancing supply and demand over time;
+- **traffic and transportation**, as vehicles, intersections and signals coordinating flows;
+- **industrial automation**, as PLC logic driving machines and conveyors on a production line;
+- **smart buildings and IoT**, as sensors, thermostats and actuators coordinating comfort and energy use.
+
+### Economic, social and natural systems
+
+- **supply chains**, as interacting agents (suppliers, warehouses, retailers) moving goods and orders between them;
+- **financial and market systems**, as traders, exchanges and clearing houses reacting to orders and prices;
+- **epidemics and social systems**, as agent-based models of populations and their interactions;
+- **biological systems**, such as gene regulatory networks and cell populations, as interacting dynamic components.
 
 **DISCLAIMER: the project is under heavy development and unstable.
 It lacks documentation in many places and can change at any moment.**
+
+## Modelling language
+
+The modelling language is centred on, and inspired by,
+[reactive modules](https://www.cis.upenn.edu/~alur/FMSD99.pdf) (Alur & Henzinger).
+As there, a module is made of *atoms*, each controlling a set of variables through an initial
+action, an update action, and a delay activity for continuous-time evolution. Reactor adapts the
+formalism where it serves modelling and analysis: atoms are defined as wiring diagrams over typed
+terms; terms are parametrised by a theory (e.g., linear integer or real arithmetic and bit-vectors),
+which fixes what can be expressed and how it can be analysed; and values can also be tensors,
+so learned components such as neural networks live in the same model as the rest of the system.
+
+## Rust core and Python interface
+
+The core is written in Rust, with a Python interface that lets you:
+
+- build modules directly, or by subclassing in a lightweight DSL (`reactor.sugar`);
+- extract modules from existing code: [Gymnasium](https://gymnasium.farama.org/) environments
+  (`reactor.gym`), [PyTorch](https://pytorch.org/) networks (`reactor.torch`) and SMV models;
+- simulate them, train learned components in the loop, and verify properties with SMT solvers
+  such as Z3 (`reactor.z3`);
+- visualise them (`reactor.visual`).
+
+See the [tutorials](tutorials/README.md) for worked examples, from wrapping an environment and a
+neural network to proving termination of small programs with learned ranking functions.
 
 ## Building
 

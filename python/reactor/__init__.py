@@ -1,4 +1,4 @@
-from .zrth import *
+from .reactor import *
 import sys as _sys
 
 del Sort
@@ -14,7 +14,7 @@ from .builder import (
 from .gym import Env
 from .smv import parse_smv
 
-# Submodule access: from zrth.sugar import Module ; from zrth.gym import Env
+# Submodule access: from reactor.sugar import Module ; from reactor.gym import Env
 from . import sugar as sugar
 from . import gym as gym
 from . import torch as torch

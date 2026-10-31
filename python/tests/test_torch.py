@@ -1,12 +1,12 @@
-"""Tests for zrth.torch.Module: theory-parameterized interface sorts (LRA/LIA/BV)
+"""Tests for reactor.torch.Module: theory-parameterized interface sorts (LRA/LIA/BV)
 and weight-dtype validation."""
 
 import pytest
 import torch
 import torch.nn as nn
 
-from zrth import LRA, LIA, BV, Real, Int, Bool, X
-from zrth.torch import Module
+from reactor import LRA, LIA, BV, Real, Int, Bool, X
+from reactor.torch import Module
 
 
 class Net(nn.Module):
