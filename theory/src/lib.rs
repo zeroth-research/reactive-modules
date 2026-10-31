@@ -2,20 +2,28 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod signature;
+pub mod boundary;
+pub mod sort;
 pub mod tensor;
 
+use signature::{SignatureElem, VecSignature};
+use sort::MultiSort;
 use std::fmt;
 use std::fmt::Debug;
 pub use tensor::PyTensor;
+
 pub trait Theory {
     type Sort;
 
     const NAME: &'static str;
 
+    /// Check that the operation can read and write wires of the given sorts.
+    /// Derivatives are wires of the tangent sorts (see [`sort::TangentMultiSort::T`]).
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>;
+        R: IntoIterator<Item = Result<Self::Sort, E>>,
+        W: IntoIterator<Item = Result<Self::Sort, E>>;
 }
 
 pub trait Combinatorial: Theory {
@@ -29,7 +37,8 @@ pub trait Sequential: Theory {
 }
 
 pub trait Differential: Theory {
-    // Returns the unary itype that indicates zero derivative
+    // Returns the unary itype that indicates zero derivative, the range is the sort
+    // of the derivative (i.e., a tangent sort)
     fn zero(range: &Self::Sort) -> Self;
 }
 
@@ -40,16 +49,16 @@ pub trait Differential: Theory {
 // This is a helper routine; concrete theories are free to implement their own
 fn check_skip<R, W, S, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match (read.next(), write.next()) {
-        (Some(Ok((r, rd))), Some(Ok((w, wd)))) if r != w || &w != range || wd != rd => {
+        (Some(Ok(r)), Some(Ok(w))) if r != w || &w != range => {
             return Err(format!(
-                "SKIP expects exactly one read and one write of sort {:?} and equal degree",
+                "SKIP expects exactly one read and one write of sort {:?}",
                 range
             ));
         }
@@ -68,8 +77,8 @@ where
 // This is a helper routine; concrete theories are free to implement their own
 pub(crate) fn check_havoc<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
     E: fmt::Display,
 {
@@ -78,7 +87,7 @@ where
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok((sort, _))) if &sort != range => {
+        Some(Ok(sort)) if &sort != range => {
             return Err(format!("HAVOC expects write of dtype {:?}", range));
         }
         Some(Err(e)) => return Err(e.to_string()),
@@ -95,8 +104,8 @@ where
 // This is a helper routine; concrete theories are free to implement their own
 pub(crate) fn check_zero<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-    W: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
+    W: IntoIterator<Item = Result<S, E>>,
     S: Eq + Debug,
     E: fmt::Display,
 {
@@ -105,7 +114,7 @@ where
     }
     let mut write = write.into_iter();
     match write.next() {
-        Some(Ok((sort, _))) if &sort != range => {
+        Some(Ok(sort)) if &sort != range => {
             return Err(format!("ZERO expects write of dtype {:?}", range));
         }
         Some(Err(e)) => return Err(e.to_string()),
@@ -118,29 +127,40 @@ where
     Ok(())
 }
 
-fn next_expect_degree<R, S, E: fmt::Display>(
-    iter: &mut R,
-    pos: usize,
-    degree: u8,
-) -> Result<S, String>
+/// The sorts of `wires`, or the error of the first wire that has none
+fn wire_sorts<S, I, E: fmt::Display>(wires: I) -> Result<Vec<S>, String>
 where
-    R: Iterator<Item = Result<(S, u8), E>>,
+    I: IntoIterator<Item = Result<S, E>>,
 {
-    let (s, d) = next_with_degree(iter, pos)?;
-    if d != degree {
-        Err(format!("Arg {pos} expected to be {degree}, got {d}"))
-    } else {
-        Ok(s)
-    }
+    wires
+        .into_iter()
+        .map(|w| w.map_err(|e| e.to_string()))
+        .collect()
 }
 
-fn next_with_degree<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<(S, u8), String>
+/// Typecheck the sorts of the wires that an operation reads and writes against
+/// the signature `sig` of the operation, where `elem` gives the signature element
+/// of a sort
+fn typecheck_wires<S>(
+    sig: VecSignature<S>,
+    read: &[S],
+    write: &[S],
+    elem: impl Fn(S) -> SignatureElem<S>,
+) -> Result<(), String>
 where
-    R: Iterator<Item = Result<(S, u8), E>>,
+    S: MultiSort + PartialEq + fmt::Display,
 {
-    if let Some(item) = iter.next() {
-        item.map_err(|e| e.to_string())
-    } else {
-        Err(format!("Arg {pos} expected, but got none"))
+    let wires = VecSignature {
+        dom: read.iter().copied().map(&elem).collect(),
+        cod: write.iter().copied().map(&elem).collect(),
+    };
+    signature::typecheck(sig, wires)
+}
+
+/// The `[rows, cols]` shape of the 2D tensor `t`
+fn shape_2d(t: &PyTensor) -> Result<[usize; 2], String> {
+    match t.size().as_slice() {
+        &[rows, cols] => Ok([rows as usize, cols as usize]),
+        size => Err(format!("expected a 2D tensor, got {}D", size.len())),
     }
 }

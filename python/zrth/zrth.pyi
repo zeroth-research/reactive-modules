@@ -4,7 +4,8 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec), the per-theory
+The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec, and the sorts of
+their derivatives TReal/Zero), the per-theory
 op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
@@ -54,6 +55,18 @@ class Real(Sort):
 
 class BitVec(Sort):
     def __init__(self, width: int, shape: list[int]) -> None: ...
+
+
+class TReal(Sort):
+    """The derivatives (of the given degree >= 1) of `Real`."""
+
+    def __init__(self, shape: list[int], degree: int) -> None: ...
+
+
+class Zero(Sort):
+    """The (zero) derivatives of `Bool`, `Int`, and `BitVec`."""
+
+    def __init__(self, shape: list[int]) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -320,16 +333,13 @@ class BV:
 # ---------------------------------------------------------------------------
 
 class Wire:
-    def __init__(self, dtype: Sort, degree: int = 0) -> None: ...
+    def __init__(self, dtype: Sort) -> None: ...
 
     @property
     def id(self) -> int: ...
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -352,9 +362,9 @@ class Wire:
 class Var:
     """A state variable: three wires (latched, next, derivative).
 
-    A variable stands for its latched wire — attribute lookups (`id`, `dtype`,
-    `degree`), equality, hashing, and ordering all go through it, so a `Var`
-    and its latched `Wire` are interchangeable e.g. as dictionary keys.
+    A variable stands for its latched wire — attribute lookups (`id`, `dtype`),
+    equality, hashing, and ordering all go through it, so a `Var` and its
+    latched `Wire` are interchangeable e.g. as dictionary keys.
     """
 
     def __init__(self, dtype: Sort) -> None: ...
@@ -364,9 +374,6 @@ class Var:
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -395,7 +402,8 @@ def X(var: Var) -> Wire:
 
 
 def d(var: Var) -> Wire:
-    """The variable's derivative wire."""
+    """The variable's derivative wire: its sort is `TReal(shape, 1)` for a `Real`
+    variable, and `Zero(shape)` for the others."""
     ...
 
 

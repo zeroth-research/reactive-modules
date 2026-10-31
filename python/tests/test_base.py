@@ -1,6 +1,6 @@
 import pytest
 import torch
-from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, Var, X, d
+from zrth import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, TReal, Zero, Var, X, d
 
 
 def _bool_t(v):
@@ -36,9 +36,13 @@ def test_var_derefs_to_wire():
 
     # attributes Var does not define fall through to the latched wire,
     # mirroring Rust's Deref
-    assert v.degree == 0
     assert v.dtype == Real([2, 3])
     assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
+
+    # the next wire carries values, the derivative wire the tangent
+    assert X(v).dtype == Real([2, 3])
+    assert d(v).dtype == TReal([2, 3], 1)
+    assert d(Var(Int([2, 3]))).dtype == Zero([2, 3])
 
     # unknown attributes still raise, from the wire's lookup
     with pytest.raises(AttributeError):

@@ -1,6 +1,6 @@
 import pytest
 import gymnasium as gym
-from zrth import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
+from zrth import Module, Wire, Term, Sort, LRA, Bool, Real, Int, BitVec, Var, X
 from gymnasium import spaces
 
 
@@ -10,9 +10,9 @@ def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result
     # uninterpreted reads / writes.
     terms = []
     for r in read.values():
-        terms.append(Term(LIA.Uninterpreted("method"), [], [r]))
+        terms.append(Term(LRA.Uninterpreted("method"), [], [r]))
     for w in list(write.values()) + list(result):
-        terms.append(Term.constant(LIA.Uninterpreted("method"), [w]))
+        terms.append(Term.constant(LRA.Uninterpreted("method"), [w]))
     return terms
 
 

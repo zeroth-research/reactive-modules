@@ -6,7 +6,7 @@ mod common;
 use base::term::Term;
 use base::var::{Var, X, d};
 use base::wire::Wire;
-use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op};
+use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op, srt};
 
 #[test]
 fn can_instantiate_and_print_sequential_module() {
@@ -30,9 +30,9 @@ fn can_instantiate_example_peterson1() {
 
 #[test]
 fn module_write_all_ctrl() {
-    let x = Var::new("real");
-    let y = Var::new("real");
-    let x0 = Var::new("real");
+    let x = Var::new(srt("real"));
+    let y = Var::new(srt("real"));
+    let x0 = Var::new(srt("real"));
 
     let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
 
@@ -66,10 +66,10 @@ fn module_write_all_ctrl() {
 
 #[test]
 fn atom_with_invalid_read() {
-    let x = Var::new("A");
-    let y = Var::new("B");
-    let z = Var::new("C");
-    let p = Wire::scalar("P");
+    let x = Var::new(srt("A"));
+    let y = Var::new(srt("B"));
+    let z = Var::new(srt("C"));
+    let p = Wire::new(srt("P"));
 
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
@@ -166,8 +166,8 @@ fn differential_drifting_clocks() {
 /// ```
 ///
 /// and expects it to be rejected: the delay term drives the derivative
-/// `d(x)` (degree 1) directly from the value wire `x` (degree 0), and
-/// ordinary operations require uniform degrees across their operands.
+/// `d(x)` (of the tangent sort) directly from the value wire `x`, and
+/// ordinary operations require the same sorts of their operands.
 #[test]
 fn differential_module_rejects_dx_equals_x() {
     use theory::lra::{LRA, Sort};
@@ -189,8 +189,8 @@ fn differential_module_rejects_dx_equals_x() {
 /// havoced and the delay is zero, both synthesised by the constructor.
 #[test]
 fn uninitialized_module_ok() {
-    let x = Var::new("real");
-    let y = Var::new("real");
+    let x = Var::new(srt("real"));
+    let y = Var::new(srt("real"));
 
     // x' = y: x is controlled, y is inferred external.
     let update = [Term::function(mk_op("ID"), [X(x)], [y]).unwrap()];
@@ -211,8 +211,8 @@ fn uninitialized_module_ok() {
 /// latched wire is rejected.
 #[test]
 fn uninitialized_module_rejects_latched_write() {
-    let x = Var::new("real");
-    let y = Var::new("real");
+    let x = Var::new(srt("real"));
+    let y = Var::new(srt("real"));
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let update = [Term::function(mk_op("ID"), [*x], [y]).unwrap()];
@@ -223,7 +223,7 @@ fn uninitialized_module_rejects_latched_write() {
 /// synthesised SKIP update and a synthesised ZERO delay.
 #[test]
 fn constant_module_ok() {
-    let x = Var::new("real");
+    let x = Var::new(srt("real"));
 
     let init = [Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap()];
     let m = Module::constant(&[x], init).unwrap();
@@ -243,7 +243,7 @@ fn constant_module_ok() {
 /// wire is rejected.
 #[test]
 fn constant_module_rejects_latched_write() {
-    let x = Var::new("real");
+    let x = Var::new(srt("real"));
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let init = [Term::constant(mk_op("CONST(0)"), [*x]).unwrap()];
@@ -266,8 +266,8 @@ fn constant_module_rejects_latched_write() {
 /// location with zero drift, since it only changes at jumps.
 #[test]
 fn simple_timed_automaton() {
-    let x = Var::new("real");
-    let loc = Var::new("{off, on}");
+    let x = Var::new(srt("real"));
+    let loc = Var::new(srt("{off, on}"));
 
     // init: loc = off, x = 0
     let init = [
@@ -277,7 +277,7 @@ fn simple_timed_automaton() {
 
     // jump: guard x >= 1; toggle the location and reset the clock when it
     // fires, hold both otherwise
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new(srt("bool"));
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -311,15 +311,15 @@ fn simple_timed_automaton() {
 /// automaton is rejected.
 #[test]
 fn hybrid_rejects_missing_flow() {
-    let x = Var::new("real");
-    let loc = Var::new("{off, on}");
+    let x = Var::new(srt("real"));
+    let loc = Var::new(srt("{off, on}"));
 
     let init = [
         Term::constant(mk_op("CONST(off)"), [X(loc)]).unwrap(),
         Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap(),
     ];
 
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new(srt("bool"));
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -335,9 +335,9 @@ fn hybrid_rejects_missing_flow() {
 
 #[test]
 fn coupled_atoms_can_construct_module() {
-    let x = Var::new("real");
-    let y = Var::new("real");
-    let z = Var::new("real");
+    let x = Var::new(srt("real"));
+    let y = Var::new(srt("real"));
+    let z = Var::new(srt("real"));
 
     let u1 = Term::function(mk_op("u1"), [X(y)], [x]).unwrap();
     let a1 = Atom::jump(&[x, y], [u1]).unwrap();

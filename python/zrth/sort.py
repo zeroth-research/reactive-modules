@@ -21,6 +21,9 @@ _KINDS = (
     (_Sort.Int, torch.int64, "integer"),
     (_Sort.Real, torch.float32, "real"),
     (_Sort.BitVec, torch.int64, "bit-vector"),
+    (_Sort.TReal, torch.float32, "real derivative"),
+    # `Zero` (the derivative of Bool, Int, and BitVec) has no constants: it is written
+    # only by the zero-derivative operations
 )
 
 

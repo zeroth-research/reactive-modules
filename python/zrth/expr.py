@@ -6,8 +6,11 @@ like ``x + 1`` or ``ite(x < y, x + 1, y)``: composing one immediately builds the
 are split by *operation family* (the sort picks the class):
 
     AExpr  — Arithmetic   Int / Real     +  -  *  @   and comparisons (-> BExpr)
+                           (and TReal, the derivatives of Real)
     BExpr  — Boolean       Bool           &  |  ~  ^
     WExpr  — Word (BV)     BitVec         AExpr + bitwise + signed/unsigned + width
+
+The zero derivatives (``Zero``, of Bool / Int / BitVec) are plain ``Expr``s with no operations.
 
 An ``Expr`` itself is a pure handle — it stores its wire, its theory, the ``next`` wire (for
 a variable), and, for a constant, its tensor ``value`` (needed by the ``mul``/``matmul``
@@ -42,7 +45,7 @@ from typing import override
 import torch
 
 from .zrth import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
+from .sort import Sort, Bool, Int, Real, BitVec, TReal, Zero, tensor_for
 from .builder import NonLinearError
 
 
@@ -51,9 +54,9 @@ from .builder import NonLinearError
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Bool(s) | Int(s) | Real(s):
+        case Bool(s) | Int(s) | Real(s) | Zero(s):
             return list(s)
-        case BitVec(_, s):
+        case BitVec(_, s) | TReal(s, _):
             return list(s)
     raise TypeError(f"sort has no shape: {sort}")
 
@@ -68,6 +71,10 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Real(shape)
         case BitVec(bw, _):
             return BitVec(bw, shape)
+        case TReal(_, degree):
+            return TReal(shape, degree)
+        case Zero(_):
+            return Zero(shape)
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -90,7 +97,20 @@ def _family(sort: Sort) -> str:
             return "Real"
         case BitVec(bw, _):
             return f"BitVec{bw}"
+        case TReal(_, degree):
+            return f"TReal{degree}"
+        case Zero(_):
+            return "Zero"
     raise TypeError(f"unknown sort: {sort}")
+
+
+def _value_sort(sort: Sort) -> Sort:
+    """The sort of the values whose derivatives have the sort ``sort`` (``Real`` for ``TReal``),
+    ``sort`` itself for the other sorts."""
+    match sort:
+        case TReal(s, _):
+            return Real(s)
+    return sort
 
 
 def _normalize_shape(shape: list) -> list:
@@ -146,6 +166,10 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
+        case TReal(_, _):
+            return AExpr(wire, theory, next=next, value=value, tag=tag)
+        case Zero(_):
+            return Expr(wire, theory, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -155,7 +179,8 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
 
 
 class Expr:
-    """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
+    """Shared plumbing; instances are one of AExpr / BExpr / WExpr (via ``expr()``), or ``Expr``
+    itself for a zero derivative."""
 
     def __init__(self, wire, theory, *, next=None, value=None, tag=None, var=None):
         if next is not None and next.dtype != wire.dtype:
@@ -203,9 +228,11 @@ class Expr:
     def _coerce(self, o) -> "Expr":
         # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
         # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
+        # Next to a derivative, a literal is a value (e.g., the coefficient in `2 * d(t)`).
 
         return o if isinstance(o, Expr) else expr(
-            o, theory=self._theory, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
+            o, theory=self._theory, sort=type(_value_sort(self.dtype)), bw=self._bw(),
+            signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -236,14 +263,13 @@ class Expr:
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
 
-        The result wire inherits this expression's degree, so operations over
-        derivative wires (e.g. `d(t) + d(t)`) stay in the derivative fragment."""
+        Over derivative wires (e.g. `d(t) + d(t)`), `out` is the sort of a derivative."""
         o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire, o._wire]))
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
         out = out if out is not None else self.dtype
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire]))
+        return self._result(Term(op, [Wire(out)], [self._wire]))
 
     @override
     def __repr__(self) -> str:
@@ -266,7 +292,10 @@ class AExpr(Expr):
     def __rsub__(self, o):  return self._coerce(o).__sub__(self)
 
     def __mul__(self, o):  # const*var folds to Linear (LRA/LIA are linear)
-        o = self._coerce_same(o)
+        o = self._coerce(o)
+        # a real constant also scales a derivative of a real (e.g. `2 * d(t)`)
+        if _family(_value_sort(self.dtype)) != _family(_value_sort(o.dtype)):
+            raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
         return self._result(_mul_as_linear(self._theory, self, o))
 
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
@@ -301,7 +330,7 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
         n = v.shape[0]
         A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
         bias = torch.zeros(n, 1, dtype=scalar_dtype)
-        return Term(linear(A, bias), [Wire(v.dtype, degree=v._wire.degree)], [v._wire])
+        return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
 
 

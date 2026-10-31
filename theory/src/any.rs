@@ -1,6 +1,7 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
+use crate::sort::{MultiSort, TangentMultiSort};
 use crate::{Theory, bv, lia, lra};
 use crate::{check_havoc, check_skip, check_zero};
 use derive_more::From;
@@ -16,6 +17,10 @@ pub enum Sort {
     Real([usize; 2]),
     Int([usize; 2]),
     BitVec(usize, [usize; 2]),
+    // the tangent of `Real` of the given degree (>= 1), i.e., its derivative
+    TReal([usize; 2], u8),
+    // the tangent of `Bool`, `Int`, and `BitVec` (they have only the zero derivative)
+    Zero([usize; 2]),
 }
 
 impl fmt::Display for Sort {
@@ -33,6 +38,28 @@ impl fmt::Display for Sort {
             Sort::BitVec(bw, shape) => {
                 write!(f, "Bv{}([{},{}])", bw, shape[0], shape[1])
             }
+            Sort::TReal(shape, degree) => {
+                write!(f, "TReal([{},{}], {})", shape[0], shape[1], degree)
+            }
+            Sort::Zero(shape) => {
+                write!(f, "Zero([{},{}])", shape[0], shape[1])
+            }
+        }
+    }
+}
+
+impl MultiSort for Sort {
+    const NAME: &'static str = "Sort";
+}
+
+impl TangentMultiSort for Sort {
+    fn T(&self) -> Self {
+        match self {
+            Sort::Real(shape) => Sort::TReal(*shape, 1),
+            Sort::TReal(shape, degree) => Sort::TReal(*shape, degree + 1),
+            Sort::Bool(shape) | Sort::Int(shape) | Sort::BitVec(_, shape) | Sort::Zero(shape) => {
+                Sort::Zero(*shape)
+            }
         }
     }
 }
@@ -41,6 +68,7 @@ impl From<bv::Sort> for Sort {
     fn from(value: bv::Sort) -> Self {
         match value {
             bv::Sort::BV(bw, shape) => Sort::BitVec(bw, shape),
+            bv::Sort::Zero(shape) => Sort::Zero(shape),
         }
     }
 }
@@ -50,6 +78,7 @@ impl From<lia::Sort> for Sort {
         match value {
             lia::Sort::Int(shape) => Sort::Int(shape),
             lia::Sort::Bool(shape) => Sort::Bool(shape),
+            lia::Sort::Zero(shape) => Sort::Zero(shape),
         }
     }
 }
@@ -59,6 +88,8 @@ impl From<lra::Sort> for Sort {
         match value {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
             lra::Sort::Real(shape) => Sort::Real(shape),
+            lra::Sort::TReal(shape, degree) => Sort::TReal(shape, degree),
+            lra::Sort::Zero(shape) => Sort::Zero(shape),
         }
     }
 }
@@ -69,6 +100,7 @@ impl TryFrom<Sort> for bv::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::BitVec(bw, shape) => Ok(bv::Sort::BV(bw, shape)),
+            Sort::Zero(shape) => Ok(bv::Sort::Zero(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -81,6 +113,7 @@ impl TryFrom<Sort> for lia::Sort {
         match value {
             Sort::Bool(shape) => Ok(lia::Sort::Bool(shape)),
             Sort::Int(shape) => Ok(lia::Sort::Int(shape)),
+            Sort::Zero(shape) => Ok(lia::Sort::Zero(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -93,6 +126,8 @@ impl TryFrom<Sort> for lra::Sort {
         match value {
             Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
             Sort::Real(shape) => Ok(lra::Sort::Real(shape)),
+            Sort::TReal(shape, degree) => Ok(lra::Sort::TReal(shape, degree)),
+            Sort::Zero(shape) => Ok(lra::Sort::Zero(shape)),
             _ => Err("invalid cast".to_string()),
         }
     }
@@ -219,8 +254,8 @@ impl Theory for Any {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -237,14 +272,14 @@ impl Theory for Any {
 
 fn try_into<R, S, T, E: fmt::Display, F: fmt::Display>(
     iter: R,
-) -> impl Iterator<Item = Result<(T, u8), String>>
+) -> impl Iterator<Item = Result<T, String>>
 where
     S: TryInto<T, Error = F>,
-    R: IntoIterator<Item = Result<(S, u8), E>>,
+    R: IntoIterator<Item = Result<S, E>>,
 {
     iter.into_iter().map(|r| {
         r.map_err(|e| e.to_string())
-            .and_then(|(s, d)| Ok((s.try_into().map_err(|f| f.to_string())?, d)))
+            .and_then(|s| s.try_into().map_err(|f| f.to_string()))
     })
 }
 
@@ -254,8 +289,8 @@ impl Theory for Sequential {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
             Sequential::HAVOC(range) => check_havoc(range, read, write),
@@ -273,8 +308,8 @@ impl Theory for Combinatorial {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -293,8 +328,8 @@ impl Theory for Differential {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         // let read = read.into_iter().map(TryInto::try_into);
         // let write = write.into_iter().map(TryInto::try_into);
@@ -323,8 +358,8 @@ impl From<Combinatorial> for Sequential {
 mod tests {
     use super::*;
 
-    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
-        Ok((s, 0))
+    fn ok(s: Sort) -> Result<Sort, String> {
+        Ok(s)
     }
 
     // Casts up the hierarchy (Into) wrap the op in the right variant.
@@ -400,26 +435,22 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for skip in [
-            Any::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
-            Sequential::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
+            Any::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
+            Sequential::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
         ] {
             assert!(skip.is_ok());
         }
         // arity and sort mismatches
         assert!(
             Any::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .check([t(), u()].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::SKIP(t())
-                .check([t()].map(deg0), [u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::SKIP(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::SKIP(t()).check([t()].map(ok), [u()].map(ok)).is_err());
+        assert!(Any::SKIP(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Sequential::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
+                .check([t(), u()].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }
@@ -429,27 +460,23 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for havoc in [
-            Any::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Sequential::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Combinatorial::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
+            Any::HAVOC(t()).check([].map(ok), [t()].map(ok)),
+            Sequential::HAVOC(t()).check([].map(ok), [t()].map(ok)),
+            Combinatorial::HAVOC(t()).check([].map(ok), [t()].map(ok)),
         ] {
             assert!(havoc.is_ok());
         }
         // no reads, exactly one write
+        assert!(Any::HAVOC(t()).check([t()].map(ok), [t()].map(ok)).is_err());
         assert!(
             Any::HAVOC(t())
-                .check([t()].map(deg0), [t()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::HAVOC(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::HAVOC(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Combinatorial::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }
@@ -459,26 +486,22 @@ mod tests {
         let t = || Sort::Real([1, 1]);
         let u = || Sort::Real([2, 1]);
         for zero in [
-            Any::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
-            Differential::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
+            Any::ZERO(t()).check([].map(ok), [t()].map(ok)),
+            Differential::ZERO(t()).check([].map(ok), [t()].map(ok)),
         ] {
             assert!(zero.is_ok());
         }
         // no reads, exactly one write
+        assert!(Any::ZERO(t()).check([t()].map(ok), [t()].map(ok)).is_err());
         assert!(
             Any::ZERO(t())
-                .check([t()].map(deg0), [t()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
-        assert!(
-            Any::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::ZERO(t()).check([].map(deg0), [].map(deg0)).is_err());
+        assert!(Any::ZERO(t()).check([].map(ok), [].map(ok)).is_err());
         assert!(
             Differential::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
+                .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
         );
     }
